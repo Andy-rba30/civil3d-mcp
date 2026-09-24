@@ -39,7 +39,7 @@ namespace ArbaMcp
     /// Registro de herramientas expuestas por MCP. Otros plugins de la pestaña ARBA pueden llamar a
     /// Herramientas.Registrar(...) desde su Initialize para añadir las suyas.
     /// </summary>
-    public static class Herramientas
+    public static partial class Herramientas
     {
         private static readonly List<Herramienta> Lista = new List<Herramienta>();
         private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
@@ -412,6 +412,7 @@ namespace ArbaMcp
             });
 
             RegistrarAdicionales();
+            RegistrarSeguridad();
         }
 
         // ------------------------------------------------------------------ herramientas genéricas adicionales
