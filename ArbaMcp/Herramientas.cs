@@ -15,6 +15,7 @@ using AcApp = Autodesk.AutoCAD.ApplicationServices.Application;
 using CivAlignment = Autodesk.Civil.DatabaseServices.Alignment;
 using CivProfile = Autodesk.Civil.DatabaseServices.Profile;
 using CivSurface = Autodesk.Civil.DatabaseServices.Surface;
+using Civ = Autodesk.Civil.DatabaseServices;
 
 namespace ArbaMcp
 {
@@ -233,7 +234,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "listar_superficies",
-                Descripcion = "Lista las superficies del dibujo activo.",
+                Descripcion = "Lista las superficies del dibujo activo: tipo (TIN, Grid, TinVolume, GridVolume o Corridor), si está desactualizada, número de líneas de rotura y de contornos de la definición y, en superficies de corredor, el corredor que la genera.",
                 Ejecutar = a =>
                 {
                     var doc = DocActivo();
@@ -241,9 +242,39 @@ namespace ArbaMcp
                     using (doc.LockDocument())
                     using (var tr = doc.Database.TransactionManager.StartTransaction())
                     {
+                        // Superficies generadas por corredores: nombre de superficie → corredor
+                        var deCorredor = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                        var idsDeCorredor = new Dictionary<ObjectId, string>();
+                        foreach (ObjectId idCor in CivilApplication.ActiveDocument.CorridorCollection)
+                        {
+                            if (!(tr.GetObject(idCor, OpenMode.ForRead) is Civ.Corridor cor)) continue;
+                            try
+                            {
+                                foreach (Civ.CorridorSurface cs in cor.CorridorSurfaces)
+                                {
+                                    deCorredor[cs.Name] = cor.Name;
+                                    var idSu = Api.Leer<ObjectId>(cs, ObjectId.Null, "SurfaceId");
+                                    if (!idSu.IsNull) idsDeCorredor[idSu] = cor.Name;
+                                }
+                            }
+                            catch (System.Exception ex) { Historial.Registrar("listar_superficies: no se pudieron leer las superficies del corredor " + cor.Name + ": " + ex.Message); }
+                        }
+
                         foreach (ObjectId id in CivilApplication.ActiveDocument.GetSurfaceIds())
-                            if (tr.GetObject(id, OpenMode.ForRead) is CivSurface su)
-                                lista.Add(new { nombre = su.Name, tipo = su.GetType().Name });
+                        {
+                            if (!(tr.GetObject(id, OpenMode.ForRead) is CivSurface su)) continue;
+                            string corredor = idsDeCorredor.TryGetValue(id, out string c1) ? c1 : deCorredor.TryGetValue(su.Name, out string c2) ? c2 : null;
+                            lista.Add(new
+                            {
+                                nombre = su.Name,
+                                tipo = su.GetType().Name,
+                                tipo_superficie = corredor != null ? "Corridor" : TipoSuperficie(su),
+                                esta_desactualizada = Api.Leer<bool?>(su, null, "IsOutOfDate", "OutOfDate"),
+                                n_lineas_rotura = su is Civ.TinSurface tin ? (int?)tin.BreaklinesDefinition.Count : null,
+                                n_contornos = su is Civ.TinSurface tin2 ? (int?)tin2.BoundariesDefinition.Count : su is Civ.GridSurface grid ? (int?)grid.BoundariesDefinition.Count : null,
+                                corredor
+                            });
+                        }
                         tr.Commit();
                     }
                     return lista;
@@ -253,129 +284,40 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "abrir_dibujo",
-                Descripcion = "Abre un archivo DWG en Civil 3D y lo deja como dibujo activo.",
+                Descripcion = "Abre un archivo DWG en Civil 3D y lo deja como dibujo activo. Si ya estaba abierto, activa esa pestaña en vez de abrirlo otra vez.",
                 Parametros = { P("ruta", "string", "Ruta completa del DWG", true) },
                 Ejecutar = a =>
                 {
                     string ruta = Requerido(a, "ruta");
                     if (!File.Exists(ruta)) throw new FileNotFoundException("No existe el archivo: " + ruta);
+                    ruta = Path.GetFullPath(ruta);
+                    foreach (Document d in AcApp.DocumentManager)
+                    {
+                        if (!string.Equals(Escritura.RutaDibujo(d), ruta, StringComparison.OrdinalIgnoreCase)) continue;
+                        AcApp.DocumentManager.MdiActiveDocument = d;
+                        return new { abierto = d.Name, ya_estaba_abierto = true };
+                    }
                     var doc = AcApp.DocumentManager.Open(ruta, false);
                     AcApp.DocumentManager.MdiActiveDocument = doc;
-                    return new { abierto = doc.Name };
+                    return new { abierto = doc.Name, ya_estaba_abierto = false };
                 }
             });
 
             Registrar(new Herramienta
             {
                 Nombre = "ejecutar_comando",
-                Descripcion = "Envía un comando a la línea de comandos del dibujo activo y espera a que termine. Devuelve 'terminado', 'cancelado', 'fallido', 'el comando no se inició en N s' o 'timeout con ESC'. Cada orden va en un grupo de UNDO (un solo Ctrl+Z la revierte).",
+                Descripcion = "Último recurso; usa primero las herramientas de API. Envía un comando a la línea de comandos del dibujo activo y espera a que termine. Devuelve 'terminado', 'cancelado', 'fallido', 'el comando no se inició en N s' o 'timeout con ESC'. Solo con undo=true la orden va en un grupo de UNDO (un solo Ctrl+Z la revierte).",
                 Parametros =
                 {
                     P("comando", "string", "Texto del comando, por ejemplo 'REGEN' o '_.ZOOM E'", true),
-                    P("timeout_s", "number", "Segundos máximos de espera (por defecto 60). Si se agota, se envían dos ESC para cancelar")
+                    P("timeout_s", "number", "Segundos máximos de espera (por defecto 60). Si se agota, se envían dos ESC para cancelar"),
+                    P("undo", "boolean", "Con true envuelve la orden en _.UNDO _BE / _.UNDO _E (por defecto false)")
                 },
-                EjecutarAsync = async a =>
+                EjecutarAsync = a =>
                 {
                     string comando = Requerido(a, "comando").Trim();
                     int timeoutMs = (int)(Math.Max(1, Num(a, "timeout_s", 60)) * 1000);
-                    var tcs = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
-                    
-                    string cmdParse = comando.Split(new[] { ' ', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
-                    cmdParse = cmdParse.TrimStart('_', '.').ToUpperInvariant();
-
-                    Document doc = DocActivo();
-                    int iniciado = 0; // se escribe en el hilo principal y se lee en el del servidor
-                    int grupoCerrado = 0;
-                    Historial.Registrar("ejecutar_comando: '" + comando + "' con tiempo máximo " + (timeoutMs / 1000) + " s");
-
-                    // Cierra el grupo de UNDO una sola vez, venga de donde venga (fin, cancelación, fallo o tiempo agotado)
-                    void CerrarGrupo(string prefijo)
-                    {
-                        if (System.Threading.Interlocked.Exchange(ref grupoCerrado, 1) == 0)
-                            doc.SendStringToExecute(prefijo + "_.UNDO _E\n", false, false, false);
-                    }
-
-                    void OnCommandWillStart(object s, CommandEventArgs e)
-                    {
-                        if (e.GlobalCommandName.ToUpperInvariant() == cmdParse) System.Threading.Interlocked.Exchange(ref iniciado, 1);
-                    }
-                    void OnCommandEnded(object s, CommandEventArgs e)
-                    {
-                        if (e.GlobalCommandName.ToUpperInvariant() == cmdParse) {
-                            CerrarGrupo("");
-                            tcs.TrySetResult("terminado");
-                        }
-                    }
-                    void OnCommandCancelled(object s, CommandEventArgs e)
-                    {
-                        if (e.GlobalCommandName.ToUpperInvariant() == cmdParse) {
-                            CerrarGrupo("");
-                            tcs.TrySetResult("cancelado");
-                        }
-                    }
-                    void OnCommandFailed(object s, CommandEventArgs e)
-                    {
-                        if (e.GlobalCommandName.ToUpperInvariant() == cmdParse) {
-                            CerrarGrupo("");
-                            tcs.TrySetResult("fallido");
-                        }
-                    }
-
-                    await HiloPrincipal.Ejecutar(() =>
-                    {
-                        try {
-                            if (Convert.ToInt32(AcApp.GetSystemVariable("CMDACTIVE")) > 0)
-                                throw new InvalidOperationException("Hay un comando activo en Civil 3D; termínalo o cancélalo antes de enviar otro.");
-                            
-                            doc.CommandWillStart += OnCommandWillStart;
-                            doc.CommandEnded += OnCommandEnded;
-                            doc.CommandCancelled += OnCommandCancelled;
-                            doc.CommandFailed += OnCommandFailed;
-                            
-                            doc.SendStringToExecute("_.UNDO _BE\n" + comando + "\n", true, false, false);
-                        } catch (Exception ex) { tcs.TrySetException(ex); }
-                        return true;
-                    });
-
-                    // Espera a que el comando arranque (o termine) dentro del tiempo máximo. Civil 3D puede tardar
-                    // varios segundos en procesar la cola de entrada si está ocupado con el dibujo.
-                    var reloj = System.Diagnostics.Stopwatch.StartNew();
-                    while (!tcs.Task.IsCompleted && System.Threading.Volatile.Read(ref iniciado) == 0 && reloj.ElapsedMilliseconds < timeoutMs)
-                        await Task.Delay(100);
-
-                    if (!tcs.Task.IsCompleted && System.Threading.Volatile.Read(ref iniciado) == 0)
-                    {
-                        // No arrancó en todo el tiempo. Los ESC van delante del cierre por si arranca tarde:
-                        // así el UNDO _E nunca entra como respuesta a un comando que acaba de empezar.
-                        Historial.Registrar("ejecutar_comando: '" + comando + "' no se inició en " + (timeoutMs / 1000) + " s");
-                        CerrarGrupo("\x1B\x1B");
-                        tcs.TrySetResult("el comando no se inició en " + (timeoutMs / 1000) + " s (¿nombre incorrecto o Civil 3D ocupado?)");
-                    }
-
-                    int restante = Math.Max(0, timeoutMs - (int)reloj.ElapsedMilliseconds);
-                    var completada = await Task.WhenAny(tcs.Task, Task.Delay(restante));
-
-                    if (completada != tcs.Task && !tcs.Task.IsCompleted)
-                    {
-                        // Mientras un comando espera entrada del usuario, el evento Idle no llega y un trabajo
-                        // encolado en HiloPrincipal no se atendería. SendStringToExecute solo encola teclas,
-                        // así que los ESC y el cierre del grupo se envían directamente desde este hilo.
-                        Historial.Registrar("ejecutar_comando: tiempo agotado a los " + (timeoutMs / 1000) + " s, se envían ESC");
-                        CerrarGrupo("\x1B\x1B");
-                        tcs.TrySetResult("timeout con ESC");
-                    }
-
-                    // Los manejadores se desenganchan en el hilo principal cuando llegue Idle; no hace falta esperar
-                    _ = HiloPrincipal.Ejecutar(() =>
-                    {
-                        doc.CommandWillStart -= OnCommandWillStart;
-                        doc.CommandEnded -= OnCommandEnded;
-                        doc.CommandCancelled -= OnCommandCancelled;
-                        doc.CommandFailed -= OnCommandFailed;
-                        return true;
-                    });
-
-                    return await tcs.Task;
+                    return EjecutarComando(comando, timeoutMs, Bool(a, "undo", false));
                 }
             });
 
@@ -488,6 +430,116 @@ namespace ArbaMcp
                     return new { variable = n.ToUpperInvariant(), valor = v?.ToString(), tipo = v?.GetType().Name };
                 }
             });
+        }
+
+        // ------------------------------------------------------------------ envío de comandos (núcleo de ejecutar_comando y de las exportaciones)
+        /// <summary>
+        /// Envía un comando a la línea de comandos y espera a que termine, se cancele, falle o se agote el tiempo.
+        /// Con undo=true lo envuelve en _.UNDO _BE / _.UNDO _E. Corre desde el hilo del servidor; toca AutoCAD solo por HiloPrincipal.
+        /// </summary>
+        internal static async Task<object> EjecutarComando(string comando, int timeoutMs, bool undo)
+        {
+            var tcs = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            string cmdParse = comando.Split(new[] { ' ', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
+            cmdParse = cmdParse.TrimStart('_', '.').ToUpperInvariant();
+
+            Document doc = DocActivo();
+            int iniciado = 0; // se escribe en el hilo principal y se lee en el del servidor
+            int grupoCerrado = 0;
+            Historial.Registrar("ejecutar_comando: '" + comando + "' con tiempo máximo " + (timeoutMs / 1000) + " s" + (undo ? " (con grupo de UNDO)" : ""));
+
+            // Cierra el grupo de UNDO (si lo hay) una sola vez, venga de donde venga (fin, cancelación, fallo o tiempo agotado)
+            void CerrarGrupo(string prefijo)
+            {
+                if (System.Threading.Interlocked.Exchange(ref grupoCerrado, 1) != 0) return;
+                string texto = prefijo + (undo ? "_.UNDO _E\n" : "");
+                if (texto.Length > 0) doc.SendStringToExecute(texto, false, false, false);
+            }
+
+            void OnCommandWillStart(object s, CommandEventArgs e)
+            {
+                if (e.GlobalCommandName.ToUpperInvariant() == cmdParse) System.Threading.Interlocked.Exchange(ref iniciado, 1);
+            }
+            void OnCommandEnded(object s, CommandEventArgs e)
+            {
+                if (e.GlobalCommandName.ToUpperInvariant() == cmdParse) { CerrarGrupo(""); tcs.TrySetResult("terminado"); }
+            }
+            void OnCommandCancelled(object s, CommandEventArgs e)
+            {
+                if (e.GlobalCommandName.ToUpperInvariant() == cmdParse) { CerrarGrupo(""); tcs.TrySetResult("cancelado"); }
+            }
+            void OnCommandFailed(object s, CommandEventArgs e)
+            {
+                if (e.GlobalCommandName.ToUpperInvariant() == cmdParse) { CerrarGrupo(""); tcs.TrySetResult("fallido"); }
+            }
+
+            await HiloPrincipal.Ejecutar(() =>
+            {
+                try
+                {
+                    if (Convert.ToInt32(AcApp.GetSystemVariable("CMDACTIVE")) > 0)
+                        throw new InvalidOperationException("Hay un comando activo en Civil 3D; termínalo o cancélalo antes de enviar otro.");
+
+                    doc.CommandWillStart += OnCommandWillStart;
+                    doc.CommandEnded += OnCommandEnded;
+                    doc.CommandCancelled += OnCommandCancelled;
+                    doc.CommandFailed += OnCommandFailed;
+
+                    doc.SendStringToExecute((undo ? "_.UNDO _BE\n" : "") + comando + "\n", true, false, false);
+                }
+                catch (Exception ex) { tcs.TrySetException(ex); }
+                return true;
+            });
+
+            // Espera a que el comando arranque (o termine) dentro del tiempo máximo. Civil 3D puede tardar
+            // varios segundos en procesar la cola de entrada si está ocupado con el dibujo.
+            var reloj = System.Diagnostics.Stopwatch.StartNew();
+            while (!tcs.Task.IsCompleted && System.Threading.Volatile.Read(ref iniciado) == 0 && reloj.ElapsedMilliseconds < timeoutMs)
+                await Task.Delay(100);
+
+            if (!tcs.Task.IsCompleted && System.Threading.Volatile.Read(ref iniciado) == 0)
+            {
+                // No arrancó en todo el tiempo. Los ESC van delante del cierre por si arranca tarde:
+                // así el UNDO _E nunca entra como respuesta a un comando que acaba de empezar.
+                Historial.Registrar("ejecutar_comando: '" + comando + "' no se inició en " + (timeoutMs / 1000) + " s");
+                CerrarGrupo("\x1B\x1B");
+                tcs.TrySetResult("el comando no se inició en " + (timeoutMs / 1000) + " s (¿nombre incorrecto o Civil 3D ocupado?)");
+            }
+
+            int restante = Math.Max(0, timeoutMs - (int)reloj.ElapsedMilliseconds);
+            var completada = await Task.WhenAny(tcs.Task, Task.Delay(restante));
+
+            if (completada != tcs.Task && !tcs.Task.IsCompleted)
+            {
+                // Mientras un comando espera entrada del usuario, el evento Idle no llega y un trabajo
+                // encolado en HiloPrincipal no se atendería. SendStringToExecute solo encola teclas,
+                // así que los ESC y el cierre del grupo se envían directamente desde este hilo.
+                Historial.Registrar("ejecutar_comando: tiempo agotado a los " + (timeoutMs / 1000) + " s, se envían ESC");
+                CerrarGrupo("\x1B\x1B");
+                tcs.TrySetResult("timeout con ESC");
+            }
+
+            // Los manejadores se desenganchan en el hilo principal cuando llegue Idle; no hace falta esperar
+            _ = HiloPrincipal.Ejecutar(() =>
+            {
+                doc.CommandWillStart -= OnCommandWillStart;
+                doc.CommandEnded -= OnCommandEnded;
+                doc.CommandCancelled -= OnCommandCancelled;
+                doc.CommandFailed -= OnCommandFailed;
+                return true;
+            });
+
+            return await tcs.Task;
+        }
+
+        private static string TipoSuperficie(CivSurface su)
+        {
+            if (su is Civ.TinVolumeSurface) return "TinVolume";
+            if (su is Civ.GridVolumeSurface) return "GridVolume";
+            if (su is Civ.TinSurface) return "TIN";
+            if (su is Civ.GridSurface) return "Grid";
+            return su.GetType().Name;
         }
 
         // ------------------------------------------------------------------ Win32

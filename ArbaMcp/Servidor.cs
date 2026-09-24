@@ -283,19 +283,64 @@ namespace ArbaMcp
         }
     }
 
-    /// <summary>Registro de comandos ejecutados y mensajes del plugin, consultable por MCP.</summary>
+    /// <summary>
+    /// Registro de comandos ejecutados y mensajes del plugin, consultable por MCP. Además de las 1000 líneas
+    /// en memoria, cada línea se añade a %LOCALAPPDATA%\ArbaMcp\historial.log (rota a 5 MB) para que
+    /// sobreviva a un cierre de Civil 3D.
+    /// </summary>
     internal static class Historial
     {
+        public const long TamanoMaximoArchivo = 5L * 1024 * 1024;
+
         private static readonly List<string> Lineas = new List<string>();
         private static readonly object Cerrojo = new object();
+        private static readonly UTF8Encoding Utf8SinBom = new UTF8Encoding(false);
         private static bool _iniciado;
+        private static string _rutaArchivo;
+        private static bool _archivoFallido;
+
+        public static string RutaArchivo
+        {
+            get
+            {
+                if (_rutaArchivo == null)
+                    _rutaArchivo = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ArbaMcp", "historial.log");
+                return _rutaArchivo;
+            }
+        }
 
         public static void Registrar(string texto)
         {
+            string hora = DateTime.Now.ToString("HH:mm:ss");
             lock (Cerrojo)
             {
-                Lineas.Add(DateTime.Now.ToString("HH:mm:ss") + "  " + texto);
+                Lineas.Add(hora + "  " + texto);
                 if (Lineas.Count > 1000) Lineas.RemoveRange(0, Lineas.Count - 1000);
+                EscribirArchivo(DateTime.Now.ToString("yyyy-MM-dd ") + hora + "  " + texto);
+            }
+        }
+
+        // Se llama con el cerrojo tomado. Si el archivo no se puede escribir, se deja de intentar (no molesta al usuario).
+        private static void EscribirArchivo(string linea)
+        {
+            if (_archivoFallido) return;
+            try
+            {
+                string ruta = RutaArchivo;
+                Directory.CreateDirectory(Path.GetDirectoryName(ruta));
+                var fi = new FileInfo(ruta);
+                if (fi.Exists && fi.Length > TamanoMaximoArchivo)
+                {
+                    string anterior = Path.Combine(Path.GetDirectoryName(ruta), "historial.1.log");
+                    if (File.Exists(anterior)) File.Delete(anterior);
+                    File.Move(ruta, anterior);
+                }
+                File.AppendAllText(ruta, linea + Environment.NewLine, Utf8SinBom);
+            }
+            catch
+            {
+                _archivoFallido = true;
+                Lineas.Add(DateTime.Now.ToString("HH:mm:ss") + "  No se puede escribir historial.log; se sigue solo en memoria");
             }
         }
 
