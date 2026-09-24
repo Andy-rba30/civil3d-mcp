@@ -52,7 +52,7 @@ namespace ArbaMcp
             return Escritura.Resultado(ctx, antes, despues, esperado, accion, extra?.Invoke());
         }
 
-        private static bool? Desactualizada(CivSurface su) => Api.Leer<bool?>(su, null, "IsOutOfDate", "OutOfDate");
+        private static bool? Desactualizada(CivSurface su) => su.IsOutOfDate;
 
         /// <summary>Líneas características del corredor (líneas base principales y desplazadas) como (código, puntos).</summary>
         private static List<(string codigo, Point3dCollection puntos)> LineasCaracteristicasCorredor(Civ.Corridor cor)
@@ -454,8 +454,9 @@ namespace ArbaMcp
                         },
                         (tr, su) =>
                         {
-                            if (!yaPegada) Api.Invocar(su, new[] { "PasteSurface", "AddPaste" }, idOrigen);
-                            Api.Invocar(su, new[] { "Rebuild" });
+                            var tin = (Civ.TinSurface)su;
+                            if (!yaPegada) tin.PasteSurface(idOrigen);
+                            tin.Rebuild();
                         },
                         "Pegar la superficie '" + origen + "' en '" + Str(a, "superficie_destino") + "' y reconstruir (si ya estaba pegada, solo reconstruir)");
                 })
@@ -477,7 +478,7 @@ namespace ArbaMcp
                     return CambiarSuperficie(ctx, nombre,
                         (tr, su) => new Dictionary<string, object> { ["superficie"] = su.Name, ["esta_desactualizada"] = Desactualizada(su) },
                         (tr, su) => Desactualizada(su).HasValue ? new Dictionary<string, object> { ["esta_desactualizada"] = false } : new Dictionary<string, object>(),
-                        (tr, su) => { var reloj = System.Diagnostics.Stopwatch.StartNew(); Api.Invocar(su, new[] { "Rebuild" }); ms = reloj.ElapsedMilliseconds; },
+                        (tr, su) => { var reloj = System.Diagnostics.Stopwatch.StartNew(); su.Rebuild(); ms = reloj.ElapsedMilliseconds; },
                         "Reconstruir la superficie '" + nombre + "'",
                         () => new { ms });
                 })

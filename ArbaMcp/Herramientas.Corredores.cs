@@ -20,15 +20,6 @@ namespace ArbaMcp
     /// </summary>
     public static partial class Herramientas
     {
-        // Nombres candidatos de los miembros de la API que cambian entre versiones (se resuelven por reflexión, ver Api.cs)
-        private static readonly string[] FrecTangentes = { "FrequencyAlongTangents", "FrequencyAlongTangent", "TangentFrequency" };
-        private static readonly string[] FrecCurvas = { "FrequencyAlongCurves", "FrequencyAlongCurve", "CurveFrequency" };
-        private static readonly string[] FrecEspirales = { "FrequencyAlongSpirals", "FrequencyAlongSpiral", "SpiralFrequency" };
-        private static readonly string[] FrecPerfil = { "FrequencyAlongProfileCurves", "FrequencyAlongProfileCurve", "ProfileCurveFrequency", "FrequencyAlongProfile" };
-        private static readonly string[] EstacionesAdic = { "AdditionalStations", "AdditionalStationCollection" };
-        private static readonly string[] NombreLogico = { "LogicalName", "TargetName", "ParameterName" };
-        private static readonly string[] GrupoObjetivo = { "AssemblyGroupName", "GroupName" };
-
         private static readonly Dictionary<string, DateTime> UltimaReconstruccion = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 
         // ------------------------------------------------------------------ búsqueda
@@ -194,8 +185,8 @@ namespace ArbaMcp
         {
             string o = Seguro(() => info.TargetToOption.ToString(), "");
             if (o.IndexOf("Nearest", StringComparison.OrdinalIgnoreCase) >= 0) return "mas_cercano";
-            if (o.IndexOf("Outside", StringComparison.OrdinalIgnoreCase) >= 0) return "exterior";
-            if (o.IndexOf("Inside", StringComparison.OrdinalIgnoreCase) >= 0) return "interior";
+            if (o.IndexOf("Farthest", StringComparison.OrdinalIgnoreCase) >= 0 || o.IndexOf("Outside", StringComparison.OrdinalIgnoreCase) >= 0) return "exterior";
+            if (o.IndexOf("Flattest", StringComparison.OrdinalIgnoreCase) >= 0 || o.IndexOf("Inside", StringComparison.OrdinalIgnoreCase) >= 0) return "interior";
             return string.IsNullOrEmpty(o) ? null : o.ToLowerInvariant();
         }
 
@@ -204,8 +195,8 @@ namespace ArbaMcp
             switch ((opcion ?? "").Trim().ToLowerInvariant())
             {
                 case "mas_cercano": case "más_cercano": case "cercano": case "nearest": return "Nearest";
-                case "exterior": case "outside": return "Outside";
-                case "interior": case "inside": return "Inside";
+                case "exterior": case "outside": case "farthest": return "Farthest";
+                case "interior": case "inside": case "flattest": return "Flattest";
                 default: throw new ArgumentException("El parámetro 'opcion' debe ser 'mas_cercano', 'exterior' o 'interior' (recibido: '" + opcion + "').");
             }
         }
@@ -218,23 +209,64 @@ namespace ArbaMcp
             return "ninguno";
         }
 
-        private static string LadoSubensamblaje(Transaction tr, ObjectId idSub)
+        private static Civ.Subassembly BuscarSubensamblaje(Transaction tr, ObjectId idEnsamblaje, string assemblyGroupName, string subassemblyName, string logicalName = null)
         {
-            if (idSub.IsNull) return null;
-            try { return tr.GetObject(idSub, OpenMode.ForRead) is Civ.Subassembly sub ? Lado(sub.Side) : null; }
+            if (idEnsamblaje.IsNull) return null;
+            try
+            {
+                if (!(tr.GetObject(idEnsamblaje, OpenMode.ForRead) is Civ.Assembly asm)) return null;
+                Civ.Subassembly primerCandidato = null;
+                Civ.Subassembly candidatoDesempate = null;
+                int coincidencias = 0;
+
+                foreach (Civ.AssemblyGroup g in asm.Groups)
+                {
+                    if (!string.IsNullOrEmpty(assemblyGroupName) && !string.Equals(g.Name, assemblyGroupName, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    foreach (ObjectId id in g.GetSubassemblyIds())
+                    {
+                        if (tr.GetObject(id, OpenMode.ForRead) is Civ.Subassembly sub)
+                        {
+                            if (string.Equals(sub.Name, subassemblyName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                coincidencias++;
+                                if (primerCandidato == null) primerCandidato = sub;
+                                if (!string.IsNullOrEmpty(logicalName) && ParametrosSubensamblaje(sub).ContainsKey(logicalName))
+                                {
+                                    candidatoDesempate = sub;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (coincidencias > 1 && candidatoDesempate != null) return candidatoDesempate;
+                return primerCandidato;
+            }
             catch { return null; }
         }
 
-        /// <summary>Nombre del grupo del ensamblaje que contiene el subensamblaje (buscando en los grupos, sin depender de propiedades opcionales).</summary>
-        private static string GrupoDeSubensamblaje(Transaction tr, ObjectId idEnsamblaje, ObjectId idSub)
+        private static string LadoDeSubensamblaje(Transaction tr, ObjectId idEnsamblaje, string assemblyGroupName, string subassemblyName, string logicalName = null)
         {
-            if (idEnsamblaje.IsNull || idSub.IsNull) return null;
+            var sub = BuscarSubensamblaje(tr, idEnsamblaje, assemblyGroupName, subassemblyName, logicalName);
+            return sub != null ? Lado(sub.Side) : null;
+        }
+
+        private static string GrupoDeSubensamblaje(Transaction tr, ObjectId idEnsamblaje, string subassemblyName)
+        {
+            if (idEnsamblaje.IsNull || string.IsNullOrEmpty(subassemblyName)) return null;
             try
             {
                 if (!(tr.GetObject(idEnsamblaje, OpenMode.ForRead) is Civ.Assembly asm)) return null;
                 foreach (Civ.AssemblyGroup g in asm.Groups)
+                {
                     foreach (ObjectId id in g.GetSubassemblyIds())
-                        if (id == idSub) return g.Name;
+                    {
+                        if (tr.GetObject(id, OpenMode.ForRead) is Civ.Subassembly sub &&
+                            string.Equals(sub.Name, subassemblyName, StringComparison.OrdinalIgnoreCase))
+                            return g.Name;
+                    }
+                }
             }
             catch { }
             return null;
@@ -260,20 +292,34 @@ namespace ArbaMcp
             return d;
         }
 
-        private static double? Frecuencia(Civ.BaselineRegion reg, string[] nombres)
+        private static double? Frecuencia(Civ.BaselineRegion reg, string tipo)
         {
-            var v = Api.Leer<double?>(reg, null, nombres);
-            return v.HasValue ? N(v.Value) : null;
+            try
+            {
+                var s = reg.AppliedAssemblySetting;
+                if (s == null) return null;
+                double v = tipo switch
+                {
+                    "tangentes" => s.FrequencyAlongTangents,
+                    "curvas" => s.FrequencyAlongCurves,
+                    "espirales" => s.FrequencyAlongSpirals,
+                    "perfil" => s.FrequencyAlongProfileCurves,
+                    _ => 0
+                };
+                return N(v);
+            }
+            catch { return null; }
         }
 
         private static List<double?> EstacionesAdicionales(Civ.BaselineRegion reg)
         {
             var l = new List<double?>();
-            if (Api.IntentarLeer(reg, out object col, EstacionesAdic))
-                foreach (var x in Api.Lista(col))
-                {
-                    try { l.Add(N(Convert.ToDouble(x, CultureInfo.InvariantCulture))); } catch { }
-                }
+            try
+            {
+                foreach (double st in reg.AdditionalStations())
+                    l.Add(N(st));
+            }
+            catch { }
             return l.OrderBy(x => x).ToList();
         }
 
@@ -285,30 +331,34 @@ namespace ArbaMcp
             inicio = N(reg.StartStation),
             fin = N(reg.EndStation),
             ensamblaje = NombreDe(tr, reg.AssemblyId),
-            frecuencia_tangentes = Frecuencia(reg, FrecTangentes),
-            frecuencia_curvas = Frecuencia(reg, FrecCurvas),
-            frecuencia_espirales = Frecuencia(reg, FrecEspirales),
-            frecuencia_perfil = Frecuencia(reg, FrecPerfil),
+            frecuencia_tangentes = Frecuencia(reg, "tangentes"),
+            frecuencia_curvas = Frecuencia(reg, "curvas"),
+            frecuencia_espirales = Frecuencia(reg, "espirales"),
+            frecuencia_perfil = Frecuencia(reg, "perfil"),
             estaciones_adicionales = EstacionesAdicionales(reg)
         };
 
-        private static object InfoObjetivo(Transaction tr, Civ.SubassemblyTargetInfo info, ObjectId idEnsamblaje) => new
+        private static object InfoObjetivo(Transaction tr, Civ.SubassemblyTargetInfo info, ObjectId idEnsamblaje)
         {
-            subensamblaje = info.SubassemblyName,
-            grupo = GrupoDeSubensamblaje(tr, idEnsamblaje, info.SubassemblyId) ?? Api.Leer<string>(info, null, GrupoObjetivo),
-            lado = LadoSubensamblaje(tr, info.SubassemblyId),
-            tipo = TipoObjetivo(info),
-            parametro = Api.Leer<string>(info, null, NombreLogico),
-            objetivos = IdsObjetivo(info).Select(id => DescribirObjeto(tr, id)).ToList(),
-            opcion_objetivo = OpcionObjetivo(info)
-        };
+            string grupo = info.AssemblyGroupName ?? GrupoDeSubensamblaje(tr, idEnsamblaje, info.SubassemblyName);
+            return new
+            {
+                subensamblaje = info.SubassemblyName,
+                grupo = grupo,
+                lado = LadoDeSubensamblaje(tr, idEnsamblaje, grupo, info.SubassemblyName, info.LogicalName),
+                tipo = TipoObjetivo(info),
+                parametro = info.LogicalName,
+                objetivos = IdsObjetivo(info).Select(id => DescribirObjeto(tr, id)).ToList(),
+                opcion_objetivo = OpcionObjetivo(info)
+            };
+        }
 
         /// <summary>Estado comparable de un objetivo (para antes/después).</summary>
         private static Dictionary<string, object> EstadoObjetivo(Transaction tr, Civ.SubassemblyTargetInfo info) => new Dictionary<string, object>
         {
             ["subensamblaje"] = info.SubassemblyName,
             ["tipo"] = TipoObjetivo(info),
-            ["parametro"] = Api.Leer<string>(info, null, NombreLogico),
+            ["parametro"] = info.LogicalName,
             ["objetivos"] = IdsObjetivo(info).Select(id => TextoObjeto(tr, id)).ToList(),
             ["opcion"] = OpcionObjetivo(info)
         };
@@ -335,14 +385,14 @@ namespace ArbaMcp
 
             if (candidatos.Count > 1)
             {
-                var porGrupo = candidatos.Select(c => new { info = c, grupo = GrupoDeSubensamblaje(tr, reg.AssemblyId, c.SubassemblyId) ?? Api.Leer<string>(c, "?", GrupoObjetivo), parametro = Api.Leer<string>(c, "?", NombreLogico) }).ToList();
+                var porGrupo = candidatos.Select(c => new { info = c, grupo = c.AssemblyGroupName ?? GrupoDeSubensamblaje(tr, reg.AssemblyId, c.SubassemblyName), parametro = c.LogicalName }).ToList();
                 if (porGrupo.Select(x => x.grupo).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1)
                 {
                     if (string.IsNullOrWhiteSpace(grupo))
                         throw new ArgumentException("Hay " + candidatos.Count + " subensamblajes llamados '" + subensamblaje + "' en la región '" + reg.Name + "'. Indica el parámetro 'grupo' con uno de: " + string.Join(", ", porGrupo.Select(x => x.grupo).Distinct()) + ".");
                     porGrupo = porGrupo.Where(x => string.Equals(x.grupo, grupo, StringComparison.OrdinalIgnoreCase)).ToList();
                     if (porGrupo.Count == 0)
-                        throw new ArgumentException("Ningún subensamblaje '" + subensamblaje + "' está en el grupo '" + grupo + "'. Grupos posibles: " + string.Join(", ", candidatos.Select(c => GrupoDeSubensamblaje(tr, reg.AssemblyId, c.SubassemblyId)).Distinct()) + ".");
+                        throw new ArgumentException("Ningún subensamblaje '" + subensamblaje + "' está en el grupo '" + grupo + "'. Grupos posibles: " + string.Join(", ", candidatos.Select(c => c.AssemblyGroupName ?? GrupoDeSubensamblaje(tr, reg.AssemblyId, c.SubassemblyName)).Distinct()) + ".");
                 }
                 if (porGrupo.Count > 1)
                 {
@@ -386,36 +436,50 @@ namespace ArbaMcp
 
         private static List<string> Ordenada(IEnumerable<string> l) => l.Where(x => x != null).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
 
-        /// <summary>Códigos de enlace o de punto de una superficie de corredor; null si la API cargada no expone el miembro.</summary>
+        /// <summary>Códigos de enlace, de punto o de línea característica de una superficie de corredor.</summary>
         private static List<string> Codigos(Civ.CorridorSurface cs, string tipo)
         {
-            string[] nombres = tipo == "enlace" ? new[] { "LinkCodes", "GetLinkCodes" } : new[] { "PointCodes", "GetPointCodes" };
-            return Api.IntentarLeer(cs, out object col, nombres) ? Ordenada(Api.Lista(col).Select(x => x?.ToString())) : null;
+            if (cs == null) return null;
+            try
+            {
+                if (tipo == "enlace") return Ordenada(cs.LinkCodes());
+                if (tipo == "linea_caracteristica") return Ordenada(cs.FeatureLineCodes());
+                return Ordenada(cs.PointCodes());
+            }
+            catch { return null; }
         }
 
         private static List<object> Contornos(Civ.CorridorSurface cs)
         {
             var l = new List<object>();
-            foreach (var b in Api.Lista(Seguro<object>(() => cs.Boundaries)))
-                l.Add(new
-                {
-                    nombre = Api.Leer<string>(b, null, "Name"),
-                    tipo = Api.Leer<object>(b, null, "BoundaryType", "Type")?.ToString(),
-                    usar_como_exterior = Api.Leer<bool?>(b, null, "UseAsOuterBoundary", "IsOuterBoundary", "UseAsOuter")
-                });
+            try
+            {
+                foreach (Civ.CorridorSurfaceBoundary b in cs.Boundaries)
+                    l.Add(new
+                    {
+                        nombre = b.Name,
+                        tipo = b.BoundaryType.ToString(),
+                        usar_como_exterior = (bool?)b.IsCorridorExtents
+                    });
+            }
+            catch { }
             return l;
         }
 
         private static object InfoSuperficieCorredor(Transaction tr, Civ.CorridorSurface cs)
         {
-            var idSu = Api.Leer<ObjectId>(cs, ObjectId.Null, "SurfaceId");
-            bool? desact = Api.Leer<bool?>(cs, null, "IsOutOfDate", "OutOfDate");
-            if (!desact.HasValue && !idSu.IsNull) desact = Api.Leer<bool?>(Seguro(() => tr.GetObject(idSu, OpenMode.ForRead)), null, "IsOutOfDate", "OutOfDate");
+            var idSu = cs.SurfaceId;
+            bool? desact = null;
+            if (!idSu.IsNull)
+            {
+                try { if (tr.GetObject(idSu, OpenMode.ForRead) is Civ.Surface s) desact = s.IsOutOfDate; } catch { }
+            }
             return new
             {
                 nombre = cs.Name,
                 codigos_enlace = Codigos(cs, "enlace"),
                 codigos_punto = Codigos(cs, "punto"),
+                codigos_lineas_caracteristicas = Codigos(cs, "linea_caracteristica"),
                 contornos = Contornos(cs),
                 esta_desactualizada = desact
             };
@@ -606,16 +670,18 @@ namespace ArbaMcp
                                 foreach (ObjectId idSub in g.GetSubassemblyIds())
                                 {
                                     if (!(tr.GetObject(idSub, OpenMode.ForRead) is Civ.Subassembly sub)) continue;
-                                    string lado = Lado(Seguro<object>(() => sub.Side));
+                                    string lado = Lado(sub.Side);
                                     lados.Add(lado);
                                     subs.Add(new
                                     {
                                         nombre = sub.Name,
+                                        // Subassembly no expone nombre de catálogo/tipo de componente en propiedad tipada directa
                                         tipo = Api.Leer<string>(sub, null, "MacroName", "SubassemblyName", "ClassName", "DefaultName") ?? sub.GetType().Name,
                                         lado,
                                         parametros = ParametrosSubensamblaje(sub)
                                     });
                                 }
+                                // AssemblyGroup no expone Side tipado en Civil 3D 2027; se deduce de los subensamblajes
                                 string ladoGrupo = Api.Leer<object>(g, null, "Side") is object s ? Lado(s)
                                     : lados.Distinct().Count() == 1 ? lados[0] : lados.Count == 0 ? "ninguno" : "mixto";
                                 grupos.Add(new { nombre = g.Name, lado = ladoGrupo, subensamblajes = subs });
@@ -623,7 +689,7 @@ namespace ArbaMcp
                             lista.Add(new
                             {
                                 nombre = asm.Name,
-                                tipo = Api.Leer<object>(asm, null, "AssemblyType", "Type")?.ToString(),
+                                tipo = asm.Type.ToString(),
                                 grupos,
                                 usado_en = usos.TryGetValue(id, out var u) ? u : new List<object>()
                             });
@@ -651,19 +717,16 @@ namespace ArbaMcp
                             if (!id.ObjectClass.IsDerivedFrom(clase)) continue;
                             if (!(tr.GetObject(id, OpenMode.ForRead) is Civ.Intersection inter)) continue;
 
-                            var idPrim = Api.Leer<ObjectId>(inter, ObjectId.Null, "PrimaryRoadAlignmentId", "PrimaryAlignmentId", "PrimaryRoadId");
-                            var idSec = Api.Leer<ObjectId>(inter, ObjectId.Null, "SecondaryRoadAlignmentId", "SecondaryAlignmentId", "SecondaryRoadId");
-                            var loc = Api.Leer<Point3d?>(inter, null, "Location", "IntersectionPoint", "Position");
-                            double? pkPrim = Api.Leer<double?>(inter, null, "PrimaryRoadStation", "PrimaryStation");
-                            double? pkSec = Api.Leer<double?>(inter, null, "SecondaryRoadStation", "SecondaryStation");
-                            if (loc.HasValue)
-                            {
-                                if (!pkPrim.HasValue && !idPrim.IsNull) pkPrim = Seguro<double?>(() => { double s = 0, o = 0; ((CivAlignment)tr.GetObject(idPrim, OpenMode.ForRead)).StationOffset(loc.Value.X, loc.Value.Y, ref s, ref o); return s; });
-                                if (!pkSec.HasValue && !idSec.IsNull) pkSec = Seguro<double?>(() => { double s = 0, o = 0; ((CivAlignment)tr.GetObject(idSec, OpenMode.ForRead)).StationOffset(loc.Value.X, loc.Value.Y, ref s, ref o); return s; });
-                            }
+                            ObjectId idPrim = inter.IntersectionRoads.Count > 0 ? inter.IntersectionRoads[0].CenterlineAlignmentId : ObjectId.Null;
+                            ObjectId idSec = inter.IntersectionRoads.Count > 1 ? inter.IntersectionRoads[1].CenterlineAlignmentId : ObjectId.Null;
+                            Point3d loc = inter.Location;
+                            double? pkPrim = null;
+                            double? pkSec = null;
+                            if (!idPrim.IsNull) pkPrim = Seguro<double?>(() => { double st = 0, o = 0; ((CivAlignment)tr.GetObject(idPrim, OpenMode.ForRead)).StationOffset(loc.X, loc.Y, ref st, ref o); return st; });
+                            if (!idSec.IsNull) pkSec = Seguro<double?>(() => { double st = 0, o = 0; ((CivAlignment)tr.GetObject(idSec, OpenMode.ForRead)).StationOffset(loc.X, loc.Y, ref st, ref o); return st; });
 
-                            // Corredor: propiedad si existe; si no, corredores con línea base sobre esos ejes en la progresiva de cruce
-                            var idCor = Api.Leer<ObjectId>(inter, ObjectId.Null, "CorridorId");
+                            // Corredor: propiedad tipada directa CorridorId
+                            var idCor = inter.CorridorId;
                             var corredores = new List<string>();
                             var regiones = new List<object>();
                             foreach (ObjectId idC in CivilApplication.ActiveDocument.CorridorCollection)
@@ -673,7 +736,7 @@ namespace ArbaMcp
                                 bool implicado = idC == idCor;
                                 foreach (Civ.Baseline bl in cor.Baselines)
                                 {
-                                    var idAl = Seguro(() => bl.AlignmentId, ObjectId.Null);
+                                    var idAl = bl.AlignmentId;
                                     double? pk = idAl == idPrim ? pkPrim : idAl == idSec ? pkSec : null;
                                     if (!pk.HasValue) continue;
                                     foreach (Civ.BaselineRegion reg in bl.BaselineRegions)
@@ -693,10 +756,10 @@ namespace ArbaMcp
                                 eje_secundario = NombreDe(tr, idSec),
                                 pk_principal = pkPrim.HasValue ? N(pkPrim.Value) : null,
                                 pk_secundaria = pkSec.HasValue ? N(pkSec.Value) : null,
-                                x = loc.HasValue ? N(loc.Value.X) : null,
-                                y = loc.HasValue ? N(loc.Value.Y) : null,
+                                x = N(loc.X),
+                                y = N(loc.Y),
                                 corredor = corredores.Count == 1 ? corredores[0] : corredores.Count == 0 ? null : string.Join("; ", corredores),
-                                tipo = Api.Leer<object>(inter, null, "IntersectionType", "Type")?.ToString(),
+                                tipo = inter.GradeRuleType.ToString(),
                                 regiones_generadas = regiones
                             });
                         }
@@ -844,7 +907,7 @@ namespace ArbaMcp
                         {
                             var ids = ResolverObjetivo(tr, db, tipo, objetivo, alPerfil);
                             var e = new Dictionary<string, object> { ["objetivos"] = ids.Cast<ObjectId>().Select(id => TextoObjeto(tr, id)).ToList() };
-                            if (!string.IsNullOrWhiteSpace(opcion)) e["opcion"] = OpcionApi(opcion) == "Nearest" ? "mas_cercano" : OpcionApi(opcion) == "Outside" ? "exterior" : "interior";
+                            if (!string.IsNullOrWhiteSpace(opcion)) e["opcion"] = OpcionApi(opcion) == "Nearest" ? "mas_cercano" : OpcionApi(opcion) == "Farthest" ? "exterior" : "interior";
                             return e;
                         },
                         (tr, cor) =>
@@ -852,12 +915,8 @@ namespace ArbaMcp
                             var reg = BuscarRegion(BuscarLineaBase(cor, lineaBase), region);
                             var (coleccion, info) = BuscarObjetivoInfo(tr, reg, sub, tipo, grupo, parametro);
                             info.TargetIds = ResolverObjetivo(tr, db, tipo, objetivo, alPerfil);
-                            if (!string.IsNullOrWhiteSpace(opcion)) Api.Asignar(info, OpcionApi(opcion), "TargetToOption");
-                            if (mismoLado.HasValue)
-                            {
-                                try { Api.Asignar(info, mismoLado.Value, "UseSameSide", "SameSide", "IsSameSide"); }
-                                catch (MissingMemberException) { ctx.Avisos.Add("La API de esta versión no expone 'mismo_lado' en SubassemblyTargetInfo; se ignoró."); }
-                            }
+                            if (!string.IsNullOrWhiteSpace(opcion) && Enum.TryParse<Civ.SubassemblyTargetToOption>(OpcionApi(opcion), true, out var opt)) info.TargetToOption = opt;
+                            if (mismoLado.HasValue) info.UseSameSideTarget = mismoLado.Value;
                             reg.SetTargets(coleccion);
                         },
                         "Asignar '" + objetivo + "' como objetivo de " + tipo + " del subensamblaje '" + sub + "' en la región '" + region + "'");
@@ -899,7 +958,7 @@ namespace ArbaMcp
                         foreach (var (bl, reg) in Ambito(cor))
                             foreach (Civ.SubassemblyTargetInfo info in reg.GetTargets())
                                 if (TipoObjetivo(info) == "superficie")
-                                    d[bl.Name + " / " + reg.Name + " / " + info.SubassemblyName + " / " + (Api.Leer<string>(info, "superficie", NombreLogico))] = IdsObjetivo(info).Select(id => NombreDe(tr, id)).FirstOrDefault();
+                                    d[bl.Name + " / " + reg.Name + " / " + info.SubassemblyName + " / " + (info.LogicalName ?? "superficie")] = IdsObjetivo(info).Select(id => NombreDe(tr, id)).FirstOrDefault();
                         return d;
                     }
                     string nombreReal = null;
@@ -974,16 +1033,22 @@ namespace ArbaMcp
                             var bl = BuscarLineaBase(cor, lineaBase);
                             var reg = BuscarRegion(bl, region);
                             double finAntiguo = reg.EndStation;
-                            // Si la API tiene un Split nativo se usa; si no, se recorta y se añade la segunda región
-                            if (Api.IntentarInvocar(bl.BaselineRegions, out _, new[] { "Split", "SplitRegion" }, reg, pk)
-                                || Api.IntentarInvocar(reg, out _, new[] { "Split", "SplitAt" }, pk))
+                            try
+                            {
+                                reg.Split(pk);
                                 return;
+                            }
+                            catch { }
                             reg.EndStation = pk;
                             var nueva = bl.BaselineRegions.Add(nombreNueva, reg.AssemblyId, pk, finAntiguo);
-                            foreach (var nombres in new[] { FrecTangentes, FrecCurvas, FrecEspirales, FrecPerfil })
+                            var sReg = reg.AppliedAssemblySetting;
+                            var sNueva = nueva.AppliedAssemblySetting;
+                            if (sReg != null && sNueva != null)
                             {
-                                var v = Api.Leer<double?>(reg, null, nombres);
-                                if (v.HasValue) { try { Api.Asignar(nueva, v.Value, nombres); } catch (Exception ex) { ctx.Avisos.Add("No se copió la frecuencia " + nombres[0] + ": " + ex.Message); } }
+                                sNueva.FrequencyAlongTangents = sReg.FrequencyAlongTangents;
+                                sNueva.FrequencyAlongCurves = sReg.FrequencyAlongCurves;
+                                sNueva.FrequencyAlongSpirals = sReg.FrequencyAlongSpirals;
+                                sNueva.FrequencyAlongProfileCurves = sReg.FrequencyAlongProfileCurves;
                             }
                             try { nueva.SetTargets(reg.GetTargets()); }
                             catch (Exception ex) { ctx.Avisos.Add("No se copiaron los objetivos a la región nueva: " + ex.Message + ". Asígnalos con asignar_objetivo."); }
@@ -1050,13 +1115,13 @@ namespace ArbaMcp
                 Ejecutar = a => Escritura.Ejecutar("establecer_frecuencia", a, ctx =>
                 {
                     string lineaBase = Requerido(a, "linea_base"), region = Requerido(a, "region");
-                    var pedidas = new Dictionary<string, (string[] nombres, double valor)>();
-                    if (Tiene(a, "tangentes")) pedidas["frecuencia_tangentes"] = (FrecTangentes, Num(a, "tangentes", 0));
-                    if (Tiene(a, "curvas")) pedidas["frecuencia_curvas"] = (FrecCurvas, Num(a, "curvas", 0));
-                    if (Tiene(a, "espirales")) pedidas["frecuencia_espirales"] = (FrecEspirales, Num(a, "espirales", 0));
-                    if (Tiene(a, "perfil")) pedidas["frecuencia_perfil"] = (FrecPerfil, Num(a, "perfil", 0));
+                    var pedidas = new Dictionary<string, double>();
+                    if (Tiene(a, "tangentes")) pedidas["frecuencia_tangentes"] = Num(a, "tangentes", 0);
+                    if (Tiene(a, "curvas")) pedidas["frecuencia_curvas"] = Num(a, "curvas", 0);
+                    if (Tiene(a, "espirales")) pedidas["frecuencia_espirales"] = Num(a, "espirales", 0);
+                    if (Tiene(a, "perfil")) pedidas["frecuencia_perfil"] = Num(a, "perfil", 0);
                     if (pedidas.Count == 0) throw new ArgumentException("Indica al menos una frecuencia: tangentes, curvas, espirales o perfil.");
-                    foreach (var kv in pedidas) if (kv.Value.valor <= 0) throw new ArgumentException("La frecuencia '" + kv.Key + "' debe ser mayor que 0.");
+                    foreach (var kv in pedidas) if (kv.Value <= 0) throw new ArgumentException("La frecuencia '" + kv.Key + "' debe ser mayor que 0.");
 
                     return CambiarCorredor(ctx, Requerido(a, "corredor"),
                         (tr, cor) =>
@@ -1065,19 +1130,23 @@ namespace ArbaMcp
                             return new Dictionary<string, object>
                             {
                                 ["region"] = reg.Name,
-                                ["frecuencia_tangentes"] = Frecuencia(reg, FrecTangentes),
-                                ["frecuencia_curvas"] = Frecuencia(reg, FrecCurvas),
-                                ["frecuencia_espirales"] = Frecuencia(reg, FrecEspirales),
-                                ["frecuencia_perfil"] = Frecuencia(reg, FrecPerfil)
+                                ["frecuencia_tangentes"] = Frecuencia(reg, "tangentes"),
+                                ["frecuencia_curvas"] = Frecuencia(reg, "curvas"),
+                                ["frecuencia_espirales"] = Frecuencia(reg, "espirales"),
+                                ["frecuencia_perfil"] = Frecuencia(reg, "perfil")
                             };
                         },
-                        (tr, cor) => pedidas.ToDictionary(kv => kv.Key, kv => (object)N(kv.Value.valor)),
+                        (tr, cor) => pedidas.ToDictionary(kv => kv.Key, kv => (object)N(kv.Value)),
                         (tr, cor) =>
                         {
                             var reg = BuscarRegion(BuscarLineaBase(cor, lineaBase), region);
-                            foreach (var kv in pedidas) Api.Asignar(reg, kv.Value.valor, kv.Value.nombres);
+                            var s = reg.AppliedAssemblySetting;
+                            if (pedidas.TryGetValue("frecuencia_tangentes", out double ft)) s.FrequencyAlongTangents = ft;
+                            if (pedidas.TryGetValue("frecuencia_curvas", out double fc)) s.FrequencyAlongCurves = fc;
+                            if (pedidas.TryGetValue("frecuencia_espirales", out double fe)) s.FrequencyAlongSpirals = fe;
+                            if (pedidas.TryGetValue("frecuencia_perfil", out double fp)) s.FrequencyAlongProfileCurves = fp;
                         },
-                        "Cambiar frecuencias de la región '" + region + "': " + string.Join(", ", pedidas.Select(kv => kv.Key + "=" + kv.Value.valor.ToString(CultureInfo.InvariantCulture))));
+                        "Cambiar frecuencias de la región '" + region + "': " + string.Join(", ", pedidas.Select(kv => kv.Key + "=" + kv.Value.ToString(CultureInfo.InvariantCulture))));
                 })
             });
 
@@ -1113,9 +1182,7 @@ namespace ArbaMcp
                         (tr, cor) =>
                         {
                             var reg = BuscarRegion(BuscarLineaBase(cor, lineaBase), region);
-                            // 1) colección AdditionalStations con Add; 2) método de la región; si nada existe, error con los miembros disponibles
-                            if (Api.IntentarLeer(reg, out object col, EstacionesAdic) && col != null && Api.IntentarInvocar(col, out _, new[] { "Add" }, pk)) { }
-                            else Api.Invocar(reg, new[] { "AddAdditionalStation", "AddStation" }, pk);
+                            reg.AddStation(pk, "MCP");
                         },
                         "Añadir la estación " + pk + " a la región '" + region + "'");
                 })
@@ -1192,13 +1259,13 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "agregar_codigo_superficie_corredor",
-                Descripcion = "Añade un código de enlace (AddLinkCode) o de punto (AddPointCode) a una superficie de corredor.",
+                Descripcion = "Añade un código de enlace (AddLinkCode) o de línea característica (AddFeatureLineCode) a una superficie de corredor.",
                 Parametros =
                 {
                     P("corredor", "string", "Nombre del corredor", true),
                     P("superficie", "string", "Nombre de la superficie del corredor", true),
                     P("codigo", "string", "Código, por ejemplo Top, Datum, Pave, Daylight", true),
-                    P("tipo", "string", "enlace (por defecto) o punto"),
+                    P("tipo", "string", "enlace (por defecto), linea_caracteristica o punto (alias de compatibilidad)"),
                     P("como_linea_rotura", "boolean", "Para códigos de enlace: añadir como líneas de rotura (por defecto true)"),
                     P("simular", "boolean", "Con true devuelve lo que haría sin tocar nada")
                 },
@@ -1206,12 +1273,27 @@ namespace ArbaMcp
                 {
                     string superficie = Requerido(a, "superficie"), codigo = Requerido(a, "codigo");
                     string tipo = (Str(a, "tipo", "enlace") ?? "enlace").Trim().ToLowerInvariant();
-                    if (tipo == "link") tipo = "enlace"; if (tipo == "point") tipo = "punto";
-                    if (tipo != "enlace" && tipo != "punto") throw new ArgumentException("El parámetro 'tipo' debe ser 'enlace' o 'punto'.");
+                    if (tipo == "link") tipo = "enlace";
+                    if (tipo == "point" || tipo == "punto")
+                    {
+                        tipo = "linea_caracteristica";
+                        ctx.Avisos.Add("El tipo 'punto' se procesó como 'linea_caracteristica' (AddFeatureLineCode), ya que Civil 3D 2027 define las superficies de corredor por líneas características.");
+                    }
+                    if (tipo != "enlace" && tipo != "linea_caracteristica")
+                        throw new ArgumentException("El parámetro 'tipo' debe ser 'enlace' o 'linea_caracteristica' (o 'punto' como alias).");
                     bool rotura = Bool(a, "como_linea_rotura", true);
-                    string clave = tipo == "enlace" ? "codigos_enlace" : "codigos_punto";
+                    string clave = tipo == "enlace" ? "codigos_enlace" : "codigos_lineas_caracteristicas";
                     return CambiarCorredor(ctx, Requerido(a, "corredor"),
-                        (tr, cor) => { var cs = BuscarSuperficieCorredor(cor, superficie); return new Dictionary<string, object> { ["superficie"] = cs.Name, ["codigos_enlace"] = Codigos(cs, "enlace"), ["codigos_punto"] = Codigos(cs, "punto") }; },
+                        (tr, cor) =>
+                        {
+                            var cs = BuscarSuperficieCorredor(cor, superficie);
+                            return new Dictionary<string, object>
+                            {
+                                ["superficie"] = cs.Name,
+                                ["codigos_enlace"] = Codigos(cs, "enlace"),
+                                ["codigos_lineas_caracteristicas"] = Codigos(cs, "linea_caracteristica")
+                            };
+                        },
                         (tr, cor) =>
                         {
                             var l = Codigos(BuscarSuperficieCorredor(cor, superficie), tipo);
@@ -1219,7 +1301,12 @@ namespace ArbaMcp
                             if (!l.Contains(codigo, StringComparer.OrdinalIgnoreCase)) l.Add(codigo);
                             return new Dictionary<string, object> { [clave] = Ordenada(l) };
                         },
-                        (tr, cor) => { var cs = BuscarSuperficieCorredor(cor, superficie); if (tipo == "enlace") cs.AddLinkCode(codigo, rotura); else cs.AddPointCode(codigo); },
+                        (tr, cor) =>
+                        {
+                            var cs = BuscarSuperficieCorredor(cor, superficie);
+                            if (tipo == "enlace") cs.AddLinkCode(codigo, rotura);
+                            else cs.AddFeatureLineCode(codigo);
+                        },
                         "Añadir el código de " + tipo + " '" + codigo + "' a la superficie '" + superficie + "'");
                 })
             });
@@ -1257,7 +1344,7 @@ namespace ArbaMcp
                         if (!idFl.IsNull) return idFl;
                         throw new ArgumentException("No se encontró la polilínea '" + poligono + "' (usa el handle hexadecimal o el nombre de una línea característica).");
                     }
-                    List<string> NombresContornos(Civ.CorridorSurface cs) => Ordenada(Contornos(cs).Select(c => Api.Leer<string>(c, null, "nombre")));
+                    List<string> NombresContornos(Civ.CorridorSurface cs) => Ordenada(cs.Boundaries.BoundaryNames());
 
                     return CambiarCorredor(ctx, Requerido(a, "corredor"),
                         (tr, cor) => { var cs = BuscarSuperficieCorredor(cor, superficie); var c = NombresContornos(cs); return new Dictionary<string, object> { ["superficie"] = cs.Name, ["n_contornos"] = c.Count, ["contornos"] = c }; },
@@ -1271,15 +1358,13 @@ namespace ArbaMcp
                         (tr, cor) =>
                         {
                             var cs = BuscarSuperficieCorredor(cor, superficie);
-                            object contorno;
+                            Civ.CorridorSurfaceBoundary contorno;
                             try
                             {
                                 if (tipo == "exterior_poligono")
-                                    contorno = Api.Invocar(cs.Boundaries, new[] { "Add", "AddPolygonBoundary" }, nombre, ResolverPoligono(tr));
-                                else if (tipo == "talud_automatico")
-                                    contorno = Api.Invocar(cs.Boundaries, new[] { "AddCorridorExtentsBoundary", "AddAutomaticBoundary", "AddDaylightBoundary" }, nombre);
+                                    contorno = cs.Boundaries.Add(nombre, ResolverPoligono(tr));
                                 else
-                                    contorno = Api.Invocar(cs.Boundaries, new[] { "AddBaselineExtentsBoundary", "AddBaselineBoundary", "AddCorridorExtentsBoundary" }, nombre);
+                                    contorno = cs.Boundaries.AddCorridorExtentsBoundary(nombre);
                             }
                             catch (Exception ex) when (EsErrorContornoAbierto(ex))
                             {
@@ -1287,8 +1372,8 @@ namespace ArbaMcp
                             }
                             if (contorno != null)
                             {
-                                try { Api.Asignar(contorno, exterior, "UseAsOuterBoundary", "IsOuterBoundary", "UseAsOuter"); }
-                                catch (MissingMemberException) { ctx.Avisos.Add("La API no expone 'usar_como_exterior' en el contorno; se dejó el valor por defecto."); }
+                                try { contorno.BoundaryType = exterior ? Civ.CorridorSurfaceBoundaryType.OutsideBoundary : Civ.CorridorSurfaceBoundaryType.InsideBoundary; }
+                                catch { }
                             }
                         },
                         "Añadir el contorno '" + nombre + "' (" + tipo + ") a la superficie '" + superficie + "'");

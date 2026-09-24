@@ -87,7 +87,7 @@ El historial del plugin (`leer_historial`) también se escribe en `%LOCALAPPDATA
 | `pk_a_punto` | alineamiento*, pk*, desplazamiento, perfil | x, y (`Alignment.PointLocation`) y `cota` si se pasa `perfil` (`Profile.ElevationAt`) |
 | `cota_superficie` | superficie*, x*, y* | cota (`Surface.FindElevationAtXY`) o error si el punto está fuera |
 | `interseccion_ejes` | alineamiento_a*, alineamiento_b* | metodo, n, cruces[] (x, y, pk_a, pk_b). Usa `Entity.IntersectWith`; si no devuelve puntos, muestrea cada 0.5 m |
-| `estado_corredor` | corredor* | esta_desactualizado, reconstruir_automatico, ultima_reconstruccion (de las hechas por MCP), n_lineas_base, superficies[] (nombre, codigos_enlace[], codigos_punto[], contornos[] (nombre, tipo, usar_como_exterior), esta_desactualizada) |
+| `estado_corredor` | corredor* | esta_desactualizado, reconstruir_automatico, ultima_reconstruccion (de las hechas por MCP), n_lineas_base, superficies[] (nombre, codigos_enlace[], codigos_punto[], codigos_lineas_caracteristicas[], contornos[] (nombre, tipo, usar_como_exterior), esta_desactualizada) |
 
 `region` admite el nombre o el `indice` que devuelve `listar_regiones`.
 
@@ -106,7 +106,7 @@ Todas devuelven la respuesta estándar de escritura (`simulado`, `cambios`, `ant
 | `agregar_estacion_region` | corredor*, linea_base*, region*, pk* | Añade la estación adicional (`AdditionalStations.Add` o el método equivalente) |
 | `reconstruir_corredor` | corredor* | `corridor.Rebuild()`; `datos.ms` y `esta_desactualizado` después |
 | `agregar_superficie_corredor` | corredor*, nombre*, codigo_enlace (Top) | `corridor.CorridorSurfaces.Add(nombre)` + `AddLinkCode(codigo, true)` |
-| `agregar_codigo_superficie_corredor` | corredor*, superficie*, codigo*, tipo (enlace/punto), como_linea_rotura | `AddLinkCode` / `AddPointCode` |
+| `agregar_codigo_superficie_corredor` | corredor*, superficie*, codigo*, tipo (enlace/linea_caracteristica, acepta punto como alias), como_linea_rotura | `AddLinkCode` / `AddFeatureLineCode` (en Civil 3D 2027 las superficies se definen por líneas características; `punto` se acepta como alias de compatibilidad devolviendo aviso en la respuesta) |
 | `agregar_contorno_superficie_corredor` | corredor*, superficie*, tipo (talud_automatico/talud_por_linea_base/exterior_poligono), usar_como_exterior, poligono, nombre | `Boundaries.AddCorridorExtentsBoundary(...)` / `Boundaries.Add(nombre, idPolilinea)`. Si el talud no cierra: "El talud no cierra; usa exterior_poligono con una polilínea cerrada" |
 | `agregar_linea_rotura_superficie` | superficie*, corredor*, superficie_corredor o codigo | Crea polilíneas 3D (capa `MCP_LINEAS_ROTURA`) con las líneas características del corredor de esos códigos de punto y las añade con `BreaklinesDefinition.AddStandardBreaklines` |
 | `pegar_superficie` | superficie_destino*, superficie_origen* | `TinSurface.PasteSurface` + `Rebuild`; si el origen ya estaba pegado, solo reconstruye |
@@ -157,24 +157,32 @@ informativos para que el agente le indique qué marcar. Ambas registran la llama
 
 Si en tu instalación el comando de IMX tiene otro nombre, pásalo en `comando`.
 
-## Miembros de la API resueltos por reflexión
+## Miembros de la API en Civil 3D 2027 (.NET 10) y Reflexión
 
-Los miembros estables de la API se llaman directamente. Los que cambian de nombre entre versiones se resuelven
-con `Api.cs` (reflexión sobre `AeccDbMgd.dll`): la herramienta prueba una lista de nombres y, si ninguno existe,
-responde error con los miembros disponibles del objeto para poder corregir el nombre sin adivinar.
+En la versión 1.2.1, todos los miembros verificados contra `AeccDbMgd.dll` y `acdbmgd.dll` de Civil 3D 2027 se llaman
+de forma **directa y tipada**. La utilidad interna `herramientas-dev/InspectC3D` (.NET 10 con `MetadataLoadContext`)
+permite auditar los metadatos de las DLLs sin requerir la ejecución de AutoCAD.
 
-| Uso | Nombres probados |
-|---|---|
-| Frecuencias de región | `FrequencyAlongTangents`, `FrequencyAlongCurves`, `FrequencyAlongSpirals`, `FrequencyAlongProfileCurves` (y variantes) |
-| Estaciones adicionales | `AdditionalStations` (+ `Add`), `AddAdditionalStation`, `AddStation` |
-| Nombre lógico / grupo del objetivo | `LogicalName`, `TargetName`; `AssemblyGroupName` (el grupo se calcula también recorriendo `Assembly.Groups`) |
-| `mismo_lado` | `UseSameSide`, `SameSide` (si no existe, se avisa y se ignora) |
-| Códigos y contornos de superficie de corredor | `LinkCodes`, `PointCodes`, `Boundaries.AddCorridorExtentsBoundary`, `Boundaries.Add(nombre, idPolilinea)`, `AddBaselineExtentsBoundary`, `UseAsOuterBoundary`, `BoundaryType` |
-| Superficies | `IsOutOfDate`, `Rebuild`, `PasteSurface`, `Operations`, `SurfaceId` de la superficie de corredor |
-| Intersecciones | `PrimaryRoadAlignmentId`, `SecondaryRoadAlignmentId`, `Location`, `PrimaryRoadStation`, `CorridorId`, `IntersectionType` (si faltan, las progresivas se calculan con `StationOffset`) |
-| Líneas características del corredor | `MainBaselineFeatureLines`, `OffsetBaselineFeatureLinesCol`, `FeatureLineCollectionMap`, `CodeName`, `FeatureLinePoints` |
-| Ensamblajes | `AssemblyType`, `MacroName`, `AssemblyGroup.Side` |
-| Tipo y opción de objetivo | `TargetType`, `TargetToOption` (se comparan por texto: Surface/Elevation/Offset, Nearest/Outside/Inside) |
+`Api.cs` (reflexión) se mantiene exclusivamente como mecanismo de tolerancia en puntos donde la API pública no
+expone una propiedad directa (por ejemplo, identificación del catálogo/componente de un `Subassembly`, o deducción
+de lado en `AssemblyGroup`).
+
+### Miembros verificados tipados en Civil 3D 2027
+
+| Tipo / Elemento | Miembro en Civil 3D 2027 | Modo de llamada | Notas |
+|---|---|---|---|
+| `SubassemblyTargetInfo` | `AssemblyGroupName`, `SubassemblyName`, `LogicalName` | Tipado | Identificación por grupo + nombre recorriendo `Assembly.Groups → GetSubassemblyIds()` con desempate por `LogicalName`. |
+| `SubassemblyTargetInfo` | `TargetIds`, `UseSameSideTarget`, `TargetToOption` | Tipado | Propiedades tipadas con getter y setter directo. |
+| `CorridorSurface` | `AddLinkCode(codigo, rotura)`, `AddFeatureLineCode(codigo)` | Tipado | Sustituye a `AddPointCode` inexistente. `tipo=punto` se admite como alias. |
+| `CorridorSurface` | `LinkCodes()`, `PointCodes()`, `FeatureLineCodes()` | Tipado | Métodos tipados directos para lectura de códigos. |
+| `CorridorSurfaceBoundaryCollection` | `AddCorridorExtentsBoundary(nombre)`, `Add(nombre, polylineId)` | Tipado | Adición de contornos tipada; lectura con `BoundaryNames()`. |
+| `BaselineRegion` | `AppliedAssemblySetting.FrequencyAlongTangents`, etc. | Tipado | Frecuencias anidadas en `AppliedAssemblySetting`. |
+| `BaselineRegion` | `AdditionalStations()`, `AddStation(pk, desc)`, `Split(pk)` | Tipado | Métodos tipados directos de estación y división. |
+| `TinSurface` / `Surface` | `IsOutOfDate`, `Rebuild()`, `PasteSurface(id)` | Tipado | Métodos y propiedades tipadas directas. |
+| `TinSurface` | `BreaklinesDefinition.AddStandardBreaklines(...)` | Tipado | Adición tipada de líneas de rotura. |
+| `Intersection` | `IntersectionRoads[i].CenterlineAlignmentId`, `Location`, `CorridorId`, `GradeRuleType` | Tipado | Acceso directo a propiedades de intersección. |
+| `Assembly` | `Type.ToString()` | Tipado | Propiedad tipada `AssemblyType Type`. |
+| `ProfilePVI` | `RawStation` | Tipado | Sustituye a `Station` (obsoleto CS0618 en 2027). |
 
 ## Pruebas rápidas desde PowerShell (con Civil 3D abierto)
 

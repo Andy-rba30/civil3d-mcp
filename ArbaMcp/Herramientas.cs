@@ -391,7 +391,7 @@ namespace ArbaMcp
                         }
 
                         var pvis = new List<(double s, double z)>();
-                        foreach (Autodesk.Civil.DatabaseServices.ProfilePVI pvi in pr.PVIs) pvis.Add((pvi.Station, pvi.Elevation));
+                        foreach (Autodesk.Civil.DatabaseServices.ProfilePVI pvi in pr.PVIs) pvis.Add((pvi.RawStation, pvi.Elevation));
                         pvis.Sort((x, y) => x.s.CompareTo(y.s));
 
                         for (int i = 0; i < pvis.Count; i++)
