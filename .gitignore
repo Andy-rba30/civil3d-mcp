@@ -1,0 +1,17 @@
+# Salidas de compilación .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.dll
+*.pdb
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Restos de trabajo local
+patch_*.py
+captura_*.png
