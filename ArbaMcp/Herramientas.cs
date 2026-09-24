@@ -355,6 +355,8 @@ namespace ArbaMcp
 
             RegistrarAdicionales();
             RegistrarSeguridad();
+            RegistrarCorredores();
+            RegistrarSuperficies();
         }
 
         // ------------------------------------------------------------------ herramientas genéricas adicionales
