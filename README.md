@@ -28,7 +28,7 @@ python -m venv .venv
 
 Escucha en `http://127.0.0.1:8001/mcp`. En la configuración MCP del agente, la entrada `civil3d` apunta a esa URL.
 
-El puente lee el token de `%LOCALAPPDATA%\ArbaMcp\token`, que Civil 3D genera en cada arranque. Puede arrancar antes que Civil 3D: registra las herramientas en cuanto el plugin responde.
+El puente lee el token de `%LOCALAPPDATA%\ArbaMcp\token`, que Civil 3D genera en cada arranque. Puede arrancar antes que Civil 3D: registra las herramientas en cuanto el plugin responde. Las respuestas al agente son JSON (`json.dumps`), el tiempo máximo depende de la herramienta (30 s lectura, 120 s escritura, 300 s reconstrucciones y exportaciones) y el archivo `PuenteMcp/INSTRUCCIONES_AGENTE.md` se entrega al agente como `instructions` del servidor MCP (precedencia API > comando, flujo obligatorio para corredores, reglas de dominio y glosario).
 
 ## Arranque automático
 
@@ -48,4 +48,7 @@ Con Civil 3D abierto y el plugin cargado:
 
 ```powershell
 .\PuenteMcp\.venv\Scripts\python .\ArbaMcp\pruebas\probar_servidor.py
+.\PuenteMcp\.venv\Scripts\python .\ArbaMcp\pruebas\probar_servidor.py --dwg C:\Proyectos\prueba_corredor.dwg
 ```
+
+Con `--dwg` abre ese dibujo (debe tener al menos un corredor) y comprueba las herramientas de lectura, `simular`, la escritura real con copia de seguridad, `ejecutar_comando` sin UNDO y `mcp_log.jsonl`; `--sin-escritura` omite las pruebas que modifican el dibujo.
