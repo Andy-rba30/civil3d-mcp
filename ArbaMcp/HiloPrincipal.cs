@@ -317,32 +317,61 @@ namespace ArbaMcp
             catch (System.Exception ex) { p.Resultado.TrySetException(ex); }
         }
 
-        /// <summary>Entrega un trabajo al contexto de comando del dibujo activo y espera su fin sin bloquear el hilo principal.</summary>
+        /// <summary>
+        /// Entrega un trabajo al contexto de comando del dibujo activo sin bloquear el hilo principal. El propio
+        /// delegado avisa al terminar (Terminar), así no dependemos del valor devuelto por ExecuteInCommandContextAsync,
+        /// que cambia de tipo entre versiones de AutoCAD (Task en 2015-2024, DocumentCollection.ExecutionResult en 2027).
+        /// Si además devuelve algo con una tarea dentro, se usa para detectar que AutoCAD falló antes de ejecutarlo.
+        /// </summary>
         private static void EntregarAlDocumento(Pendiente p)
         {
             Volatile.Write(ref _enCurso, p);
             _inicioEnCurso = DateTime.UtcNow;
             try
             {
-                Task tarea = AcApp.DocumentManager.ExecuteInCommandContextAsync(_ =>
+                object devuelto = AcApp.DocumentManager.ExecuteInCommandContextAsync(_ =>
                 {
-                    Correr(p);
+                    try { Correr(p); }
+                    finally { Terminar(p); }
                     return Task.CompletedTask;
                 }, null);
-                tarea.ContinueWith(t =>
+
+                Task tarea = ExtraerTarea(devuelto);
+                if (tarea != null)
                 {
-                    if (t.IsFaulted)
+                    tarea.ContinueWith(t =>
+                    {
+                        if (!t.IsFaulted) return;
                         p.Resultado.TrySetException(t.Exception?.GetBaseException() ?? new System.Exception("ExecuteInCommandContextAsync falló"));
-                    else if (!p.Tarea.IsCompleted)
-                        p.Resultado.TrySetCanceled(); // AutoCAD dio por terminado el pseudocomando sin ejecutar el trabajo
-                    Terminar(p);
-                }, TaskScheduler.Default);
+                        Terminar(p);
+                    }, TaskScheduler.Default);
+                }
             }
             catch (System.Exception ex)
             {
                 p.Resultado.TrySetException(ex);
                 Terminar(p);
             }
+        }
+
+        // Busca una Task en lo que devuelve ExecuteInCommandContextAsync: la propia Task, o una propiedad/método
+        // sin parámetros de tipo Task. Devuelve null si no hay ninguna (entonces basta con el aviso del delegado).
+        private static Task ExtraerTarea(object devuelto)
+        {
+            if (devuelto == null) return null;
+            if (devuelto is Task t) return t;
+            try
+            {
+                var tipo = devuelto.GetType();
+                foreach (var prop in tipo.GetProperties())
+                    if (typeof(Task).IsAssignableFrom(prop.PropertyType) && prop.GetIndexParameters().Length == 0)
+                        return prop.GetValue(devuelto) as Task;
+                foreach (var met in tipo.GetMethods())
+                    if (typeof(Task).IsAssignableFrom(met.ReturnType) && met.GetParameters().Length == 0 && !met.IsSpecialName)
+                        return met.Invoke(devuelto, null) as Task;
+            }
+            catch { }
+            return null;
         }
 
         private static void Terminar(Pendiente p)
