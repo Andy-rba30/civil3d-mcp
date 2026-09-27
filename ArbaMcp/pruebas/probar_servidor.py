@@ -21,6 +21,13 @@ import time
 
 import httpx
 
+# La consola de Windows (cp1252) no puede imprimir algunos caracteres del historial del plugin
+for _flujo in (sys.stdout, sys.stderr):
+    try:
+        _flujo.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 PUERTO = int(os.environ.get("ARBA_MCP_PORT", 8765))
 BASE_URL = f"http://127.0.0.1:{PUERTO}"
 LIMITE_LECTURA_S = 5.0
@@ -125,7 +132,7 @@ def pruebas_ocupado():
     ok, r, seg = llamar("listar_alineamientos", timeout_s=30)
     resultado(f"listar_alineamientos vuelve a responder tras el ESC ({seg:.2f} s)", ok, str(r)[:120])
     ok, hist, _ = llamar("leer_historial", {"ultimas_n": 60})
-    resultado("el historial anota la espera (MCP ⏳ listar_alineamientos)", any("⏳ listar_alineamientos" in l for l in (hist or [])))
+    resultado("el historial anota la espera de listar_alineamientos (linea MCP espera)", any("listar_alineamientos espera:" in l for l in (hist or [])))
 
 
 # ---------------------------------------------------------------- pruebas con dibujo
