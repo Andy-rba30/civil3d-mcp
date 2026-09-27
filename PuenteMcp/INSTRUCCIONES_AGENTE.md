@@ -8,6 +8,7 @@ Estas herramientas actúan sobre el dibujo activo de Civil 3D 2027 a través del
 2. **`ejecutar_comando` solo si ninguna herramienta cubre la acción**. Es el último recurso: envía texto a la línea de comandos, no sabe qué ha cambiado y no verifica nada. Por defecto ya no envuelve la orden en UNDO; pásale `undo=true` si quieres un grupo de deshacer.
 3. **`capturar_pantalla` solo para diagnosticar**: úsala cuando una llamada devuelve "tiempo agotado" o sospechas que hay un cuadro de diálogo abierto. No la uses para "ver" el modelo: los datos se leen con las herramientas de lectura.
 4. `leer_historial` y `leer_log` sirven para saber qué se ejecutó y con qué resultado; `leer_log` devuelve una línea JSON por cada escritura (hora, herramienta, args, ok, ms, error).
+5. **Civil 3D ocupado**: las herramientas que tocan el dibujo esperan a que Civil 3D esté libre (sin comando activo ni cuadro de diálogo) y, si el tiempo se agota mientras esperan, se descartan sin ejecutarse. `ping`, `leer_historial`, `leer_log`, `leer_variable` y `capturar_pantalla` responden siempre. Si una llamada devuelve "tiempo agotado" o "Civil 3D siguió ocupado", pide al usuario que termine el comando o cierre el diálogo antes de repetirla; `leer_historial` muestra `MCP ⏳ <herramienta> espera: <motivo>`.
 
 ## 2. Flujo obligatorio para cambios en corredores
 
@@ -68,7 +69,7 @@ Después de cada escritura comprueba `esta_desactualizado` (corredor) o `esta_de
 | `máscara 0 no añadida` / `mask 0 not added` / `boundary not closed` | El contorno automático (talud) no cierra porque el talud no intersecta el terreno en algún tramo | `agregar_contorno_superficie_corredor` con `tipo=exterior_poligono` y una polilínea cerrada |
 | `Assembly not found` | La región apunta a un ensamblaje borrado | `asignar_ensamblaje_region` |
 | `Corridor is out of date` / `esta_desactualizado=true` | Faltan reconstrucciones | `reconstruir_corredor` y luego `estado_corredor` |
-| `Tiempo agotado` (desde el puente) | Civil 3D está ocupado o hay un cuadro de diálogo abierto | `capturar_pantalla`, pide al usuario que cierre el diálogo, no reintentes a ciegas |
+| `Tiempo agotado` / `Civil 3D siguió ocupado` | Civil 3D está en medio de un comando, un trazado o un cuadro de diálogo; la herramienta esperó y se descartó sin ejecutarse | `leer_historial` (línea `MCP ⏳`) o `capturar_pantalla`, pide al usuario que termine o cierre, no reintentes a ciegas |
 
 ## 6. Exportaciones
 

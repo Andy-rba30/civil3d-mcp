@@ -21,6 +21,8 @@ namespace ArbaMcp
     ///   GET  /ping                  → estado
     ///   POST /execute {tool, args}  → {"ok":true,"result":...} o {"ok":false,"error":"..."}
     /// Puerto: variable de entorno ARBA_MCP_PORT (por defecto 8765). ARBA_MCP=0 desactiva el servidor.
+    /// Este código corre en hilos del ThreadPool: nunca llama a la API de AutoCAD; cada herramienta se
+    /// encola en HiloPrincipal, que la ejecuta en el hilo principal en el contexto que la herramienta declara.
     /// </summary>
     internal static class Servidor
     {
@@ -221,7 +223,7 @@ namespace ArbaMcp
                 }
                 else
                 {
-                    pendiente = HiloPrincipal.Encolar(() => herramienta.Ejecutar(args));
+                    pendiente = HiloPrincipal.Encolar(() => herramienta.Ejecutar(args), herramienta.Contexto, nombre);
                     tareaPrincipal = pendiente.Tarea;
                 }
 
@@ -232,7 +234,7 @@ namespace ArbaMcp
                     if (pendiente == null)
                         detalle = "el comando pudo haberse enviado; consulta leer_historial.";
                     else if (pendiente.Descartar())
-                        detalle = "la acción seguía en cola y se ha descartado: no se ejecutó.";
+                        detalle = "la acción seguía esperando a que Civil 3D quedara libre (comando activo o cuadro de diálogo) y se ha descartado: no se ejecutó.";
                     else
                         detalle = "Civil 3D empezó a ejecutarla y sigue ocupado; terminará por su cuenta.";
                     Historial.Registrar("MCP ← " + nombre + " TIEMPO AGOTADO (" + timeoutS + " s): " + detalle);
@@ -241,6 +243,11 @@ namespace ArbaMcp
                 object resultado = await tareaPrincipal;
                 Historial.Registrar("MCP ✓ " + nombre + " OK (" + reloj.ElapsedMilliseconds + " ms)");
                 return JsonSerializer.Serialize(new { ok = true, tool = nombre, ms = reloj.ElapsedMilliseconds, result = resultado }, Json);
+            }
+            catch (OperationCanceledException)
+            {
+                Historial.Registrar("MCP ← " + nombre + " CANCELADA: no llegó a ejecutarse");
+                return Error("La herramienta no llegó a ejecutarse: Civil 3D descartó la petición (¿se cerró el dibujo o se descargó el plugin?). Consulta leer_historial.");
             }
             catch (System.Exception ex)
             {

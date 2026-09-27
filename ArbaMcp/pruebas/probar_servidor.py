@@ -1,7 +1,9 @@
 """
 Pruebas del servidor local de ArbaMcp (con Civil 3D abierto y el plugin cargado).
 
-  python probar_servidor.py                 -> seguridad HTTP y ejecutar_comando (como en la versión 1.1)
+  python probar_servidor.py                 -> seguridad HTTP, ejecutar_comando (como en la versión 1.1) y
+                                               "Civil 3D ocupado" (1.2.2: con _.LINE activo, ping responde y las
+                                               herramientas de dibujo esperan y se descartan sin ejecutarse)
   python probar_servidor.py --dwg RUTA.dwg  -> además abre ese dibujo (debe tener al menos un corredor) y comprueba:
       1. todas las herramientas de lectura responden ok=true en menos de 5 s
       2. asignar_objetivo con simular=true no cambia nada (listar_objetivos idéntico antes y después)
@@ -14,6 +16,7 @@ import argparse
 import json
 import os
 import sys
+import threading
 import time
 
 import httpx
@@ -92,6 +95,37 @@ def pruebas_comando():
     resultado("comando inexistente: no se inició", ok and "no se inició" in str(r), str(r))
     ok, r, _ = llamar("ejecutar_comando", {"comando": "_.LINE", "timeout_s": 5}, timeout_s=10)
     resultado("_.LINE: timeout con ESC", ok and r == "timeout con ESC", str(r))
+
+
+def pruebas_ocupado():
+    """Con un comando activo (_.LINE esperando un punto): ping y leer_variable responden igualmente (contexto
+    Inmediato), una herramienta de dibujo espera y se descarta al agotar su tiempo sin ejecutarse, y el comando
+    termina con 'timeout con ESC' (los ESC llegan al hilo principal aunque el comando esté esperando entrada)."""
+    print("\n--- Civil 3D ocupado (comando _.LINE activo) ---")
+    respuesta_linea = {}
+
+    def linea():
+        respuesta_linea["r"] = llamar("ejecutar_comando", {"comando": "_.LINE", "timeout_s": 12}, timeout_s=20)
+
+    hilo = threading.Thread(target=linea, daemon=True)
+    hilo.start()
+    time.sleep(3)  # tiempo de sobra para que _.LINE arranque y quede esperando un punto
+
+    ok, r, seg = llamar("ping", timeout_s=5)
+    resultado(f"ping responde con comando activo ({seg:.2f} s)", ok and seg < 3, str(r)[:120])
+    ok, r, seg = llamar("leer_variable", {"nombre": "CMDACTIVE"}, timeout_s=5)
+    valor = r.get("valor") if isinstance(r, dict) else None
+    resultado("leer_variable CMDACTIVE > 0 durante el comando", ok and valor not in (None, "0"), str(r)[:120])
+    ok, r, seg = llamar("listar_alineamientos", timeout_s=3)
+    resultado(f"listar_alineamientos espera y se descarta al agotar el tiempo ({seg:.1f} s)", (not ok) and "descartado" in str(r), str(r)[:160])
+
+    hilo.join(40)
+    r = respuesta_linea.get("r")
+    resultado("_.LINE termina con 'timeout con ESC'", r is not None and r[0] and r[1] == "timeout con ESC", str(r)[:120])
+    ok, r, seg = llamar("listar_alineamientos", timeout_s=30)
+    resultado(f"listar_alineamientos vuelve a responder tras el ESC ({seg:.2f} s)", ok, str(r)[:120])
+    ok, hist, _ = llamar("leer_historial", {"ultimas_n": 60})
+    resultado("el historial anota la espera (MCP ⏳ listar_alineamientos)", any("⏳ listar_alineamientos" in l for l in (hist or [])))
 
 
 # ---------------------------------------------------------------- pruebas con dibujo
@@ -266,6 +300,7 @@ if __name__ == "__main__":
         pruebas_seguridad()
         print("\n--- ejecutar_comando ---")
         pruebas_comando()
+        pruebas_ocupado()
     if args.dwg:
         pruebas_dibujo(args.dwg, not args.sin_escritura)
 

@@ -19,7 +19,7 @@ namespace ArbaMcp
     ///  3. Registra cada llamada en Historial y en &lt;carpeta del dwg&gt;\mcp_log.jsonl.
     ///  4. Compara el estado antes y después y falla si el dibujo no refleja el cambio pedido.
     ///  6. Parámetro 'simular': devuelve lo que haría sin tocar nada.
-    /// Todo corre en el hilo principal de AutoCAD (lo llama el cuerpo de cada herramienta).
+    /// Todo corre en el hilo principal de AutoCAD, en el contexto de comando del dibujo activo (lo llama el cuerpo de cada herramienta).
     /// </summary>
     internal static class Escritura
     {
@@ -51,7 +51,9 @@ namespace ArbaMcp
 
             int cmdActive = 0;
             try { cmdActive = Convert.ToInt32(AcApp.GetSystemVariable("CMDACTIVE")); } catch { }
-            if (cmdActive > 0)
+            // Dentro de un trabajo de contexto Documento, CMDACTIVE lo pone el propio pseudocomando de
+            // ExecuteInCommandContextAsync; HiloPrincipal ya comprobó que Civil 3D estaba libre antes de empezarlo.
+            if (cmdActive > 0 && !HiloPrincipal.EnTrabajoDeDocumento)
                 throw new InvalidOperationException("Hay un comando activo en Civil 3D (CMDACTIVE=" + cmdActive + "); termínalo o cancélalo antes de escribir.");
             if (doc.IsReadOnly)
                 throw new InvalidOperationException("El dibujo activo está abierto en modo solo lectura; no se puede escribir en él.");

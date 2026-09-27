@@ -34,6 +34,11 @@ namespace ArbaMcp
         public List<Parametro> Parametros = new List<Parametro>();
         public Func<JsonElement, object> Ejecutar;
         public Func<JsonElement, Task<object>> EjecutarAsync;
+        /// <summary>
+        /// Dónde corre 'Ejecutar' (siempre en el hilo principal). Por defecto, en el contexto de comando del dibujo
+        /// activo esperando a que Civil 3D esté libre; ver ContextoEjecucion en HiloPrincipal.cs.
+        /// </summary>
+        public ContextoEjecucion Contexto = ContextoEjecucion.Documento;
     }
 
     /// <summary>
@@ -146,7 +151,8 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "ping",
-                Descripcion = "Comprueba que el plugin responde. Devuelve versión, dibujo activo y hora.",
+                Contexto = ContextoEjecucion.Inmediato,
+                Descripcion = "Comprueba que el plugin responde. Devuelve versión, dibujo activo y hora. Responde aunque Civil 3D esté ocupado.",
                 Ejecutar = a =>
                 {
                     var doc = AcApp.DocumentManager.MdiActiveDocument;
@@ -284,7 +290,8 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "abrir_dibujo",
-                Descripcion = "Abre un archivo DWG en Civil 3D y lo deja como dibujo activo. Si ya estaba abierto, activa esa pestaña en vez de abrirlo otra vez.",
+                Contexto = ContextoEjecucion.Aplicacion,
+                Descripcion = "Abre un archivo DWG en Civil 3D y lo deja como dibujo activo. Si ya estaba abierto, activa esa pestaña en vez de abrirlo otra vez. Espera a que Civil 3D esté libre (sin comando ni cuadro de diálogo).",
                 Parametros = { P("ruta", "string", "Ruta completa del DWG", true) },
                 Ejecutar = a =>
                 {
@@ -324,6 +331,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "leer_historial",
+                Contexto = ContextoEjecucion.Inmediato,
                 Descripcion = "Devuelve las últimas líneas del historial del plugin: comandos iniciados y terminados, llamadas MCP y mensajes.",
                 Parametros = { P("ultimas_n", "number", "Cantidad de líneas (por defecto 50)") },
                 Ejecutar = a => Historial.Ultimas((int)Num(a, "ultimas_n", 50))
@@ -332,6 +340,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "capturar_pantalla",
+                Contexto = ContextoEjecucion.Inmediato,
                 Descripcion = "Guarda una captura PNG de la ventana principal de Civil 3D (incluye cuadros de diálogo abiertos) y devuelve la ruta.",
                 Parametros = { P("ruta", "string", "Ruta del PNG a crear (por defecto en la carpeta temporal)") },
                 Ejecutar = a =>
@@ -423,6 +432,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "leer_variable",
+                Contexto = ContextoEjecucion.Inmediato,
                 Descripcion = "Lee una variable de sistema de AutoCAD (por ejemplo DWGNAME, CMDACTIVE, INSUNITS, SECURELOAD).",
                 Parametros = { P("nombre", "string", "Nombre de la variable de sistema", true) },
                 Ejecutar = a =>
@@ -437,7 +447,10 @@ namespace ArbaMcp
         // ------------------------------------------------------------------ envío de comandos (núcleo de ejecutar_comando y de las exportaciones)
         /// <summary>
         /// Envía un comando a la línea de comandos y espera a que termine, se cancele, falle o se agote el tiempo.
-        /// Con undo=true lo envuelve en _.UNDO _BE / _.UNDO _E. Corre desde el hilo del servidor; toca AutoCAD solo por HiloPrincipal.
+        /// Con undo=true lo envuelve en _.UNDO _BE / _.UNDO _E. Corre desde el hilo del servidor y toca AutoCAD solo
+        /// a través de HiloPrincipal: el envío espera a que Civil 3D esté libre (contexto Aplicacion) y los ESC y el
+        /// cierre del grupo van por la cola Inmediato, que el hilo principal atiende incluso mientras un comando
+        /// espera entrada. Nada de la API de AutoCAD se llama desde el hilo del servidor.
         /// </summary>
         internal static async Task<object> EjecutarComando(string comando, int timeoutMs, bool undo)
         {
@@ -446,17 +459,20 @@ namespace ArbaMcp
             string cmdParse = comando.Split(new[] { ' ', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
             cmdParse = cmdParse.TrimStart('_', '.').ToUpperInvariant();
 
-            Document doc = DocActivo();
-            int iniciado = 0; // se escribe en el hilo principal y se lee en el del servidor
+            Document doc = null;  // lo asigna el hilo principal al enviar; el servidor lo lee solo después de esperar ese envío
+            int iniciado = 0;     // se escribe en el hilo principal y se lee en el del servidor
             int grupoCerrado = 0;
             Historial.Registrar("ejecutar_comando: '" + comando + "' con tiempo máximo " + (timeoutMs / 1000) + " s" + (undo ? " (con grupo de UNDO)" : ""));
 
-            // Cierra el grupo de UNDO (si lo hay) una sola vez, venga de donde venga (fin, cancelación, fallo o tiempo agotado)
+            // Cierra el grupo de UNDO (si lo hay) una sola vez, venga de donde venga (fin, cancelación, fallo o tiempo
+            // agotado). Siempre en el hilo principal: en línea desde los eventos de comando, por la cola Inmediato desde el servidor.
             void CerrarGrupo(string prefijo)
             {
                 if (System.Threading.Interlocked.Exchange(ref grupoCerrado, 1) != 0) return;
                 string texto = prefijo + (undo ? "_.UNDO _E\n" : "");
-                if (texto.Length > 0) doc.SendStringToExecute(texto, false, false, false);
+                var d = doc;
+                if (texto.Length == 0 || d == null) return;
+                HiloPrincipal.EjecutarInmediato(() => d.SendStringToExecute(texto, false, false, false));
             }
 
             void OnCommandWillStart(object s, CommandEventArgs e)
@@ -476,27 +492,44 @@ namespace ArbaMcp
                 if (e.GlobalCommandName.ToUpperInvariant() == cmdParse) { CerrarGrupo(""); tcs.TrySetResult("fallido"); }
             }
 
-            await HiloPrincipal.Ejecutar(() =>
+            // El envío espera a que Civil 3D esté libre (sin comando activo ni cuadro de diálogo). Si no se libera en el
+            // tiempo máximo se descarta: así el comando no entra a destiempo cuando el usuario termine lo suyo.
+            var reloj = System.Diagnostics.Stopwatch.StartNew();
+            var envio = HiloPrincipal.Encolar(() =>
             {
+                var d = DocActivo();
+                if (Convert.ToInt32(AcApp.GetSystemVariable("CMDACTIVE")) > 0)
+                    throw new InvalidOperationException("Hay un comando activo en Civil 3D; termínalo o cancélalo antes de enviar otro.");
+
+                d.CommandWillStart += OnCommandWillStart;
+                d.CommandEnded += OnCommandEnded;
+                d.CommandCancelled += OnCommandCancelled;
+                d.CommandFailed += OnCommandFailed;
                 try
                 {
-                    if (Convert.ToInt32(AcApp.GetSystemVariable("CMDACTIVE")) > 0)
-                        throw new InvalidOperationException("Hay un comando activo en Civil 3D; termínalo o cancélalo antes de enviar otro.");
-
-                    doc.CommandWillStart += OnCommandWillStart;
-                    doc.CommandEnded += OnCommandEnded;
-                    doc.CommandCancelled += OnCommandCancelled;
-                    doc.CommandFailed += OnCommandFailed;
-
-                    doc.SendStringToExecute((undo ? "_.UNDO _BE\n" : "") + comando + "\n", true, false, false);
+                    d.SendStringToExecute((undo ? "_.UNDO _BE\n" : "") + comando + "\n", true, false, false);
                 }
-                catch (Exception ex) { tcs.TrySetException(ex); }
+                catch
+                {
+                    d.CommandWillStart -= OnCommandWillStart;
+                    d.CommandEnded -= OnCommandEnded;
+                    d.CommandCancelled -= OnCommandCancelled;
+                    d.CommandFailed -= OnCommandFailed;
+                    throw;
+                }
+                doc = d;
                 return true;
-            });
+            }, ContextoEjecucion.Aplicacion, "ejecutar_comando");
+
+            if (await Task.WhenAny(envio.Tarea, Task.Delay(timeoutMs)) != envio.Tarea && envio.Descartar())
+            {
+                Historial.Registrar("ejecutar_comando: '" + comando + "' no se envió; Civil 3D siguió ocupado " + (timeoutMs / 1000) + " s");
+                return "no se envió: Civil 3D siguió ocupado (comando activo o cuadro de diálogo) durante " + (timeoutMs / 1000) + " s";
+            }
+            await envio.Tarea; // si no hay dibujo o el envío falló, la excepción llega al servidor como error
 
             // Espera a que el comando arranque (o termine) dentro del tiempo máximo. Civil 3D puede tardar
             // varios segundos en procesar la cola de entrada si está ocupado con el dibujo.
-            var reloj = System.Diagnostics.Stopwatch.StartNew();
             while (!tcs.Task.IsCompleted && System.Threading.Volatile.Read(ref iniciado) == 0 && reloj.ElapsedMilliseconds < timeoutMs)
                 await Task.Delay(100);
 
@@ -514,22 +547,20 @@ namespace ArbaMcp
 
             if (completada != tcs.Task && !tcs.Task.IsCompleted)
             {
-                // Mientras un comando espera entrada del usuario, el evento Idle no llega y un trabajo
-                // encolado en HiloPrincipal no se atendería. SendStringToExecute solo encola teclas,
-                // así que los ESC y el cierre del grupo se envían directamente desde este hilo.
+                // Los ESC y el cierre del grupo van por la cola Inmediato: el hilo principal la atiende por el
+                // despachador aunque el comando esté esperando entrada del usuario.
                 Historial.Registrar("ejecutar_comando: tiempo agotado a los " + (timeoutMs / 1000) + " s, se envían ESC");
                 CerrarGrupo("\x1B\x1B");
                 tcs.TrySetResult("timeout con ESC");
             }
 
-            // Los manejadores se desenganchan en el hilo principal cuando llegue Idle; no hace falta esperar
-            _ = HiloPrincipal.Ejecutar(() =>
+            // Los manejadores se desenganchan en el hilo principal (cola Inmediato); no hace falta esperar
+            _ = HiloPrincipal.EjecutarInmediato(() =>
             {
                 doc.CommandWillStart -= OnCommandWillStart;
                 doc.CommandEnded -= OnCommandEnded;
                 doc.CommandCancelled -= OnCommandCancelled;
                 doc.CommandFailed -= OnCommandFailed;
-                return true;
             });
 
             return await tcs.Task;

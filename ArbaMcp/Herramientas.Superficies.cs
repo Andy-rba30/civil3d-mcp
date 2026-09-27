@@ -165,7 +165,7 @@ namespace ArbaMcp
             Escritura.Contexto ctx = null;
             try
             {
-                ctx = (Escritura.Contexto)await HiloPrincipal.Ejecutar(() => Escritura.Preparar(herramienta, a, conCopia: false));
+                ctx = (Escritura.Contexto)await HiloPrincipal.Ejecutar(() => Escritura.Preparar(herramienta, a, conCopia: false), ContextoEjecucion.Aplicacion, herramienta);
                 if (ctx.Simular)
                     return new { simulado = true, herramienta, accion = "Enviar el comando " + comando + " y responder con la ruta " + ruta + " en la línea de comandos (FILEDIA=0 durante la orden)", ruta };
 
@@ -176,10 +176,11 @@ namespace ArbaMcp
                     object v = AcApp.GetSystemVariable("FILEDIA");
                     AcApp.SetSystemVariable("FILEDIA", (short)0);
                     return v;
-                });
+                }, ContextoEjecucion.Aplicacion, herramienta);
                 object estado;
                 try { estado = await EjecutarComando("_." + comando.TrimStart('_', '.') + "\n" + ruta, timeoutMs, false); }
-                finally { _ = HiloPrincipal.Ejecutar(() => { try { AcApp.SetSystemVariable("FILEDIA", filediaAnterior); } catch { } return true; }); }
+                // Se restaura cuando Civil 3D vuelva a estar libre, es decir, cuando el comando de exportación haya terminado
+                finally { _ = HiloPrincipal.Ejecutar(() => { try { AcApp.SetSystemVariable("FILEDIA", filediaAnterior); } catch { } return true; }, ContextoEjecucion.Aplicacion, herramienta + " (restaurar FILEDIA)"); }
 
                 bool existe = File.Exists(ruta) && File.GetLastWriteTime(ruta) >= inicio;
                 return new
@@ -194,8 +195,12 @@ namespace ArbaMcp
             catch (Exception ex) { error = ex.Message; throw; }
             finally
             {
-                var doc = ctx?.Doc ?? AcApp.DocumentManager.MdiActiveDocument;
-                Escritura.RegistrarLog(doc, herramienta, a, error == null, reloj.ElapsedMilliseconds, error);
+                // Estamos en el hilo del servidor: el registro (lee la ruta del dibujo) se hace en el hilo principal
+                var doc = ctx?.Doc;
+                bool ok = error == null;
+                long ms = reloj.ElapsedMilliseconds;
+                string mensajeError = error;
+                _ = HiloPrincipal.EjecutarInmediato(() => Escritura.RegistrarLog(doc, herramienta, a, ok, ms, mensajeError));
             }
         }
 

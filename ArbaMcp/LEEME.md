@@ -27,6 +27,14 @@ Las herramientas que modifican el dibujo (`asignar_*`, `establecer_*`, `agregar_
 - **Verificación**: después de escribir vuelven a leer el objeto y devuelven `antes`/`despues` con los campos que cambiaron; si el dibujo no refleja el cambio, responden error y no reintentan.
 - **Límites**: ninguna herramienta borra ni recrea regiones, líneas base, ensamblajes ni superficies. `ejecutar_comando` es el último recurso y **ya no envuelve la orden en UNDO por defecto**: pásale `undo=true` si quieres un grupo de deshacer.
 
+## Hilos y contextos de ejecución
+
+Desde la versión 1.2.2 el servidor HTTP nunca llama a la API de AutoCAD: cada herramienta se lleva al hilo principal
+por el Dispatcher de WPF y se ejecuta en el contexto de comando del dibujo activo (`ExecuteInCommandContextAsync`),
+esperando a que Civil 3D esté libre (sin comando activo ni cuadro de diálogo). `ping`, `leer_historial`, `leer_log`,
+`leer_variable` y `capturar_pantalla` responden siempre. Si Civil 3D se cierra con errores o traza en blanco con el
+plugin cargado, sigue `ESTABILIDAD.md`.
+
 ## Comprobar
 
 Abre Civil 3D y pulsa **Conexión IA** en la pestaña ARBA, o escribe `ARBAMCP`. Verás un aviso con el estado y el puerto. Desde PowerShell:
@@ -61,7 +69,8 @@ El contrato completo, con parámetros, respuestas y ejemplos `curl`, está en `C
 ```
 Cinta.cs          Arranque del plugin, botón Conexión IA, comando ARBAMCP, pestaña ARBA compartida
 Servidor.cs       HTTP mínimo en 127.0.0.1 (GET /ping, GET /tools, POST /execute) e historial
-HiloPrincipal.cs  Cola que ejecuta cada herramienta en el hilo principal de AutoCAD
+HiloPrincipal.cs  Cola que ejecuta cada herramienta en el hilo principal de AutoCAD, en su contexto (Documento, Aplicacion, Inmediato) y con Civil 3D libre
+ESTABILIDAD.md    Qué fallaba en los hilos, qué cambió en 1.2.2 y cómo comprobar en tu equipo si el plugin causaba cierres o trazados en blanco
 Herramientas.cs   Registro, ayudantes y herramientas generales
 Herramientas.Corredores.cs   Corredores, regiones, objetivos, ensamblajes, intersecciones, líneas de muestreo
 Herramientas.Superficies.cs  Geometría de ejes, superficies, líneas de rotura, pegado y exportación

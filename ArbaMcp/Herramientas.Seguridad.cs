@@ -14,6 +14,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "leer_log",
+                Contexto = ContextoEjecucion.Inmediato,
                 Descripcion = "Devuelve las últimas líneas de mcp_log.jsonl (una por llamada de escritura: hora, herramienta, args, ok, ms, error) de la carpeta del dibujo activo.",
                 Parametros = { P("ultimas_n", "number", "Cantidad de líneas (por defecto 50)") },
                 Ejecutar = a =>

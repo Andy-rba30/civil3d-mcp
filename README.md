@@ -15,7 +15,7 @@ Con Civil 3D cerrado, en PowerShell desde la raíz del repo:
 powershell -ExecutionPolicy Bypass -File .\ArbaMcp\instalar.ps1
 ```
 
-Compila e instala el bundle en `%APPDATA%\Autodesk\ApplicationPlugins\ArbaMcp.bundle`. Seguridad, herramientas y contrato en [`ArbaMcp/LEEME.md`](ArbaMcp/LEEME.md) y [`ArbaMcp/CONTRATO.md`](ArbaMcp/CONTRATO.md).
+Compila e instala el bundle en `%APPDATA%\Autodesk\ApplicationPlugins\ArbaMcp.bundle`. Seguridad, herramientas y contrato en [`ArbaMcp/LEEME.md`](ArbaMcp/LEEME.md) y [`ArbaMcp/CONTRATO.md`](ArbaMcp/CONTRATO.md). Si Civil 3D se cierra con errores o traza en blanco con el plugin cargado, lee [`ArbaMcp/ESTABILIDAD.md`](ArbaMcp/ESTABILIDAD.md).
 
 ## Instalar el puente
 

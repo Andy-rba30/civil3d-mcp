@@ -5,9 +5,26 @@ No usa http.sys ni necesita permisos de administrador.
 
 - Puerto: variable de entorno `ARBA_MCP_PORT` (por defecto **8765**). `ARBA_MCP=0` desactiva el servidor.
 - Comando `ARBAMCP` (botón *Conexión IA* de la pestaña ARBA): muestra si está activo, el puerto y las últimas líneas del historial.
-- Todas las llamadas a la API de Civil 3D se ejecutan en el hilo principal. Si Civil 3D está ocupado
-  (comando activo o cuadro de diálogo modal abierto) la petición espera; pasado `timeout_s` responde error.
-  Si la acción seguía en cola se descarta (no se ejecutará al liberarse Civil 3D) y el mensaje lo indica.
+- Todas las llamadas a la API de Civil 3D se ejecutan en el hilo principal, en el contexto que declara cada
+  herramienta (ver *Contextos de ejecución*). Si Civil 3D está ocupado (comando activo o cuadro de diálogo modal
+  abierto) la petición espera; pasado `timeout_s` responde error. Si la acción seguía esperando se descarta (no se
+  ejecutará al liberarse Civil 3D) y el mensaje lo indica.
+
+## Contextos de ejecución (desde la versión 1.2.2)
+
+El servidor HTTP corre en hilos del ThreadPool y nunca llama a la API de AutoCAD. Cada herramienta se encola en
+`HiloPrincipal`, que la lleva al hilo principal por el Dispatcher de WPF de ese hilo (con `Idle` de respaldo) y la
+ejecuta en el contexto que la herramienta declara en `Herramienta.Contexto`:
+
+| Contexto | Qué hace | Espera a que Civil 3D esté libre | Herramientas |
+|---|---|---|---|
+| `Documento` (por defecto) | Contexto de comando del dibujo activo (`DocumentManager.ExecuteInCommandContextAsync`): la herramienta corre como un comando más, con el documento bloqueado y los gráficos actualizados al terminar | Sí | Todas las de lectura y escritura del dibujo |
+| `Aplicacion` | Contexto de aplicación en el hilo principal | Sí | `abrir_dibujo`, el envío de `ejecutar_comando` y de las exportaciones |
+| `Inmediato` | Contexto de aplicación, sin esperar y por delante de los demás trabajos | No | `ping`, `leer_historial`, `leer_log`, `leer_variable`, `capturar_pantalla`, los ESC de `ejecutar_comando` |
+
+"Libre" significa `CMDACTIVE = 0` y ventana principal habilitada (sin cuadro de diálogo modal). Los trabajos
+`Documento` y `Aplicacion` se ejecutan de uno en uno; mientras uno espera, el historial anota
+`MCP ⏳ <herramienta> espera: <motivo>`. Detalle y comprobaciones en `ESTABILIDAD.md`.
 
 ## Seguridad (desde la versión 1.1.0)
 
@@ -211,7 +228,8 @@ ArbaMcp.Herramientas.Registrar(new ArbaMcp.Herramienta
     Nombre = "mi_herramienta",
     Descripcion = "...",
     Parametros = { new ArbaMcp.Parametro { name = "x", type = "number", description = "...", required = true } },
-    Ejecutar = args => new { resultado = 1 }   // se ejecuta en el hilo principal
+    Ejecutar = args => new { resultado = 1 },  // se ejecuta en el hilo principal, en el contexto de comando del dibujo activo
+    // Contexto = ArbaMcp.ContextoEjecucion.Inmediato   // solo si no toca el dibujo y debe responder aunque Civil 3D esté ocupado
 });
 ```
 
