@@ -772,12 +772,17 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "listar_lineas_muestreo",
-                Descripcion = "Lista los grupos de líneas de muestreo (de un alineamiento o de todos): número de líneas, rango de progresivas y fuentes muestreadas (superficies y corredores).",
-                Parametros = { P("alineamiento", "string", "Nombre del alineamiento (si se omite, todos)") },
+                Descripcion = "Lista los grupos de líneas de muestreo (de un alineamiento o de todos): número de líneas y rango de progresivas. Con fuentes=true añade las fuentes muestreadas (superficies y corredores); esa consulta obliga a Civil 3D a abrir el grupo para escritura y puede tardar en dibujos grandes.",
+                Parametros =
+                {
+                    P("alineamiento", "string", "Nombre del alineamiento (si se omite, todos)"),
+                    P("fuentes", "boolean", "Con true incluye las fuentes muestreadas de cada grupo (por defecto false)")
+                },
                 Ejecutar = a =>
                 {
                     var doc = DocActivo();
                     string nombreAl = Str(a, "alineamiento");
+                    bool conFuentes = Bool(a, "fuentes", false);
                     var lista = new List<object>();
                     using (doc.LockDocument())
                     using (var tr = doc.Database.TransactionManager.StartTransaction())
@@ -801,17 +806,25 @@ namespace ArbaMcp
                                     ini = ini.HasValue ? Math.Min(ini.Value, s) : s;
                                     fin = fin.HasValue ? Math.Max(fin.Value, s) : s;
                                 }
-                                var fuentes = new List<object>();
-                                try
+                                // GetSectionSources exige el grupo abierto para escritura: con ForRead Civil 3D 2027 aborta con
+                                // "eNotOpenForWrite" (error interno, no una excepción capturable). Solo se consulta si se pide.
+                                List<object> fuentes = null;
+                                if (conFuentes)
                                 {
-                                    foreach (Civ.SectionSource f in slg.GetSectionSources())
-                                        fuentes.Add(new { nombre = NombreDe(tr, f.SourceId), tipo = f.SourceType.ToString(), muestreada = f.IsSampled });
+                                    fuentes = new List<object>();
+                                    try
+                                    {
+                                        if (!slg.IsWriteEnabled) slg.UpgradeOpen();
+                                        foreach (Civ.SectionSource f in slg.GetSectionSources())
+                                            fuentes.Add(new { nombre = NombreDe(tr, f.SourceId), tipo = f.SourceType.ToString(), muestreada = f.IsSampled });
+                                    }
+                                    catch (Exception ex) { fuentes.Add(new { nombre = (string)null, tipo = "error", muestreada = false, error = ex.Message }); }
                                 }
-                                catch (Exception ex) { fuentes.Add(new { nombre = (string)null, tipo = "error", muestreada = false, error = ex.Message }); }
                                 lista.Add(new { nombre = slg.Name, alineamiento = al.Name, n_lineas = n, inicio = ini.HasValue ? N(ini.Value) : null, fin = fin.HasValue ? N(fin.Value) : null, fuentes });
                             }
                         }
-                        tr.Commit();
+                        // Herramienta de solo lectura: se descarta la transacción para no guardar nada aunque se haya abierto el grupo para escritura
+                        tr.Abort();
                     }
                     return lista;
                 }

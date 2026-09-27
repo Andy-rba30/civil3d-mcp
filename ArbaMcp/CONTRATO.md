@@ -99,7 +99,7 @@ El historial del plugin (`leer_historial`) también se escribe en `%LOCALAPPDATA
 | `listar_objetivos` | corredor*, linea_base*, region* | por subensamblaje: subensamblaje, grupo, lado (izquierda/derecha/ninguno), tipo (superficie/elevacion/desplazamiento), parametro, objetivos[] (tipo: eje, perfil, superficie, polilinea, linea_caracteristica; nombre; handle), opcion_objetivo (mas_cercano/exterior/interior) |
 | `listar_ensamblajes` | — | nombre, tipo, grupos[] (nombre, lado, subensamblajes[]: nombre, tipo, lado, parametros{}), usado_en[] (corredor, linea_base, region) |
 | `listar_intersecciones` | — | nombre, eje_principal, eje_secundario, pk_principal, pk_secundaria, x, y, corredor, tipo, regiones_generadas[] |
-| `listar_lineas_muestreo` | alineamiento | grupos: nombre, alineamiento, n_lineas, inicio, fin, fuentes[] (nombre, tipo, muestreada) |
+| `listar_lineas_muestreo` | alineamiento, fuentes (false) | grupos: nombre, alineamiento, n_lineas, inicio, fin; con `fuentes=true`, fuentes[] (nombre, tipo, muestreada). Consultar las fuentes abre el grupo para escritura (lo exige la API) y puede tardar |
 | `punto_a_pk` | alineamiento*, x*, y* | pk, desplazamiento, lado (`Alignment.StationOffset`) |
 | `pk_a_punto` | alineamiento*, pk*, desplazamiento, perfil | x, y (`Alignment.PointLocation`) y `cota` si se pasa `perfil` (`Profile.ElevationAt`) |
 | `cota_superficie` | superficie*, x*, y* | cota (`Surface.FindElevationAtXY`) o error si el punto está fuera |
