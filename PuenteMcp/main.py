@@ -18,7 +18,7 @@ import uvicorn
 from mcp.server.mcpserver import MCPServer
 from pydantic import create_model, Field
 
-__version__ = "1.3.2"
+__version__ = "1.3.3"
 
 CARPETA = os.path.dirname(os.path.abspath(__file__))
 

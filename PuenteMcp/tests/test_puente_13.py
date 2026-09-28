@@ -100,7 +100,7 @@ def test_un_nombre_retirado_responde_con_la_sustituta(servidor, puente, monkeypa
     monkeypatch.setitem(puente.HERRAMIENTAS_RETIRADAS, "listar_objetivos_region", "listar_objetivos(corredor=..., linea_base=..., region=...)")
     with pytest.raises(ToolError) as info:
         ejecutar(puente.mcp._tool_manager.call_tool("listar_objetivos_region", {"args": {}}, None))
-    assert "se retiró en 1.3.2" in str(info.value) and "listar_objetivos(" in str(info.value)
+    assert "se retiró en 1.3.3" in str(info.value) and "listar_objetivos(" in str(info.value)
     # si el nombre vuelve a existir en el plugin, gana la herramienta real
     servidor.herramienta("listar_objetivos_region")
     servidor.respuestas["listar_objetivos_region"] = {"ok": True, "result": []}
