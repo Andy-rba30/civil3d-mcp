@@ -1,12 +1,14 @@
 """Puente MCP para Civil 3D: expone al agente, por streamable-http en 127.0.0.1:8001/mcp, las herramientas que publica
 el plugin ArbaMcp en GET /tools (127.0.0.1:8765). Registra las herramientas de forma dinámica, elige el tiempo máximo
-por herramienta y traduce los errores de conexión al contrato (CONTRATO.md).
+por herramienta, añade ms_puente a cada respuesta, sondea GET /ping (sin token) mientras Civil 3D arranca y traduce
+los errores de conexión al contrato (CONTRATO.md).
 
 La construcción del servidor está separada de uvicorn para poder probar el puente sin Civil 3D (tests/).
 """
 import os
 import sys
 import json
+import time
 import asyncio
 import typing
 
@@ -132,8 +134,12 @@ def _mensaje_timeout(timeout_s: int) -> str:
     return f"Civil 3D no respondió en {timeout_s} s; puede estar ocupado o con un cuadro de diálogo abierto (usa capturar_pantalla)"
 
 
-async def _c3d_execute(tool_name: str, args: dict, timeout_s: int = TIMEOUT_ESCRITURA, retry=True):
-    """Ejecuta una herramienta en el plugin. Devuelve el resultado (objeto JSON) o {"ok": false, "error": ...}.
+CLAVES_TIEMPO = ("ms", "ms_espera", "ms_ejecucion")
+
+
+async def _ejecutar(tool_name: str, args: dict, timeout_s: int = TIMEOUT_ESCRITURA, retry=True) -> dict:
+    """POST /execute. Devuelve {"resultado": <result>, "tiempos": {ms, ms_espera, ms_ejecucion}} o
+    {"error": <mensaje>} ya traducido al contrato.
 
     Ante un 401 relee el token del archivo (Civil 3D lo cambia en cada arranque) y reintenta una sola vez.
     """
@@ -148,21 +154,49 @@ async def _c3d_execute(tool_name: str, args: dict, timeout_s: int = TIMEOUT_ESCR
 
         if response.status_code == 401 and retry:
             _clear_token()
-            return await _c3d_execute(tool_name, args, timeout_s, retry=False)
+            return await _ejecutar(tool_name, args, timeout_s, retry=False)
 
         if response.status_code != 200:
-            return _error(f"Error HTTP {response.status_code} de Civil 3D")
+            return {"error": f"Error HTTP {response.status_code} de Civil 3D"}
 
         data = response.json()
         if not data.get("ok"):
-            return _error(f"Error de Civil 3D: {data.get('error')}")
-        return data.get("result", data)
+            return {"error": f"Error de Civil 3D: {data.get('error')}"}
+        tiempos = {k: data[k] for k in CLAVES_TIEMPO if k in data}
+        return {"resultado": data.get("result", data), "tiempos": tiempos}
     except httpx.ConnectError:
-        return _error(MENSAJE_SIN_CONEXION)
+        return {"error": MENSAJE_SIN_CONEXION}
     except httpx.TimeoutException:
-        return _error(_mensaje_timeout(timeout_s))
+        return {"error": _mensaje_timeout(timeout_s)}
     except Exception as e:
-        return _error(f"Error de conexión: {e}")
+        return {"error": f"Error de conexión: {e}"}
+
+
+async def _c3d_execute(tool_name: str, args: dict, timeout_s: int = TIMEOUT_ESCRITURA, retry=True):
+    """Ejecuta una herramienta en el plugin. Devuelve el resultado (objeto JSON) o {"ok": false, "error": ...}."""
+    r = await _ejecutar(tool_name, args, timeout_s, retry)
+    if "error" in r:
+        return _error(r["error"])
+    return r["resultado"]
+
+
+def con_tiempos(respuesta: dict, ms_puente: int):
+    """Lo que ve el agente: el resultado de Civil 3D más ms (Civil 3D), ms_espera, ms_ejecucion y ms_puente (total
+    visto desde Python). Si el resultado es un objeto, los tiempos van como claves suyas (sin pisar las que ya tenga);
+    si es una lista o un valor, se envuelve en {"result": ..., ...}. Un error lleva ok=false, error y ms_puente."""
+    if "error" in respuesta:
+        return {"ok": False, "error": respuesta["error"], "ms_puente": ms_puente}
+    resultado = respuesta["resultado"]
+    tiempos = dict(respuesta.get("tiempos") or {})
+    tiempos["ms_puente"] = ms_puente
+    if isinstance(resultado, dict):
+        salida = dict(resultado)
+        for k, v in tiempos.items():
+            salida.setdefault(k, v)
+        return salida
+    salida = {"result": resultado}
+    salida.update(tiempos)
+    return salida
 
 
 def _a_texto(resultado) -> str:
@@ -200,7 +234,9 @@ def _crear_handler(nombre: str, parametros: list, descripcion: str):
 
     async def handler(args: SchemaModel) -> str:  # type: ignore[valid-type]
         datos = args.model_dump(exclude_none=True)
-        return _a_texto(await _c3d_execute(nombre, datos, _timeout_s(nombre, parametros, datos)))
+        inicio = time.perf_counter()
+        respuesta = await _ejecutar(nombre, datos, _timeout_s(nombre, parametros, datos))
+        return _a_texto(con_tiempos(respuesta, int((time.perf_counter() - inicio) * 1000)))
 
     handler.__name__ = nombre
     handler.__doc__ = descripcion or ""
@@ -256,13 +292,100 @@ async def sincronizar_herramientas() -> dict:
     return resultado
 
 
+# ---------------------------------------------------------------------------------------------- arranque de Civil 3D
+async def ping_plugin(timeout: float = 3.0):
+    """GET /ping sin token: {"ok": true, "servidor": "ArbaMcp", "version": "1.3.0"} si el plugin escucha; None si no."""
+    try:
+        res = await _get_client().get("/ping", timeout=timeout)
+        if res.status_code == 200:
+            data = res.json()
+            if data.get("ok"):
+                return data
+    except Exception:
+        pass
+    return None
+
+
+async def esperar_plugin(intervalo_s: float = 2.0, maximo_s: float = None) -> bool:
+    """Sondea /ping hasta que el plugin responde (Civil 3D arrancando). Después olvida el token para releerlo:
+    cada arranque de Civil 3D genera uno nuevo. Devuelve False si se agota 'maximo_s' (None = sin límite)."""
+    inicio = time.monotonic()
+    while True:
+        if await ping_plugin() is not None:
+            _clear_token()
+            return True
+        if maximo_s is not None and time.monotonic() - inicio >= maximo_s:
+            return False
+        await asyncio.sleep(intervalo_s)
+
+
 async def update_tools_loop():
     while True:
         try:
-            await sincronizar_herramientas()
+            r = await sincronizar_herramientas()
+            if r["estado"] == "sin_conexion":
+                await esperar_plugin()
+                continue
         except Exception:
             pass
         await asyncio.sleep(5)
+
+
+# ---------------------------------------------------------------------------------------------- nombres retirados
+# Herramientas retiradas o renombradas: nombre viejo → con qué sustituirlo. En 1.3.0 no se retira ninguna; el
+# mecanismo queda listo (como en revit-mcp): si un cliente llama a un nombre de esta tabla, recibe el mensaje en vez
+# del "Unknown tool" genérico del SDK.
+HERRAMIENTAS_RETIRADAS = {}
+
+
+def mensaje_retirada(nombre: str) -> str:
+    sustituta = HERRAMIENTAS_RETIRADAS.get(nombre)
+    if sustituta is None:
+        return f"Unknown tool: {nombre}"
+    return (f"La herramienta '{nombre}' se retiró en {__version__}. Usa en su lugar: {sustituta}. "
+            "Consulta la lista de herramientas del servidor (tools/list).")
+
+
+def instalar_retiradas(mcp_server):
+    """Envuelve MCPServer._tool_manager.call_tool (o MCPServer.call_tool) para que un nombre retirado responda con su
+    sustituta como ToolError (resultado is_error, sin traza). No se registran herramientas ocultas: el SDK no
+    permite excluir una herramienta de tools/list. Devuelve el nombre del método envuelto o None."""
+    try:
+        from mcp.server.mcpserver.exceptions import ToolError
+    except ImportError:  # pragma: no cover - SDK distinto
+        ToolError = Exception
+
+    manager = getattr(mcp_server, "_tool_manager", None)
+    objetivo = manager if manager is not None and hasattr(manager, "call_tool") else mcp_server
+    original = getattr(objetivo, "call_tool", None)
+    if original is None:
+        print("Aviso: no se pudo instalar la interceptación de herramientas retiradas")
+        return None
+    if getattr(original, "_retiradas_instaladas", False):
+        return getattr(original, "_retiradas_objetivo", None)
+
+    def _registrada(nombre):
+        get_tool = getattr(objetivo, "get_tool", None)
+        if get_tool is None:
+            return False
+        try:
+            return get_tool(nombre) is not None
+        except Exception:
+            return False
+
+    async def call_tool(name, *args, **kwargs):
+        if name in HERRAMIENTAS_RETIRADAS and not _registrada(name):
+            raise ToolError(mensaje_retirada(name))
+        return await original(name, *args, **kwargs)
+
+    etiqueta = "_tool_manager.call_tool" if objetivo is manager else "call_tool"
+    call_tool._retiradas_instaladas = True
+    call_tool._retiradas_objetivo = etiqueta
+    setattr(objetivo, "call_tool", call_tool)
+    return etiqueta
+
+
+RETIRADAS_INSTALADAS_EN = instalar_retiradas(mcp)
 
 
 # ---------------------------------------------------------------------------------------------- servidor
@@ -276,6 +399,7 @@ def construir_app():
 
 
 async def run_combined_async():
+    print(f"Puente MCP Civil 3D {__version__}: plugin en {base_url()}, agente en http://127.0.0.1:{PUERTO_PUENTE}/mcp")
     asyncio.create_task(update_tools_loop())
     config = uvicorn.Config(construir_app(), host="127.0.0.1", port=PUERTO_PUENTE, log_level="info")
     server = uvicorn.Server(config)

@@ -122,7 +122,7 @@ def test_devuelve_json_valido_con_tildes(servidor, puente):
     resultado = ejecutar(puente.mcp.call_tool("listar_regiones", {"args": {"corredor": "C1"}}))
     texto = resultado.content[0].text
     assert "Región 1 – Ñandú" in texto and "\\u00" not in texto
-    assert json.loads(texto)[0]["ensamblaje"] == "Calzada 7 m"
+    assert json.loads(texto)["result"][0]["ensamblaje"] == "Calzada 7 m"   # las listas van envueltas con los tiempos (1.3.0)
 
 
 def test_a_texto_con_objetos_no_serializables():

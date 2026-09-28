@@ -39,6 +39,7 @@ namespace ArbaMcp
 
         private static TcpListener _oyente;
         private static CancellationTokenSource _cts;
+        private static readonly Registro401 Rechazos401 = new Registro401();
 
         /// <summary>Opciones de serialización compartidas (tildes sin escapar); las define el núcleo.</summary>
         internal static readonly JsonSerializerOptions Json = Nucleo.Json.Opciones;
@@ -143,8 +144,11 @@ namespace ArbaMcp
                     // 3. Autorización, DESPUÉS de leer el cuerpo: si se cierra la conexión con bytes sin leer, Windows
                     // envía un reset y el cliente ve un error en vez del 401/403/415.
                     int rechazo = Autorizacion.Decidir(peticion, Puerto, TokenActual);
+                    foreach (var linea in Rechazos401.Cerrar(DateTime.Now)) Historial.Registrar(linea);
                     if (rechazo != Autorizacion.Autorizada)
                     {
+                        // Los 401 se anotan una vez por ruta y minuto con el recuento, no uno por petición
+                        if (rechazo == 401) foreach (var linea in Rechazos401.Anotar(peticion.Metodo, peticion.Ruta, DateTime.Now)) Historial.Registrar(linea);
                         await Responder(ns, rechazo, Http.Error(Http.TextoEstado(rechazo)));
                         return;
                     }
