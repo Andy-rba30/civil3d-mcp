@@ -213,6 +213,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "punto_a_pk",
+                Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
                 Descripcion = "Proyecta un punto (x, y) sobre un alineamiento y devuelve progresiva, desplazamiento y lado (Alignment.StationOffset).",
                 Parametros =
                 {
@@ -241,6 +242,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "pk_a_punto",
+                Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
                 Descripcion = "Devuelve las coordenadas (x, y) de una progresiva y desplazamiento de un alineamiento (Alignment.PointLocation) y, si se indica 'perfil', la cota (Profile.ElevationAt).",
                 Parametros =
                 {
@@ -279,6 +281,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "cota_superficie",
+                Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
                 Descripcion = "Cota de una superficie en un punto (Surface.FindElevationAtXY); error si el punto queda fuera de la superficie.",
                 Parametros =
                 {
@@ -307,6 +310,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "interseccion_ejes",
+                Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
                 Descripcion = "Puntos de cruce entre dos alineamientos con sus progresivas en cada uno (Entity.IntersectWith; si no devuelve nada, muestreo cada 0.5 m).",
                 Parametros =
                 {

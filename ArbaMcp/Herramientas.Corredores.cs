@@ -626,6 +626,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "listar_corredores",
+                Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
                 Descripcion = "Lista los corredores del dibujo activo: si está desactualizado, si se reconstruye automáticamente y sus líneas base (alineamiento, perfil, rango y número de regiones).",
                 Ejecutar = a =>
                 {
@@ -665,6 +666,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "listar_regiones",
+                Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
                 Descripcion = "Lista las regiones de un corredor (opcionalmente de una sola línea base): índice, nombre, rango, ensamblaje, frecuencias y estaciones adicionales.",
                 Parametros =
                 {
@@ -697,6 +699,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "listar_objetivos",
+                Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
                 Descripcion = "Lista los objetivos (superficie, elevación, desplazamiento) de cada subensamblaje de una región: grupo, lado, parámetro, objetos asignados y opción (más cercano, exterior, interior).",
                 Parametros =
                 {
@@ -724,6 +727,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "listar_ensamblajes",
+                Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
                 Descripcion = "Lista los ensamblajes del dibujo con sus grupos, subensamblajes (tipo, lado, parámetros) y dónde se usan (corredor, línea base, región).",
                 Ejecutar = a =>
                 {
@@ -789,6 +793,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "listar_intersecciones",
+                Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
                 Descripcion = "Lista las intersecciones del dibujo: ejes principal y secundario, progresivas de cruce, corredor, tipo y regiones generadas en el corredor.",
                 Ejecutar = a =>
                 {
@@ -858,6 +863,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "listar_lineas_muestreo",
+                // Se queda en contexto Documento (deja una entrada de Deshacer): con fuentes=true abre el grupo para escritura, lo exige la API
                 Descripcion = "Lista los grupos de líneas de muestreo (de un alineamiento o de todos): número de líneas y rango de progresivas. Con fuentes=true añade las fuentes muestreadas (superficies y corredores); esa consulta obliga a Civil 3D a abrir el grupo para escritura y puede tardar en dibujos grandes.",
                 Parametros =
                 {
@@ -919,6 +925,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "estado_corredor",
+                Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
                 Descripcion = "Estado de un corredor: si está desactualizado, última reconstrucción hecha desde MCP y sus superficies con códigos de enlace y punto, contornos y si están desactualizadas.",
                 Parametros = { P("corredor", "string", "Nombre del corredor", true) },
                 Ejecutar = a =>

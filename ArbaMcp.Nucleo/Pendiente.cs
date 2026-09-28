@@ -14,13 +14,17 @@ namespace ArbaMcp.Nucleo
         /// <summary>
         /// Contexto de comando del dibujo activo (DocumentManager.ExecuteInCommandContextAsync): la herramienta corre
         /// como si fuera un comando, con el documento bloqueado y la actualización de gráficos al terminar. Espera a
-        /// que Civil 3D esté libre. Valor por defecto y el único válido para leer o modificar el dibujo.
+        /// que Civil 3D esté libre. Valor por defecto y el único válido para modificar el dibujo. AutoCAD anota cada
+        /// uno de estos trabajos como una entrada "Executefunction" del menú Deshacer (validado en Civil 3D 2027 el
+        /// 28/09/2026): por eso desde 1.3.0 las lecturas van en Aplicacion.
         /// </summary>
         Documento = 0,
 
         /// <summary>
         /// Contexto de aplicación en el hilo principal, esperando también a que Civil 3D esté libre. Para lo que no
-        /// admite contexto de comando: abrir o activar dibujos, enviar una orden a la línea de comandos.
+        /// admite contexto de comando (abrir o activar dibujos, enviar una orden a la línea de comandos) y, desde
+        /// 1.3.0, para las herramientas de solo lectura, que bloquean el dibujo mientras leen y así no dejan entrada
+        /// en el menú Deshacer.
         /// </summary>
         Aplicacion = 1,
 

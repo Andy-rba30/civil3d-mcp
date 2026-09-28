@@ -141,6 +141,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "listar_alineamientos",
+                Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
                 Descripcion = "Lista los alineamientos del dibujo activo con sus progresivas inicial y final y sus perfiles.",
                 Ejecutar = a =>
                 {
@@ -173,6 +174,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "listar_perfiles",
+                Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
                 Descripcion = "Lista los perfiles de un alineamiento: nombre, tipo (EG terreno, FG rasante), progresivas y número de PVI.",
                 Parametros = { P("alineamiento", "string", "Nombre del alineamiento", true) },
                 Ejecutar = a =>
@@ -208,6 +210,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "listar_superficies",
+                Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
                 Descripcion = "Lista las superficies del dibujo activo: tipo (TIN, Grid, TinVolume, GridVolume o Corridor), si está desactualizada, número de líneas de rotura y de contornos de la definición y, en superficies de corredor, el corredor que la genera.",
                 Ejecutar = a =>
                 {
@@ -342,6 +345,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "listar_pvis",
+                Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
                 Descripcion = "Devuelve la geometría vertical de un perfil: cada PVI con progresiva, cota, pendientes de entrada y salida, y la curva vertical que lo contiene (tipo y longitud) si existe.",
                 Parametros =
                 {

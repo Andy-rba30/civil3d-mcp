@@ -5,11 +5,14 @@ Code, Cursor...). Requisitos previos:
 
 - Civil 3D 2027 abierto con **una copia** del DWG de prueba (nunca la entrega original): un dibujo guardado en disco
   con al menos un corredor cuya primera región tenga objetivos de superficie, y con al menos dos superficies.
-- Plugin **1.3.0** instalado (`instalar.ps1` con Civil 3D cerrado; el bundle lleva `ArbaMcp.dll` y `ArbaMcp.Nucleo.dll`).
-  `VALIDACION_122.md` debe haberse ejecutado antes (o al menos su paso 5: `HiloPrincipal listo`).
-- Puente reiniciado con el `main.py` de 1.3.0 (`.venv\Scripts\python main.py` en `PuenteMcp`) y el cliente MCP
-  reiniciado para que cargue la lista nueva de 42 herramientas.
+- `VALIDACION_122.md` ejecutada (informe del 28/09/2026: 1.2.2 validada, `HiloPrincipal listo`, 13/13 y 31/31).
+- El plugin **1.3.0** se instala en el paso 0 de este prompt desde la rama `feature/proceso-1.3`; el bundle queda con
+  `ArbaMcp.dll` y `ArbaMcp.Nucleo.dll`.
+- Puente reiniciado con el `main.py` de 1.3.0 y el cliente MCP reiniciado para que cargue la lista nueva de 42
+  herramientas (también en el paso 0).
 - El informe de este prompt es el que actualiza `herramientas-dev/miembros_por_verificar_civil3d.md`.
+- Ya se sabe por la 1.2.2 que cada herramienta en contexto de comando deja una entrada `Executefunction` en el menú
+  Deshacer; en 1.3.0 las lecturas pasan a contexto de aplicación para no dejarla. Los pasos 8, 14 y 21 lo comprueban.
 
 ---
 
@@ -31,6 +34,32 @@ Reglas:
 
 ## Pasos
 
+0. **(6 min) Instalar la 1.3.0.** Reglas de `VALIDACION_122.md` (no muestres el token, sin commits, sin tocar código).
+   Civil 3D **cerrado** (`Get-Process acad -ErrorAction SilentlyContinue` no devuelve nada). En PowerShell:
+   ```powershell
+   cd C:\IA\civil3d-mcp
+   git status --short
+   git fetch origin
+   git checkout feature/proceso-1.3
+   git pull origin feature/proceso-1.3
+   git log -1 --oneline
+   powershell -ExecutionPolicy Bypass -File .\ArbaMcp\instalar.ps1
+   $c = "$env:APPDATA\Autodesk\ApplicationPlugins\ArbaMcp.bundle\Contents"
+   (Get-Item "$c\ArbaMcp.dll").VersionInfo.FileVersion
+   (Get-Item "$c\ArbaMcp.Nucleo.dll").VersionInfo.FileVersion
+   Select-String -Path "$env:APPDATA\Autodesk\ApplicationPlugins\ArbaMcp.bundle\PackageContents.xml" -Pattern 'AppVersion'
+   ```
+   → esperado: `git status` sin archivos modificados (los `??` no rastreados no importan), la compilación con
+   `0 Errores` (compila dos proyectos: `ArbaMcp.Nucleo` y `ArbaMcp`), `Instalado en: ... (ArbaMcp.dll + ArbaMcp.Nucleo.dll)`,
+   `FileVersion` **1.3.0.0** en las dos DLL y `AppVersion="1.3.0"`. Si la compilación falla, pega todas las líneas con
+   `error` y **para aquí** (informe con solo este paso): la 1.2.2 sigue instalada.
+   Después reinicia el puente (detén el proceso `main.py` de `PuenteMcp` que haya y arranca
+   `.\PuenteMcp\.venv\Scripts\python .\PuenteMcp\main.py` con la salida redirigida a un archivo; esperado en esa salida:
+   `Puente MCP Civil 3D 1.3.0: plugin en http://127.0.0.1:8765, agente en http://127.0.0.1:8001/mcp` y
+   `Uvicorn running on http://127.0.0.1:8001`). Abre Civil 3D desde el menú Inicio con la **copia** del DWG de prueba,
+   comprueba en `historial.log` la línea `HiloPrincipal listo: despachador sí, ventana principal sí` de este arranque y
+   reconecta el cliente MCP. Si `ARBAMCP` muestra un cuadro de diálogo, ciérralo con Aceptar antes de seguir: mientras
+   está abierto, Civil 3D cuenta como ocupado.
 1. **(1 min)** Lista las herramientas que te ofrece el servidor → esperado: **42** nombres, entre ellos
    `asignar_objetivos` y `establecer_frecuencias` (nuevas) y todas las de la 1.2.2 (`asignar_objetivo`,
    `establecer_frecuencia`, `ping`, `leer_historial`...). En `asignar_objetivos` el parámetro `asignaciones` es de
@@ -71,8 +100,9 @@ Reglas:
    `ms_espera`, `ms_ejecucion`, `ms_puente`, `copia.ms` y `copia.espera_ms`.
 8. **(1 min)** `listar_objetivos(...)` como en el paso 5 → esperado: `SUB_A`, `SUB_B` y `SUB_C` apuntan a `OTRA`.
    En Civil 3D, despliega la flecha del botón **Deshacer** de la barra de acceso rápido y anota literalmente las 3
-   últimas entradas → esperado: **una sola** entrada para el lote del paso 7 (no una por asignación ni por
-   transacción). No ejecutes Deshacer desde el menú.
+   primeras entradas → esperado: **una sola** entrada `Executefunction` para el lote del paso 7 (no una por asignación
+   ni por transacción) y **ninguna** entrada por los `listar_*` de los pasos 4, 5 y 8 (en 1.2.2 cada lectura dejaba
+   una). No ejecutes Deshacer desde el menú.
 9. **(1 min)** `ejecutar_comando(comando="_.UNDO 1", timeout_s=30)` → esperado: `terminado`. Después
    `listar_objetivos(...)` → esperado: los tres objetivos vuelven a `ACTUAL` (el lote entero se deshizo con una
    sola operación). Si solo vuelve uno, anótalo: significa que el lote no quedó como una entrada.
@@ -99,9 +129,8 @@ Reglas:
     Comprueba con `leer_log(ultimas_n=5)` que cada una dejó una línea con `ok: false`.
 14. **(2 min)** `asignar_objetivo(corredor=CORREDOR, linea_base=LINEA_BASE, region=REGION, subensamblaje=SUB_A,
     tipo="superficie", objetivo=OTRA)` (herramienta individual de la 1.2.x) → esperado: `simulado: false`,
-    `despues.objetivos` con `OTRA`, `copia` como objeto (`reutilizada: true`), `avisos: null` (si hay un aviso
-    "Sin marca de deshacer" o "No se pudo abrir la marca de deshacer", pégalo: es el dato clave para
-    `Document.StartUndoMark`). `ejecutar_comando("_.UNDO 1")` → `listar_objetivos` vuelve a `ACTUAL`.
+    `despues.objetivos` con `OTRA`, `copia` como objeto (`reutilizada: true`), `avisos: null`, y en el menú Deshacer
+    una entrada `Executefunction` nueva. `ejecutar_comando("_.UNDO 1")` → `listar_objetivos` vuelve a `ACTUAL`.
 15. **(1 min)** `guardar_copia(sufijo="validacion_13")` → esperado: `copia` en `backups\` con `_validacion_13.dwg`
     (sin cambios respecto a 1.2.x) y `copias_conservadas: 20`.
 16. **(3 min)** Copia de un dibujo **sin guardar**: en Civil 3D crea un dibujo nuevo (`_.NEW`, plantilla por defecto) y
@@ -122,9 +151,11 @@ Reglas:
     En el archivo de salida del puente (o su consola) pega las líneas que mencionen `/ping` o el token.
 20. **(1 min)** `leer_historial(ultimas_n=60)` → pega las líneas `Copia de seguridad:` (con `ms`), `Escritura ...`,
     `MCP 401` y cualquier `StartUndoMark`/`EndUndoMark falló`.
-21. **(2 min)** Menú Deshacer final: despliega la lista y pega literalmente las 8 últimas entradas. Esperado: una
-    entrada por cada escritura real de los pasos 7, 10 y 14 (no varias por lote) y ninguna entrada suelta por
-    `listar_*`.
+21. **(2 min)** Menú Deshacer final: despliega la lista y pega literalmente las 8 primeras entradas. Esperado:
+    entradas `Executefunction` solo por las escrituras reales de los pasos 7, 10, 14 y 15 (una por herramienta, no
+    varias por lote), las `Linea`/`Regen` de `probar_servidor.py`, y **ninguna** por las decenas de `listar_*` y
+    `ping` de esta sesión. Si aparecen tantas `Executefunction` como lecturas hiciste, el cambio de contexto de las
+    lecturas no ha surtido efecto: anótalo.
 
 ## Informe
 
@@ -137,15 +168,14 @@ Y debajo:
 
 - **Copia de disco**: `copia.ms`, `copia.espera_ms`, `copia.reutilizada` y `copia.refleja_guardado_de` de los pasos 7,
   10 y 14; si `copia.estado` fue `error`, el mensaje literal. Tamaño del `.dwg` y del archivo de `backups\`.
-- **Deshacer**: las entradas literales de los pasos 8, 10 y 21 y si `_.UNDO 1` revirtió el lote entero (pasos 9 y 11).
-  Cualquier aviso `Sin marca de deshacer` / `No se pudo abrir la marca de deshacer` de las respuestas.
+- **Deshacer**: las entradas literales de los pasos 8, 10 y 21, si `_.UNDO 1` revirtió el lote entero (pasos 9 y 11) y
+  si las lecturas dejaron o no entradas.
 - **Miembros de la API que fallaron** (nombre del miembro, mensaje de error literal), para actualizar
-  `herramientas-dev/miembros_por_verificar_civil3d.md`. En 1.3.0 están `por verificar`: `Document.StartUndoMark` /
-  `EndUndoMark` (por reflexión), `File.Copy` del .dwg desde un hilo aparte mientras Civil 3D tiene el dibujo abierto,
-  `FileInfo.LastWriteTimeUtc`/`Length` del .dwg abierto, `DocumentCollection.ExecuteInCommandContextAsync`,
-  `Dispatcher` del hilo principal, `Application.MainWindow.Handle` + `IsWindowEnabled`, `GetSystemVariable("CMDACTIVE")`,
-  `Document.SendStringToExecute` por la cola Inmediato, `BaselineRegion.GetTargets/SetTargets` en lote,
-  `AppliedAssemblySetting.FrequencyAlongTangents` en lote.
+  `herramientas-dev/miembros_por_verificar_civil3d.md`. En 1.3.0 están `por verificar`: `File.Copy` del .dwg desde un
+  hilo aparte mientras Civil 3D tiene el dibujo abierto, `FileInfo.LastWriteTimeUtc`/`Length` del .dwg abierto, las
+  lecturas en contexto de aplicación con `LockDocument` (sin entrada de Deshacer), `BaselineRegion.GetTargets/SetTargets`
+  en lote, `AppliedAssemblySetting.FrequencyAlongTangents` asignada (individual y en lote), `_.UNDO 1` sobre un lote,
+  y que `ms_espera` refleje la espera real.
 - **Tiempos comparados**: `ms_espera` frente a `ms_ejecucion` en una lectura y en el lote del paso 7; `ms_puente`
   menos `ms` (sobrecoste del puente) en tres llamadas.
 - Versión de Civil 3D e idioma, versión de `ArbaMcp.dll` y `ArbaMcp.Nucleo.dll` instaladas (`FileVersion`), y el

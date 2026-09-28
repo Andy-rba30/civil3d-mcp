@@ -22,7 +22,7 @@ Las herramientas que modifican el dibujo (`asignar_*`, `establecer_*`, `agregar_
 
 - **Antes de escribir** comprueban que no hay un comando activo (`CMDACTIVE`), que el dibujo no es de solo lectura y que el mismo archivo no está abierto dos veces; si algo falla, responden error sin tocar nada.
 - **Copias**: antes de cada escritura real copian el `.dwg` **de disco** a `<carpeta del dwg>\backups\<nombre>_<fecha>_<herramienta>.dwg` en un hilo aparte (se espera justo antes de tocar el dibujo; se reutiliza si el archivo no cambió) y conservan las últimas 20. La copia refleja el último guardado en disco, no el estado en memoria; la respuesta lo dice (`copia.nota`, `copia.refleja_guardado_de`). Un dibujo sin guardar usa `SaveAs` en `%LOCALAPPDATA%\ArbaMcp\backups`. Si la copia falla no se escribe. `guardar_copia` hace una copia a mano (SaveAs, estado en memoria) con el sufijo que indiques.
-- **Deshacer**: cada herramienta de escritura (también un lote) queda como una sola entrada del menú Deshacer (marca de deshacer alrededor de la escritura; por verificar en Civil 3D).
+- **Deshacer**: cada herramienta de escritura (también un lote) es una sola entrada `Executefunction` del menú Deshacer y `_.UNDO 1` la revierte entera (validado en Civil 3D 2027, 28/09/2026). Las lecturas corren en contexto de aplicación y no dejan entrada.
 - **Lotes**: `asignar_objetivos` y `establecer_frecuencias` aplican varias asignaciones o regiones en un solo contexto de comando, con una copia, una línea de log y una entrada de Deshacer; validan todo antes de tocar nada y devuelven `fallidos[]` sin abortar el lote. Antes de encadenar varias llamadas iguales, el agente debe usar el lote.
 - **Log**: cada llamada de escritura añade una línea JSON a `<carpeta del dwg>\mcp_log.jsonl` (hora, herramienta, args, ok, ms, error); `leer_log` la devuelve. El historial del plugin se guarda además en `%LOCALAPPDATA%\ArbaMcp\historial.log`.
 - **`simular`**: todas aceptan `simular=true` y entonces devuelven lo que harían (`antes`/`despues` previstos) sin tocar el dibujo.
@@ -32,8 +32,10 @@ Las herramientas que modifican el dibujo (`asignar_*`, `establecer_*`, `agregar_
 ## Hilos y contextos de ejecución
 
 Desde la versión 1.2.2 el servidor HTTP nunca llama a la API de AutoCAD: cada herramienta se lleva al hilo principal
-por el Dispatcher de WPF y se ejecuta en el contexto de comando del dibujo activo (`ExecuteInCommandContextAsync`),
-esperando a que Civil 3D esté libre (sin comando activo ni cuadro de diálogo). `ping`, `leer_historial`, `leer_log`,
+por el Dispatcher de WPF esperando a que Civil 3D esté libre (sin comando activo ni cuadro de diálogo). Las de
+escritura se ejecutan en el contexto de comando del dibujo activo (`ExecuteInCommandContextAsync`, una entrada de
+Deshacer por herramienta); desde 1.3.0 las de solo lectura corren en contexto de aplicación con el dibujo bloqueado,
+para no llenar el menú Deshacer de entradas vacías. `ping`, `leer_historial`, `leer_log`,
 `leer_variable` y `capturar_pantalla` responden siempre. Si Civil 3D se cierra con errores o traza en blanco con el
 plugin cargado, sigue `ESTABILIDAD.md`.
 

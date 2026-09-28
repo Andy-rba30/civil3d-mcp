@@ -21,8 +21,8 @@ ejecuta en el contexto que la herramienta declara en `Herramienta.Contexto`:
 
 | Contexto | Qué hace | Espera a que Civil 3D esté libre | Herramientas |
 |---|---|---|---|
-| `Documento` (por defecto) | Contexto de comando del dibujo activo (`DocumentManager.ExecuteInCommandContextAsync`): la herramienta corre como un comando más, con el documento bloqueado y los gráficos actualizados al terminar | Sí | Todas las de lectura y escritura del dibujo |
-| `Aplicacion` | Contexto de aplicación en el hilo principal | Sí | `abrir_dibujo`, el envío de `ejecutar_comando` y de las exportaciones |
+| `Documento` (por defecto) | Contexto de comando del dibujo activo (`DocumentManager.ExecuteInCommandContextAsync`): la herramienta corre como un comando más, con el documento bloqueado y los gráficos actualizados al terminar. AutoCAD la anota como **una entrada `Executefunction` del menú Deshacer** (validado el 28/09/2026) | Sí | Todas las de escritura del dibujo, y `listar_lineas_muestreo` (abre el grupo para escritura con `fuentes=true`) |
+| `Aplicacion` | Contexto de aplicación en el hilo principal, con el dibujo bloqueado mientras se lee. No deja entrada en el menú Deshacer | Sí | Desde 1.3.0, todas las de solo lectura (`listar_*`, `estado_corredor`, `punto_a_pk`, `pk_a_punto`, `cota_superficie`, `interseccion_ejes`); `abrir_dibujo`, el envío de `ejecutar_comando` y de las exportaciones |
 | `Inmediato` | Contexto de aplicación, sin esperar y por delante de los demás trabajos | No | `ping`, `leer_historial`, `leer_log`, `leer_variable`, `capturar_pantalla`, los ESC de `ejecutar_comando` |
 
 "Libre" significa `CMDACTIVE = 0` y ventana principal habilitada (sin cuadro de diálogo modal). Los trabajos
@@ -82,7 +82,7 @@ Toda herramienta de escritura pasa por `Escritura.Ejecutar` (`Escritura.cs`), qu
 4. **Verificación antes/después**: tras escribir, la herramienta vuelve a leer el objeto y responde `{"simulado":false,"cambios":[...],"antes":{...},"despues":{...},"copia":{...},"datos":...,"avisos":...}` con los campos que cambiaron. `copia` es un objeto: `ruta`, `metodo` (`copia_de_disco` | `SaveAs`), `reutilizada`, `ms` (lo que tardó la copia; 0 si se reutilizó), `espera_ms` (lo que la escritura esperó a que terminara), `refleja_guardado_de` (fecha del último guardado del `.dwg`; `null` con SaveAs), `bytes`, `estado` y `nota`. Si el dibujo no refleja el cambio pedido, responde `ok=false` con la explicación (y el estado leído) y **no reintenta**.
 5. **Nada se borra ni se recrea**: ninguna herramienta elimina regiones, líneas base, ensamblajes ni superficies, ni usa `Erase()`.
 6. **`simular`** (boolean, por defecto `false`): con `true` responde `{"simulado":true,"accion":"...","antes":{...},"despues":{...}}` con lo que haría, sin tocar el dibujo (tampoco hace copia; sí registra la llamada en el log).
-7. **Una entrada de Deshacer por herramienta (desde 1.3.0)**: la escritura va entre `Document.StartUndoMark()` y `EndUndoMark()` (por reflexión; si la API no los tiene, la respuesta lleva un aviso) para que `_.UNDO 1` o el menú Deshacer reviertan la herramienta entera, también un lote. Por verificar en Civil 3D (`VALIDACION_13.md`).
+7. **Una entrada de Deshacer por herramienta**: cada escritura (también un lote) corre como un pseudocomando y AutoCAD la anota como una sola entrada `Executefunction` del menú Deshacer, con todas sus transacciones; `_.UNDO 1` la revierte entera. Validado en Civil 3D 2027 el 28/09/2026 (`VALIDACION_122`, paso 9): no hacen falta marcas de deshacer. Las lecturas no dejan entrada (contexto `Aplicacion`), así que el Ctrl+Z del usuario llega a su último cambio real sin atravesar consultas del agente.
 
 El historial del plugin (`leer_historial`) también se escribe en `%LOCALAPPDATA%\ArbaMcp\historial.log` (rota a 5 MB en `historial.1.log`).
 
