@@ -88,6 +88,20 @@ namespace ArbaMcp
         /// </summary>
         private static DocumentLock BloquearParaLeer(Document doc) => doc.LockDocument(DocumentLockMode.Read, null, null, false);
 
+        /// <summary>
+        /// Añade claves de primer nivel a una respuesta ya construida (objeto anónimo o diccionario) sin tocar el núcleo:
+        /// la serializa y la vuelve a leer como diccionario de JsonElement. Lo usan las escrituras de objetivos ('restaurar')
+        /// y deshacer_objetivos ('deshacer').
+        /// </summary>
+        private static Dictionary<string, object> ConExtras(object respuesta, IDictionary<string, object> extras)
+        {
+            var d = new Dictionary<string, object>();
+            using (var doc = JsonDocument.Parse(Nucleo.Json.Serializar(respuesta)))
+                foreach (var p in doc.RootElement.EnumerateObject()) d[p.Name] = p.Value.Clone();
+            foreach (var kv in extras) d[kv.Key] = kv.Value;
+            return d;
+        }
+
         private static Document DocActivo()
         {
             var doc = AcApp.DocumentManager.MdiActiveDocument;

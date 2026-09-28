@@ -1,23 +1,27 @@
 """
 Pruebas del servidor local de ArbaMcp (con Civil 3D abierto y el plugin cargado).
 
-  python probar_servidor.py                 -> seguridad HTTP, ejecutar_comando (como en la versión 1.1) y
+  python probar_servidor.py                 -> seguridad HTTP (desde 1.3.0 GET /ping es público y el token se exige
+                                               en el resto de rutas), ejecutar_comando (como en la versión 1.1) y
                                                "Civil 3D ocupado" (1.2.2: con _.LINE activo, ping responde y las
                                                herramientas de dibujo esperan y se descartan sin ejecutarse)
   python probar_servidor.py --dwg RUTA.dwg  -> además abre ese dibujo (debe tener al menos un corredor) y comprueba:
       1. todas las herramientas de lectura responden ok=true en menos de 5 s
       2. asignar_objetivo con simular=true no cambia nada (listar_objetivos idéntico antes y después)
-      3. asignar_objetivo real se refleja en listar_objetivos y crea un archivo en backups\\
+      3. asignar_objetivo real se refleja en listar_objetivos y hace copia de seguridad (un archivo nuevo en backups\\,
+         o ninguno si reutiliza la copia de la escritura anterior: copia.reutilizada, 1.3.x)
       4. ejecutar_comando sin undo no envía _.UNDO
       5. mcp_log.jsonl recibe una línea por cada llamada de escritura
-      6. _.UNDO 1 revierte entera la última escritura (una entrada de deshacer por herramienta, 1.3.0)
+      6. deshacer_objetivos devuelve entera la última escritura (1.3.3: Civil 3D no revierte objetivos con _.UNDO ni
+         Ctrl+Z, validado el 28/09/2026; la respuesta de cada escritura de objetivos lleva 'restaurar')
   --sin-escritura  omite las pruebas 3, 5 y 6 (no toca el dibujo).
   --fase 13 [--dwg RUTA.dwg]  -> solo lo nuevo de la 1.3.0: GET /ping sin token, 401 con token malo agrupados en el
                                  historial, ms_espera/ms_ejecucion en el envoltorio, ms_puente al llamar por el puente
                                  (tools/call a http://127.0.0.1:8001/mcp) y, con --dwg: asignar_objetivos con 3
-                                 asignaciones (simulado y real, una línea de log y una copia), _.UNDO 1 revierte el
-                                 lote entero, establecer_frecuencias sobre 2 regiones, copia.reutilizada en la segunda
-                                 escritura y copia.espera_ms.
+                                 asignaciones (simulado y real, una línea de log y una copia), deshacer_objetivos
+                                 devuelve el lote entero (1.3.3), _.UNDO 1 revierte el lote de frecuencias,
+                                 establecer_frecuencias sobre 2 regiones, copia.reutilizada en la segunda escritura,
+                                 copia.espera_ms y el rechazo de la superficie generada por el propio corredor.
   --fase todo [--dwg RUTA.dwg]  -> las pruebas de siempre y después las de la 1.3.0.
 """
 import argparse
@@ -95,11 +99,24 @@ def test_req(name, method, endpoint, headers, json=None, timeout=120):
         return None
 
 
-# ---------------------------------------------------------------- seguridad HTTP (versión 1.1)
+def cuerpo_json(res):
+    """El cuerpo de una respuesta como JSON, o None si no lo es."""
+    try:
+        return res.json()
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------- seguridad HTTP (versión 1.1; /ping público desde 1.3.0)
 def pruebas_seguridad():
     print(f"--- Token actual: {TOKEN[:8]}... ---")
-    r = test_req("Sin token (401)", "GET", "/ping", {})
-    resultado("sin token responde 401", r is not None and r.status_code == 401)
+    # Desde 1.3.0 GET /ping responde sin token (solo ok, servidor y version, sin datos del dibujo): es lo que sondea el
+    # puente mientras Civil 3D arranca. El token se sigue exigiendo en el resto de rutas (/tools, /execute).
+    r = test_req("Sin token: /ping es público (200)", "GET", "/ping", {})
+    c = cuerpo_json(r) if r is not None else None
+    resultado("sin token /ping responde 200 con solo ok, servidor y version", r is not None and r.status_code == 200 and isinstance(c, dict) and set(c) == {"ok", "servidor", "version"}, (r.text[:160] if r is not None else ""))
+    r = test_req("Sin token: /tools (401)", "GET", "/tools", {})
+    resultado("sin token /tools responde 401", r is not None and r.status_code == 401)
     r = test_req("Con token (200)", "GET", "/ping", {"X-Arba-Token": TOKEN})
     resultado("con token responde 200", r is not None and r.status_code == 200)
     r = test_req("Con Origin (403)", "GET", "/ping", {"X-Arba-Token": TOKEN, "Origin": "http://localhost:3000"})
@@ -246,7 +263,8 @@ def pruebas_dibujo(dwg, con_escritura):
         base["parametro"] = obj_sup["parametro"]
     actual = (obj_sup.get("objetivos") or [{}])
     nombre_actual = actual[0].get("nombre") if actual else None
-    otra = next((s["nombre"] for s in superficies if s["nombre"] != nombre_actual), None)
+    # 1.3.3: nunca una superficie generada por un corredor (Civil 3D no la ofrece como objetivo del suyo y el plugin la rechaza)
+    otra = next((s["nombre"] for s in superficies if s["nombre"] != nombre_actual and not s.get("corredor")), None)
     destino_sim = otra or superficies[0]["nombre"]
 
     log_antes = len(lineas_log(dwg))
@@ -269,13 +287,16 @@ def pruebas_dibujo(dwg, con_escritura):
     log_antes = len(lineas_log(dwg))
     ok, r, _ = llamar("asignar_objetivo", dict(base, objetivo=destino_real))
     resultado("asignar_objetivo real responde ok", ok, str(r)[:300])
+    copia_real = r.get("copia") if isinstance(r, dict) else None
     nuevos = list(llamar("listar_objetivos", {"corredor": cor["nombre"], "linea_base": reg["linea_base"], "region": reg["nombre"]})[1] or [])
     obj_nuevo = next((o for o in nuevos if o.get("subensamblaje") == obj_sup["subensamblaje"] and o.get("tipo") == "superficie" and o.get("parametro") == obj_sup.get("parametro")), None)
     nombres_nuevos = [o.get("nombre") for o in (obj_nuevo or {}).get("objetivos", [])]
     esperado = [] if destino_real == "ninguno" else [destino_real]
     resultado("listar_objetivos refleja el cambio", nombres_nuevos == esperado, f"{nombres_nuevos} (esperado {esperado})")
     nuevos_backups = archivos_backups(dwg) - backups_antes
-    resultado("se creó un archivo en backups\\", len(nuevos_backups) >= 1, ", ".join(sorted(nuevos_backups)))
+    # 1.3.x: la copia de disco se reutiliza si el .dwg no cambió desde la escritura anterior (copia.reutilizada=true, sin
+    # archivo nuevo); en la primera escritura desde que se abrió el dibujo tiene que aparecer exactamente un archivo
+    resultado("copia de seguridad: un archivo nuevo en backups\\ (ninguno si copia.reutilizada)", len(nuevos_backups) == (0 if (copia_real or {}).get("reutilizada") else 1), f"nuevos={sorted(nuevos_backups)} copia={str(copia_real)[:160]}")
 
     # ---- 5. una línea de log por escritura
     n_escrituras = 1
@@ -291,14 +312,19 @@ def pruebas_dibujo(dwg, con_escritura):
     except Exception as e:
         resultado("última línea del log es JSON", False, str(e))
 
-    # ---- 6. deshacer (1.3.0): cada escritura queda como UNA entrada; _.UNDO 1 revierte la última entera
-    print("\n--- 6. _.UNDO 1 revierte la última escritura entera ---")
-    ok, r, _ = llamar("ejecutar_comando", {"comando": "_.UNDO 1", "timeout_s": 30}, timeout_s=40)
-    resultado("_.UNDO 1 terminado", ok and r == "terminado", str(r))
+    # ---- 6. deshacer propio (1.3.3): Civil 3D no revierte objetivos con _.UNDO ni con Ctrl+Z (validado el 28/09/2026);
+    #         deshacer_objetivos devuelve la última escritura entera
+    print("\n--- 6. deshacer_objetivos devuelve la última escritura entera ---")
+    restaurar = r2.get("restaurar") if isinstance(r2, dict) else None
+    resultado("la respuesta de la escritura lleva 'restaurar' (deshacer_objetivos, args.id entero y lista 'antes')", isinstance(restaurar, dict) and restaurar.get("herramienta") == "deshacer_objetivos" and isinstance((restaurar.get("args") or {}).get("id"), int) and isinstance(restaurar.get("antes"), list), str(restaurar)[:200])
+    ok, r, _ = llamar("deshacer_objetivos", {"simular": True})
+    resultado("deshacer_objetivos simular=true devuelve el plan y las entradas pendientes", ok and isinstance(r, dict) and r.get("simulado") is True and len((r.get("deshacer") or {}).get("pendientes") or []) >= 1, str(r)[:300])
+    ok, r, _ = llamar("deshacer_objetivos", {})
+    resultado("deshacer_objetivos responde ok sin fallidos", ok and isinstance(r, dict) and (r.get("datos") or {}).get("fallidas") == 0 and (r.get("datos") or {}).get("aplicadas", 0) >= 1, str(r)[:300])
     tras_undo = list(llamar("listar_objetivos", {"corredor": cor["nombre"], "linea_base": reg["linea_base"], "region": reg["nombre"]})[1] or [])
     obj_undo = next((o for o in tras_undo if o.get("subensamblaje") == obj_sup["subensamblaje"] and o.get("tipo") == "superficie" and o.get("parametro") == obj_sup.get("parametro")), None)
     nombres_undo = [o.get("nombre") for o in (obj_undo or {}).get("objetivos", [])]
-    resultado("tras _.UNDO 1 el objetivo vuelve al valor previo a la última escritura (la restauración se deshizo entera)", nombres_undo == esperado, f"{nombres_undo} (esperado {esperado})")
+    resultado("tras deshacer_objetivos el objetivo vuelve al valor previo a la última escritura (la restauración se deshizo entera)", nombres_undo == esperado, f"{nombres_undo} (esperado {esperado})")
     ok3, r3, _ = llamar("asignar_objetivo", dict(base, objetivo=nombre_actual or "ninguno"))
     resultado("restaurar de nuevo el objetivo original", ok3, str(r3)[:300])
     copia3 = (r3 or {}).get("copia") if isinstance(r3, dict) else None
@@ -423,7 +449,7 @@ def pruebas_fase13_dibujo(dwg):
     elegidos = (de_superficie * 3)[:3]
     actuales = {i: nombres_objetivo(de_superficie, o) for i, o in enumerate(elegidos)}
     nombre_actual = (actuales[0] or [None])[0]
-    otra = next((s["nombre"] for s in superficies if s["nombre"] != nombre_actual), None) or superficies[0]["nombre"]
+    otra = next((s["nombre"] for s in superficies if s["nombre"] != nombre_actual and not s.get("corredor")), None) or superficies[0]["nombre"]
 
     def asignacion(o, objetivo):
         d = {"region": reg["nombre"], "subensamblaje": o["subensamblaje"], "tipo": "superficie", "objetivo": objetivo}
@@ -451,6 +477,7 @@ def pruebas_fase13_dibujo(dwg):
     log_antes, backups_antes = len(lineas_log(dwg)), archivos_backups(dwg)
     ok, r, seg = llamar("asignar_objetivos", args)
     resultado(f"asignar_objetivos real responde ok ({seg:.2f} s)", ok and isinstance(r, dict) and r.get("simulado") is False, str(r)[:400])
+    r_real = r if ok and isinstance(r, dict) else {}
     datos = (r or {}).get("datos") if ok else None
     resultado("real: datos = total 4, aplicadas 3, fallidas 1", datos == {"total": 4, "aplicadas": 3, "fallidas": 1}, str(datos))
     copia1 = (r or {}).get("copia") if ok else None
@@ -462,12 +489,16 @@ def pruebas_fase13_dibujo(dwg):
     despues = objetivos_region(cor, reg)
     resultado("real: los 3 objetivos de superficie apuntan a '" + otra + "'", all(nombres_objetivo(despues, o) == [otra] for o in elegidos), str([nombres_objetivo(despues, o) for o in elegidos])[:200])
 
-    # ---- _.UNDO 1 revierte el lote entero
-    print("\n--- _.UNDO 1 revierte el lote entero ---")
-    ok, r, _ = llamar("ejecutar_comando", {"comando": "_.UNDO 1", "timeout_s": 30}, timeout_s=40)
-    resultado("_.UNDO 1 terminado", ok and r == "terminado", str(r))
+    # ---- deshacer_objetivos devuelve el lote entero (1.3.3; Civil 3D no revierte objetivos con _.UNDO 1)
+    print("\n--- deshacer_objetivos devuelve el lote entero ---")
+    restaurar = r_real.get("restaurar")
+    resultado("real: la respuesta lleva 'restaurar' con args.id y al menos un objetivo en 'antes'", isinstance(restaurar, dict) and isinstance((restaurar.get("args") or {}).get("id"), int) and len(restaurar.get("antes") or []) >= 1, str(restaurar)[:200])
+    ok, r, _ = llamar("deshacer_objetivos", {"id": (restaurar or {}).get("args", {}).get("id")} if isinstance(restaurar, dict) else {})
+    resultado("deshacer_objetivos responde ok sin fallidos", ok and isinstance(r, dict) and (r.get("datos") or {}).get("fallidas") == 0 and (r.get("datos") or {}).get("aplicadas", 0) >= 1, str(r)[:300])
     tras = objetivos_region(cor, reg)
-    resultado("tras _.UNDO 1 los 3 objetivos vuelven a su valor original (el lote es una sola entrada de deshacer)", all(nombres_objetivo(tras, o) == actuales[i] for i, o in enumerate(elegidos)), str([nombres_objetivo(tras, o) for o in elegidos])[:200])
+    resultado("tras deshacer_objetivos los 3 objetivos vuelven a su valor original", all(nombres_objetivo(tras, o) == actuales[i] for i, o in enumerate(elegidos)), str([nombres_objetivo(tras, o) for o in elegidos])[:200])
+    ok, r, _ = llamar("deshacer_objetivos", {"id": 999999})
+    resultado("una entrada inexistente responde error claro con las pendientes", (not ok) and "No hay ninguna entrada 999999" in str(r), str(r)[:200])
 
     # ---- establecer_frecuencias sobre 2 regiones; copia reutilizada en la segunda escritura
     print("\n--- establecer_frecuencias sobre 2 regiones ---")
@@ -502,6 +533,15 @@ def pruebas_fase13_dibujo(dwg):
     resultado("201 elementos sin forzar: error con el límite", (not ok) and "201" in str(r) and "forzar" in str(r), str(r)[:200])
     ok, r, _ = llamar("asignar_objetivos", dict(args, asignaciones="[{", simular=True))
     resultado("asignaciones que no es JSON: error claro", (not ok) and "JSON" in str(r), str(r)[:200])
+
+    # ---- 1.3.3: la superficie generada por el propio corredor no vale como objetivo (Civil 3D tampoco la ofrece)
+    propia = next((s["nombre"] for s in superficies if str(s.get("corredor") or "").lower() == str(cor["nombre"]).lower()), None)
+    if propia:
+        ok, r, _ = llamar("asignar_objetivos", dict(args, asignaciones=json.dumps([asignacion(elegidos[0], propia)]), simular=True))
+        fallidos = ((r or {}).get("fallidos") or []) if ok and isinstance(r, dict) else []
+        resultado("la superficie del propio corredor ('" + propia + "') va a fallidos con 'propio corredor'", ok and len(fallidos) == 1 and "propio corredor" in str(fallidos[0].get("motivo")), str(r)[:300])
+    else:
+        print("  [--- ] el corredor no genera ninguna superficie: no se prueba el rechazo de la superficie propia")
 
 
 if __name__ == "__main__":
