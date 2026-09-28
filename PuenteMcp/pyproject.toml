@@ -1,6 +1,6 @@
 [project]
 name = "puente-mcp-civil3d"
-version = "1.3.1"
+version = "1.3.2"
 description = "Puente MCP para Civil 3D 2027 (plugin ArbaMcp)"
 readme = "INSTRUCCIONES_AGENTE.md"
 requires-python = ">=3.11"

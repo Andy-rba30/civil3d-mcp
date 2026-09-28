@@ -1,13 +1,15 @@
 """
 Pruebas del servidor local de ArbaMcp (con Civil 3D abierto y el plugin cargado).
 
-  python probar_servidor.py                 -> seguridad HTTP, ejecutar_comando (como en la versión 1.1) y
+  python probar_servidor.py                 -> seguridad HTTP (desde 1.3.0 GET /ping es público y el token se exige
+                                               en el resto de rutas), ejecutar_comando (como en la versión 1.1) y
                                                "Civil 3D ocupado" (1.2.2: con _.LINE activo, ping responde y las
                                                herramientas de dibujo esperan y se descartan sin ejecutarse)
   python probar_servidor.py --dwg RUTA.dwg  -> además abre ese dibujo (debe tener al menos un corredor) y comprueba:
       1. todas las herramientas de lectura responden ok=true en menos de 5 s
       2. asignar_objetivo con simular=true no cambia nada (listar_objetivos idéntico antes y después)
-      3. asignar_objetivo real se refleja en listar_objetivos y crea un archivo en backups\\
+      3. asignar_objetivo real se refleja en listar_objetivos y hace copia de seguridad (un archivo nuevo en backups\\,
+         o ninguno si reutiliza la copia de la escritura anterior: copia.reutilizada, 1.3.x)
       4. ejecutar_comando sin undo no envía _.UNDO
       5. mcp_log.jsonl recibe una línea por cada llamada de escritura
       6. _.UNDO 1 revierte entera la última escritura (una entrada de deshacer por herramienta, 1.3.0)
@@ -95,11 +97,24 @@ def test_req(name, method, endpoint, headers, json=None, timeout=120):
         return None
 
 
-# ---------------------------------------------------------------- seguridad HTTP (versión 1.1)
+def cuerpo_json(res):
+    """El cuerpo de una respuesta como JSON, o None si no lo es."""
+    try:
+        return res.json()
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------- seguridad HTTP (versión 1.1; /ping público desde 1.3.0)
 def pruebas_seguridad():
     print(f"--- Token actual: {TOKEN[:8]}... ---")
-    r = test_req("Sin token (401)", "GET", "/ping", {})
-    resultado("sin token responde 401", r is not None and r.status_code == 401)
+    # Desde 1.3.0 GET /ping responde sin token (solo ok, servidor y version, sin datos del dibujo): es lo que sondea el
+    # puente mientras Civil 3D arranca. El token se sigue exigiendo en el resto de rutas (/tools, /execute).
+    r = test_req("Sin token: /ping es público (200)", "GET", "/ping", {})
+    c = cuerpo_json(r) if r is not None else None
+    resultado("sin token /ping responde 200 con solo ok, servidor y version", r is not None and r.status_code == 200 and isinstance(c, dict) and set(c) == {"ok", "servidor", "version"}, (r.text[:160] if r is not None else ""))
+    r = test_req("Sin token: /tools (401)", "GET", "/tools", {})
+    resultado("sin token /tools responde 401", r is not None and r.status_code == 401)
     r = test_req("Con token (200)", "GET", "/ping", {"X-Arba-Token": TOKEN})
     resultado("con token responde 200", r is not None and r.status_code == 200)
     r = test_req("Con Origin (403)", "GET", "/ping", {"X-Arba-Token": TOKEN, "Origin": "http://localhost:3000"})
@@ -269,13 +284,16 @@ def pruebas_dibujo(dwg, con_escritura):
     log_antes = len(lineas_log(dwg))
     ok, r, _ = llamar("asignar_objetivo", dict(base, objetivo=destino_real))
     resultado("asignar_objetivo real responde ok", ok, str(r)[:300])
+    copia_real = r.get("copia") if isinstance(r, dict) else None
     nuevos = list(llamar("listar_objetivos", {"corredor": cor["nombre"], "linea_base": reg["linea_base"], "region": reg["nombre"]})[1] or [])
     obj_nuevo = next((o for o in nuevos if o.get("subensamblaje") == obj_sup["subensamblaje"] and o.get("tipo") == "superficie" and o.get("parametro") == obj_sup.get("parametro")), None)
     nombres_nuevos = [o.get("nombre") for o in (obj_nuevo or {}).get("objetivos", [])]
     esperado = [] if destino_real == "ninguno" else [destino_real]
     resultado("listar_objetivos refleja el cambio", nombres_nuevos == esperado, f"{nombres_nuevos} (esperado {esperado})")
     nuevos_backups = archivos_backups(dwg) - backups_antes
-    resultado("se creó un archivo en backups\\", len(nuevos_backups) >= 1, ", ".join(sorted(nuevos_backups)))
+    # 1.3.x: la copia de disco se reutiliza si el .dwg no cambió desde la escritura anterior (copia.reutilizada=true, sin
+    # archivo nuevo); en la primera escritura desde que se abrió el dibujo tiene que aparecer exactamente un archivo
+    resultado("copia de seguridad: un archivo nuevo en backups\\ (ninguno si copia.reutilizada)", len(nuevos_backups) == (0 if (copia_real or {}).get("reutilizada") else 1), f"nuevos={sorted(nuevos_backups)} copia={str(copia_real)[:160]}")
 
     # ---- 5. una línea de log por escritura
     n_escrituras = 1

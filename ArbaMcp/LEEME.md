@@ -22,7 +22,7 @@ Las herramientas que modifican el dibujo (`asignar_*`, `establecer_*`, `agregar_
 
 - **Antes de escribir** comprueban que no hay un comando activo (`CMDACTIVE`), que el dibujo no es de solo lectura y que el mismo archivo no está abierto dos veces; si algo falla, responden error sin tocar nada.
 - **Copias**: antes de cada escritura real copian el `.dwg` **de disco** a `<carpeta del dwg>\backups\<nombre>_<fecha>_<herramienta>.dwg` en un hilo aparte (se espera justo antes de tocar el dibujo; se reutiliza si el archivo no cambió) y conservan las últimas 20. La copia refleja el último guardado en disco, no el estado en memoria; la respuesta lo dice (`copia.nota`, `copia.refleja_guardado_de`). Un dibujo sin guardar usa `SaveAs` en `%LOCALAPPDATA%\ArbaMcp\backups`. Si la copia falla no se escribe. `guardar_copia` hace una copia a mano (SaveAs, estado en memoria) con el sufijo que indiques.
-- **Deshacer**: cada herramienta de escritura (también un lote) es una sola entrada `Executefunction` del menú Deshacer y `_.UNDO 1` la revierte entera (validado en Civil 3D 2027, 28/09/2026). Las lecturas corren en contexto de aplicación y no dejan entrada.
+- **Deshacer**: cada herramienta de escritura (también un lote) es una sola entrada `Executefunction` del menú Deshacer (validado en Civil 3D 2027, 28/09/2026); las lecturas y las simulaciones no dejan entrada. `_.UNDO 1` revierte las frecuencias, pero en la 1.3.1 **no devolvía los objetivos** de `asignar_objetivo`/`asignar_objetivos` (la entrada desaparecía y el objetivo seguía en el valor nuevo). Desde 1.3.2 las escrituras de corredor graban su estado en la pila de deshacer antes de tocarlo (por verificar); mientras tanto, para revertir objetivos reasigna los valores de `antes` de la respuesta.
 - **Lotes**: `asignar_objetivos` y `establecer_frecuencias` aplican varias asignaciones o regiones en un solo contexto de comando, con una copia, una línea de log y una entrada de Deshacer; validan todo antes de tocar nada y devuelven `fallidos[]` sin abortar el lote. Antes de encadenar varias llamadas iguales, el agente debe usar el lote.
 - **Log**: cada llamada de escritura añade una línea JSON a `<carpeta del dwg>\mcp_log.jsonl` (hora, herramienta, args, ok, ms, error); `leer_log` la devuelve. El historial del plugin se guarda además en `%LOCALAPPDATA%\ArbaMcp\historial.log`.
 - **`simular`**: todas aceptan `simular=true` y entonces devuelven lo que harían (`antes`/`despues` previstos) sin tocar el dibujo.
@@ -79,7 +79,7 @@ Herramientas.cs   Registro, ayudantes y herramientas generales
 Herramientas.Corredores.cs   Corredores, regiones, objetivos, ensamblajes, intersecciones, líneas de muestreo, lotes
 Herramientas.Superficies.cs  Geometría de ejes, superficies, líneas de rotura, pegado y exportación
 Herramientas.Seguridad.cs    leer_log, guardar_dibujo, guardar_copia
-Escritura.cs      Reglas de seguridad de escritura: comprobaciones, copia de disco en hilo aparte, marca de deshacer, mcp_log.jsonl, simular, antes/después
+Escritura.cs      Reglas de seguridad de escritura: comprobaciones, copia de disco en hilo aparte, mcp_log.jsonl, simular, antes/después (el registro de deshacer del corredor está en Herramientas.cs, RegistrarDeshacer)
 Bundle/           PackageContents.xml para la carga automática
 instalar.ps1      Compila e instala las dos DLL
 CONTRATO.md       Contrato para escribir el puente MCP

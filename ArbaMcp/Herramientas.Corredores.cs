@@ -488,8 +488,9 @@ namespace ArbaMcp
 
         // ------------------------------------------------------------------ patrón de escritura sobre un corredor
         /// <summary>
-        /// Abre el corredor (ForWrite salvo en simulación), lee 'antes', calcula 'esperado', aplica 'cambiar', confirma y
-        /// vuelve a leer 'despues' en otra transacción. Devuelve la respuesta estándar con antes/después verificados.
+        /// Abre el corredor (ForWrite salvo en simulación), lee 'antes', calcula 'esperado', graba el corredor en la pila
+        /// de deshacer (RegistrarDeshacer, 1.3.2), aplica 'cambiar', confirma y vuelve a leer 'despues' en otra
+        /// transacción. Devuelve la respuesta estándar con antes/después verificados.
         /// </summary>
         private static object CambiarCorredor(Escritura.Contexto ctx, string corredor,
             Func<Transaction, Civ.Corridor, Dictionary<string, object>> leer,
@@ -507,6 +508,7 @@ namespace ArbaMcp
                 esperado = esperar(tr, cor);
                 if (ctx.Simular) { tr.Commit(); return Escritura.Simulacion(ctx, antes, esperado, accion); }
                 ctx.EsperarCopia();   // nunca se escribe sin copia terminada
+                RegistrarDeshacer(cor);   // 1.3.2: graba el corredor en la pila de deshacer antes de tocarlo (ver Herramientas.cs)
                 cambiar(tr, cor);
                 tr.Commit();
             }
@@ -549,8 +551,9 @@ namespace ArbaMcp
                     catch (ArgumentException ex) { e.Error = ex.Message; }
                 }
                 if (ctx.Simular) { tr.Commit(); return Lotes.Simulacion(ctx.Herramienta, elementos, Lotes.ResumenSimulado(que, elementos), ctx.Avisos); }
-                // 2. Aplicar en orden, con la copia terminada
+                // 2. Aplicar en orden, con la copia terminada y el corredor grabado en la pila de deshacer (1.3.2)
                 ctx.EsperarCopia();
+                RegistrarDeshacer(cor);
                 foreach (var e in elementos)
                 {
                     if (e.Fallido) continue;
