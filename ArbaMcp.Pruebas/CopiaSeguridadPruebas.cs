@@ -36,14 +36,19 @@ namespace ArbaMcp.Pruebas
         public void CopiaEnOtroHiloYEsperarLaCompleta()
         {
             // La copia arranca en segundo plano al llamar a Iniciar() y el hilo que escribe solo se detiene en Esperar(). Se
-            // comprueba con un apretón de manos (la copia avisa de que empezó y espera permiso para seguir), no con el
-            // identificador del hilo: .NET no garantiza en qué hilo corre una tarea (la CI del 28/09/2026 la vio dos veces
-            // en el mismo hilo que la prueba).
+            // comprueba con un apretón de manos (la copia avisa de que empezó y espera permiso para seguir). Solo cuentan las
+            // llamadas con el .dwg de esta prueba: Copiador es estático y una copia que otra prueba dejara en marcha lo leería
+            // al arrancar (la CI del 28/09/2026 vio 2 invocaciones por eso; ninguna prueba debe dejar copias sin esperar).
             using var empezo = new ManualResetEventSlim(false);
             using var continuar = new ManualResetEventSlim(false);
             int invocaciones = 0;
             CopiaSeguridad.Copiador = (o, d) =>
             {
+                if (!string.Equals(o, Path.GetFullPath(_dwg), StringComparison.OrdinalIgnoreCase))
+                {
+                    File.Copy(o, d, true);
+                    return new FileInfo(d).Length;
+                }
                 Interlocked.Increment(ref invocaciones);
                 empezo.Set();
                 continuar.Wait(TimeSpan.FromSeconds(10));
@@ -117,6 +122,8 @@ namespace ArbaMcp.Pruebas
             File.SetLastWriteTimeUtc(_dwg, DateTime.UtcNow.AddMinutes(5));
             var segunda = CopiaSeguridad.Planificar(_dwg, _backups, "b", DateTime.Now.AddMinutes(1)).Iniciar();
             Assert.False(segunda.Info.Reutilizada);
+            // no dejar la copia en marcha: leería el Copiador de la prueba siguiente
+            segunda.Esperar();
         }
 
         [Fact]
