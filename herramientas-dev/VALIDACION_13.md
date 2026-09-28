@@ -29,6 +29,8 @@ Code, Cursor...). Requisitos previos:
   espera que `_.UNDO 1` devuelva objetivos y nunca elige una superficie de corredor. **Los pasos 9, 9b y 14 son los
   decisivos.**
 - Si ya ejecutaste este prompt con la 1.3.2, vuelve a empezar desde el paso 0 con la 1.3.3.
+- La 1.3.3 se validó el 28/09/2026 (`herramientas-dev/informes/informe_validacion_133_20260928.md`): todos los pasos
+  ejecutados en OK y las dos suites en `TODO OK`. Este prompt queda como referencia para revalidar la línea 1.3.
 
 ---
 

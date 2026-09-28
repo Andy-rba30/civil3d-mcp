@@ -37,9 +37,13 @@ namespace ArbaMcp.Pruebas
         {
             int hiloPrincipal = Environment.CurrentManagedThreadId;
             int hiloCopia = -1;
-            CopiaSeguridad.Copiador = (o, d) => { hiloCopia = Environment.CurrentManagedThreadId; Thread.Sleep(120); File.Copy(o, d, true); return new FileInfo(d).Length; };
+            // La copia avisa cuando ha empezado: si Esperar() llegara antes de que la tarea arranque, .NET podría ejecutarla
+            // en línea en este mismo hilo (Task.Wait) y la comprobación del hilo fallaría por azar (CI del 28/09/2026).
+            using var empezo = new ManualResetEventSlim(false);
+            CopiaSeguridad.Copiador = (o, d) => { hiloCopia = Environment.CurrentManagedThreadId; empezo.Set(); Thread.Sleep(120); File.Copy(o, d, true); return new FileInfo(d).Length; };
             var registro = new System.Collections.Generic.List<string>();
             var copia = CopiaSeguridad.Planificar(_dwg, _backups, "asignar_objetivo", new DateTime(2026, 9, 28, 10, 0, 0), registro.Add).Iniciar();
+            Assert.True(empezo.Wait(TimeSpan.FromSeconds(10)), "la copia no llegó a empezar en otro hilo");
             Assert.Equal("pendiente", copia.Info.Estado);
             Assert.False(copia.Info.Reutilizada);
             Assert.EndsWith("obra_20260928_100000_asignar_objetivo.dwg", copia.Info.Ruta);
