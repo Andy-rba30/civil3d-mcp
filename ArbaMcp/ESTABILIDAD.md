@@ -71,10 +71,13 @@ Con Civil 3D cerrado, desde el clon del repo (`C:\IA\civil3d-mcp`):
 
 ```powershell
 git fetch origin
-git checkout claude/zealous-planck-nfxbwq
+git checkout main
 git pull
 powershell -ExecutionPolicy Bypass -File .\ArbaMcp\instalar.ps1
 ```
+
+(La 1.2.2 está en `main` desde el commit `6c764b2`; el procedimiento completo, con respuesta esperada por paso e
+informe, está en `herramientas-dev/VALIDACION_122.md`.)
 
 Reinicia el puente (`PuenteMcp\main.py`) y Civil 3D. Comprueba con `ARBAMCP` (botón Conexión IA) que el historial muestra
 `HiloPrincipal listo: despachador sí, ventana principal sí`. Luego, con un dibujo abierto:

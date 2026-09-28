@@ -66,6 +66,18 @@ Se validan con `herramientas-dev/VALIDACION_122.md` (pasos 5 y 7). Hasta ese inf
 | evento | `Application.Idle` como respaldo del despachador | 2027 | `HiloPrincipal` | por verificar |
 | evento | `Document.CommandWillStart/CommandEnded/CommandCancelled/CommandFailed` y `DocumentCollection.DocumentCreated/DocumentToBeDestroyed` | 2027 | `Historial`, `ejecutar_comando` | por verificar (la 1.2.0 los usaba, sin informe) |
 
-## 1.3.0 (proceso: copia de disco, deshacer, lotes)
+## 1.3.0 (proceso: copia de disco, deshacer, lotes): escrita sin compilar el plugin
 
-Se completa en esta entrega; ver el final del archivo tras el Bloque 2.
+Se validan con `herramientas-dev/VALIDACION_13.md` (el informe dice qué pasa a `ejecutado en Civil 3D 2027`). El
+código propio compila contra los sustitutos de `herramientas-dev/CompilarSinCivil`, que no demuestran nada sobre la API.
+
+| Tipo | Miembro | Versión | Herramienta que lo usa | Estado |
+|---|---|---|---|---|
+| método | `Document.StartUndoMark()` / `Document.EndUndoMark()` (por `Api.IntentarInvocar`; alternativa `BeginUndoMark`) dentro de `ExecuteInCommandContextAsync`, para que cada herramienta de escritura sea una entrada de Deshacer | 2012+ | todas las de escritura (`Escritura.Ejecutar`); pasos 8, 9, 11, 14 y 21 de `VALIDACION_13.md` | por verificar (si no existe, la respuesta lleva el aviso "Sin marca de deshacer") |
+| método | `System.IO.File.Copy` del `.dwg` abierto en Civil 3D desde un hilo aparte (`Task.Run`) mientras el dibujo sigue abierto (AutoCAD abre el archivo con compartición de lectura) | .NET 10 | copia de seguridad de todas las escrituras (`ArbaMcp.Nucleo.CopiaSeguridad`); pasos 7 y 10 | por verificar (probado en Linux con archivos normales, 83 pruebas xUnit) |
+| propiedad | `FileInfo.LastWriteTimeUtc` y `FileInfo.Length` del `.dwg` abierto para decidir si la copia se reutiliza | .NET 10 | `CopiaSeguridad.Planificar` (`copia.reutilizada`, `copia.refleja_guardado_de`); paso 10 | por verificar |
+| propiedad | `Database.Filename` como ruta del `.dwg` guardado (null o sin ruta en un dibujo nuevo → `SaveAs` en `%LOCALAPPDATA%`) | 2027 | `Escritura.RutaDibujo`; paso 16 | existe en la DLL (ya lo usaba 1.2.x); la rama SaveAs de un dibujo sin guardar con corredor no se cubre en la validación |
+| método | `BaselineRegion.GetTargets()` / `SetTargets()` repetidos en la misma transacción (varias asignaciones sobre la misma región) | 2027 | `asignar_objetivos`; pasos 6 a 9 | existe en la DLL; el uso en lote, por verificar |
+| propiedad | `AppliedAssemblySetting.FrequencyAlong*` asignadas a varias regiones en la misma transacción | 2027 | `establecer_frecuencias`; pasos 10 y 11 | existe en la DLL; el uso en lote, por verificar |
+| comando | `_.UNDO 1` enviado por `ejecutar_comando` tras una escritura (revierte la herramienta entera) | 2027 | `probar_servidor.py --dwg` prueba 6 y `--fase 13`; pasos 9, 11 y 14 | por verificar |
+| propiedad | `Pendiente.MsEspera` / `MsEjecucion` medidos alrededor de `ExecuteInCommandContextAsync` (`ms_espera`, `ms_ejecucion` del envoltorio) | — | todas; paso 2 | por verificar que `ms_espera` refleje la espera real con Civil 3D ocupado |
