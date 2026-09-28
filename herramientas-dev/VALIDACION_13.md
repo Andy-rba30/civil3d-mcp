@@ -1,4 +1,4 @@
-# Prompt de validación de la 1.3.0 (civil3d-mcp) para el agente local
+# Prompt de validación de la 1.3.1 (civil3d-mcp) para el agente local
 
 Copia este texto tal cual en el agente que tiene conectado el MCP de Civil 3D (Antigravity, Claude Desktop, Claude
 Code, Cursor...). Requisitos previos:
@@ -6,17 +6,22 @@ Code, Cursor...). Requisitos previos:
 - Civil 3D 2027 abierto con **una copia** del DWG de prueba (nunca la entrega original): un dibujo guardado en disco
   con al menos un corredor cuya primera región tenga objetivos de superficie, y con al menos dos superficies.
 - `VALIDACION_122.md` ejecutada (informe del 28/09/2026: 1.2.2 validada, `HiloPrincipal listo`, 13/13 y 31/31).
-- El plugin **1.3.0** se instala en el paso 0 de este prompt desde la rama `feature/proceso-1.3`; el bundle queda con
+- El plugin **1.3.1** se instala en el paso 0 de este prompt desde la rama `feature/proceso-1.3`; el bundle queda con
   `ArbaMcp.dll` y `ArbaMcp.Nucleo.dll`.
-- Puente reiniciado con el `main.py` de 1.3.0 y el cliente MCP reiniciado para que cargue la lista nueva de 42
+- Puente reiniciado con el `main.py` de 1.3.1 y el cliente MCP reiniciado para que cargue la lista nueva de 42
   herramientas (también en el paso 0).
 - El informe de este prompt es el que actualiza `herramientas-dev/miembros_por_verificar_civil3d.md`.
 - Ya se sabe por la 1.2.2 que cada herramienta en contexto de comando deja una entrada `Executefunction` en el menú
-  Deshacer; en 1.3.0 las lecturas pasan a contexto de aplicación para no dejarla. Los pasos 8, 14 y 21 lo comprueban.
+  Deshacer. En 1.3.0 las lecturas pasaron a contexto de aplicación con bloqueo de escritura y dejaban una entrada
+  `Grupo de comandos` cada una (visto el 28/09/2026 en el paso 8 de este prompt), y las simulaciones seguían dejando
+  `Executefunction`. En 1.3.1 lecturas y simulaciones usan bloqueo de lectura (`DocumentLockMode.Read`) y las
+  simulaciones van en contexto de aplicación. Los pasos 6, 8, 14 y 21 comprueban que ya no dejan entrada.
+- Si ya ejecutaste este prompt con la 1.3.0 (llegó hasta el paso 8), vuelve a empezar desde el paso 0 con la 1.3.1:
+  los pasos 0 a 8 se repiten porque cambia lo que se comprueba en el menú Deshacer.
 
 ---
 
-Eres el agente de validación de la versión 1.3.0 del conector Civil 3D MCP (plugin `ArbaMcp` + puente `PuenteMcp`).
+Eres el agente de validación de la versión 1.3.1 del conector Civil 3D MCP (plugin `ArbaMcp` + puente `PuenteMcp`).
 Trabajas sobre una **copia** del dibujo. Usa las herramientas MCP **por su nombre** (los argumentos van dentro de
 `args`), salvo en los pasos que indican PowerShell. Ejecuta los pasos en orden, anota la respuesta **literal** (JSON
 completo o, si es muy largo, las primeras 40 líneas) y **el tiempo total de cada paso** (desde que decides llamar
@@ -34,7 +39,7 @@ Reglas:
 
 ## Pasos
 
-0. **(6 min) Instalar la 1.3.0.** Reglas de `VALIDACION_122.md` (no muestres el token, sin commits, sin tocar código).
+0. **(6 min) Instalar la 1.3.1.** Reglas de `VALIDACION_122.md` (no muestres el token, sin commits, sin tocar código).
    Civil 3D **cerrado** (`Get-Process acad -ErrorAction SilentlyContinue` no devuelve nada). En PowerShell:
    ```powershell
    cd C:\IA\civil3d-mcp
@@ -51,11 +56,11 @@ Reglas:
    ```
    → esperado: `git status` sin archivos modificados (los `??` no rastreados no importan), la compilación con
    `0 Errores` (compila dos proyectos: `ArbaMcp.Nucleo` y `ArbaMcp`), `Instalado en: ... (ArbaMcp.dll + ArbaMcp.Nucleo.dll)`,
-   `FileVersion` **1.3.0.0** en las dos DLL y `AppVersion="1.3.0"`. Si la compilación falla, pega todas las líneas con
+   `FileVersion` **1.3.1.0** en las dos DLL y `AppVersion="1.3.1"`. Si la compilación falla, pega todas las líneas con
    `error` y **para aquí** (informe con solo este paso): la 1.2.2 sigue instalada.
    Después reinicia el puente (detén el proceso `main.py` de `PuenteMcp` que haya y arranca
    `.\PuenteMcp\.venv\Scripts\python .\PuenteMcp\main.py` con la salida redirigida a un archivo; esperado en esa salida:
-   `Puente MCP Civil 3D 1.3.0: plugin en http://127.0.0.1:8765, agente en http://127.0.0.1:8001/mcp` y
+   `Puente MCP Civil 3D 1.3.1: plugin en http://127.0.0.1:8765, agente en http://127.0.0.1:8001/mcp` y
    `Uvicorn running on http://127.0.0.1:8001`). Abre Civil 3D desde el menú Inicio con la **copia** del DWG de prueba,
    comprueba en `historial.log` la línea `HiloPrincipal listo: despachador sí, ventana principal sí` de este arranque y
    reconecta el cliente MCP. Si `ARBAMCP` muestra un cuadro de diálogo, ciérralo con Aceptar antes de seguir: mientras
@@ -64,7 +69,7 @@ Reglas:
    `asignar_objetivos` y `establecer_frecuencias` (nuevas) y todas las de la 1.2.2 (`asignar_objetivo`,
    `establecer_frecuencia`, `ping`, `leer_historial`...). En `asignar_objetivos` el parámetro `asignaciones` es de
    tipo texto (`string`) y su descripción incluye un ejemplo JSON. Pega la lista de nombres.
-2. **(1 min)** `ping` sin argumentos → esperado: `plugin: "ArbaMcp"`, `version: "1.3.0.0"`, `hay_dibujo: true`, y en
+2. **(1 min)** `ping` sin argumentos → esperado: `plugin: "ArbaMcp"`, `version: "1.3.1.0"`, `hay_dibujo: true`, y en
    la misma respuesta `ms`, `ms_espera`, `ms_ejecucion` y `ms_puente` (enteros). Anota los cuatro.
 3. **(2 min)** En PowerShell:
    ```powershell
@@ -72,12 +77,14 @@ Reglas:
    curl.exe -s -i http://127.0.0.1:8765/tools | Select-Object -First 1
    1..3 | ForEach-Object { curl.exe -s -o NUL -w "%{http_code} " -H "X-Arba-Token: malo" http://127.0.0.1:8765/tools }
    ```
-   → esperado, literal: `{"ok":true,"servidor":"ArbaMcp","version":"1.3.0"}` (sin token y sin datos del dibujo);
+   → esperado, literal: `{"ok":true,"servidor":"ArbaMcp","version":"1.3.1"}` (sin token y sin datos del dibujo);
    `HTTP/1.1 401 Unauthorized`; `401 401 401`. Después `leer_historial(ultimas_n=30)` → esperado: **una sola** línea
    `MCP 401 GET /tools: token ausente o distinto (los siguientes 401 de esta ruta en este minuto se agrupan)` para
    ese minuto, no tres. Pega las líneas `MCP 401`.
 4. **(1 min)** `listar_corredores` → guarda como `CORREDOR` el nombre del primero y como `LINEA_BASE` su primera
-   línea base. `listar_regiones(corredor=CORREDOR)` → guarda `REGION` (el `nombre` de la primera región), `REGION2`
+   línea base. Si en vez de la lista devuelve un error que mencione `LockViolation`, `eLockViolation` o
+   `eNotOpenForWrite`, pega el error literal y **para aquí** (informe con los pasos 0 a 4): el bloqueo de lectura
+   de la 1.3.1 no sirve para leer y hay que volver al de escritura. `listar_regiones(corredor=CORREDOR)` → guarda `REGION` (el `nombre` de la primera región), `REGION2`
    (la segunda, si existe) y las `frecuencia_tangentes` de ambas como `FT1` y `FT2`.
 5. **(1 min)** `listar_objetivos(corredor=CORREDOR, linea_base=LINEA_BASE, region=REGION)` → guarda los tres primeros
    objetivos de `tipo: "superficie"` como `SUB_A`, `SUB_B`, `SUB_C` (`subensamblaje`, y `grupo`/`parametro` si vienen;
@@ -89,7 +96,10 @@ Reglas:
    si el paso 5 los dio) y un cuarto igual al primero pero con `"region": "region_que_no_existe"` → esperado:
    `simulado: true`, `plan` con 4 entradas (índices 0 a 3; la 3 con `error` que nombra la región inexistente y lista
    las regiones), `fallidos` con solo el índice 3, `datos: {total: 4, aplicadas: 3, fallidas: 1}`, sin `copia`,
-   `antes`/`despues` por índice con `objetivos`. Anota `ms` y `ms_puente`.
+   `antes`/`despues` por índice con `objetivos`. Anota `ms` y `ms_puente`. Antes de llamar, anota la primera
+   entrada del menú Deshacer (flecha del botón **Deshacer** de la barra de acceso rápido, sin ejecutar nada); después
+   de la simulación vuelve a mirar → esperado: la misma primera entrada (la simulación no añade ninguna; en 1.3.0
+   añadía un `Executefunction`).
 7. **(2 min)** El paso 6 sin `simular` → esperado: `simulado: false`, `mensaje: "3 asignaciones aplicadas, 1 fallidas
    (de 4)"`, `datos: {total: 4, aplicadas: 3, fallidas: 1}`, `fallidos` con el índice 3, `cambios` con `0.objetivos`,
    `1.objetivos`, `2.objetivos`, y `copia` como **objeto** con `ruta` (en `backups\`), `metodo: "copia_de_disco"`,
@@ -101,8 +111,12 @@ Reglas:
 8. **(1 min)** `listar_objetivos(...)` como en el paso 5 → esperado: `SUB_A`, `SUB_B` y `SUB_C` apuntan a `OTRA`.
    En Civil 3D, despliega la flecha del botón **Deshacer** de la barra de acceso rápido y anota literalmente las 3
    primeras entradas → esperado: **una sola** entrada `Executefunction` para el lote del paso 7 (no una por asignación
-   ni por transacción) y **ninguna** entrada por los `listar_*` de los pasos 4, 5 y 8 (en 1.2.2 cada lectura dejaba
-   una). No ejecutes Deshacer desde el menú.
+   ni por transacción) y **ninguna** entrada por los `listar_*` de los pasos 4, 5 y 8 ni por la simulación del paso 6
+   (en 1.2.2 cada lectura dejaba `Executefunction`; en 1.3.0 dejaba `Grupo de comandos`). Si aparecen entradas
+   `Grupo de comandos`, el bloqueo de lectura no evita la entrada: anótalo y, en los pasos 9, 11 y 14, mira el menú
+   Deshacer después de cada `_.UNDO 1`; si la entrada que desapareció fue un `Grupo de comandos`, repite
+   `_.UNDO 1` hasta que desaparezca el `Executefunction` y anota cuántas hicieron falta. No ejecutes Deshacer desde
+   el menú.
 9. **(1 min)** `ejecutar_comando(comando="_.UNDO 1", timeout_s=30)` → esperado: `terminado`. Después
    `listar_objetivos(...)` → esperado: los tres objetivos vuelven a `ACTUAL` (el lote entero se deshizo con una
    sola operación). Si solo vuelve uno, anótalo: significa que el lote no quedó como una entrada.
@@ -147,15 +161,16 @@ Reglas:
 19. **(4 min)** Arranque de Civil 3D con el puente en marcha: sin cerrar el puente, cierra Civil 3D, espera 10 s,
     llama a `ping` → esperado: `ok: false` con `Civil 3D no está abierto o ArbaMcp no cargó` y `ms_puente`. Abre
     Civil 3D de nuevo (menú Inicio), espera a que cargue el dibujo, llama a `ping` **sin reiniciar el puente** →
-    esperado: `version: "1.3.0.0"` (el puente sondeó `/ping`, releyó el token y volvió a registrar las herramientas).
+    esperado: `version: "1.3.1.0"` (el puente sondeó `/ping`, releyó el token y volvió a registrar las herramientas).
     En el archivo de salida del puente (o su consola) pega las líneas que mencionen `/ping` o el token.
 20. **(1 min)** `leer_historial(ultimas_n=60)` → pega las líneas `Copia de seguridad:` (con `ms`), `Escritura ...`,
     `MCP 401` y cualquier `StartUndoMark`/`EndUndoMark falló`.
 21. **(2 min)** Menú Deshacer final: despliega la lista y pega literalmente las 8 primeras entradas. Esperado:
     entradas `Executefunction` solo por las escrituras reales de los pasos 7, 10, 14 y 15 (una por herramienta, no
-    varias por lote), las `Linea`/`Regen` de `probar_servidor.py`, y **ninguna** por las decenas de `listar_*` y
-    `ping` de esta sesión. Si aparecen tantas `Executefunction` como lecturas hiciste, el cambio de contexto de las
-    lecturas no ha surtido efecto: anótalo.
+    varias por lote), las `Linea`/`Regen` de `probar_servidor.py`, y **ninguna** `Grupo de comandos` ni
+    `Executefunction` por las decenas de `listar_*`, las simulaciones y los `ping` de esta sesión. Si aparecen
+    `Grupo de comandos` (bloqueo de lectura sin efecto sobre la lista) o tantas `Executefunction` como lecturas
+    (contexto de aplicación sin efecto), anótalo con el recuento.
 
 ## Informe
 
@@ -171,9 +186,10 @@ Y debajo:
 - **Deshacer**: las entradas literales de los pasos 8, 10 y 21, si `_.UNDO 1` revirtió el lote entero (pasos 9 y 11) y
   si las lecturas dejaron o no entradas.
 - **Miembros de la API que fallaron** (nombre del miembro, mensaje de error literal), para actualizar
-  `herramientas-dev/miembros_por_verificar_civil3d.md`. En 1.3.0 están `por verificar`: `File.Copy` del .dwg desde un
+  `herramientas-dev/miembros_por_verificar_civil3d.md`. En 1.3.1 están `por verificar`: `File.Copy` del .dwg desde un
   hilo aparte mientras Civil 3D tiene el dibujo abierto, `FileInfo.LastWriteTimeUtc`/`Length` del .dwg abierto, las
-  lecturas en contexto de aplicación con `LockDocument` (sin entrada de Deshacer), `BaselineRegion.GetTargets/SetTargets`
+  lecturas y simulaciones en contexto de aplicación con `LockDocument(DocumentLockMode.Read)` (transacción de lectura
+  válida y sin entrada de Deshacer), `BaselineRegion.GetTargets/SetTargets`
   en lote, `AppliedAssemblySetting.FrequencyAlongTangents` asignada (individual y en lote), `_.UNDO 1` sobre un lote,
   y que `ms_espera` refleje la espera real.
 - **Tiempos comparados**: `ms_espera` frente a `ms_ejecucion` en una lectura y en el lote del paso 7; `ms_puente`
