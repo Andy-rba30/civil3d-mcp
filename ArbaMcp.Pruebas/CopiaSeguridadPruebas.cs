@@ -35,18 +35,30 @@ namespace ArbaMcp.Pruebas
         [Fact]
         public void CopiaEnOtroHiloYEsperarLaCompleta()
         {
-            int hiloPrincipal = Environment.CurrentManagedThreadId;
-            int hiloCopia = -1;
-            // La copia avisa cuando ha empezado: si Esperar() llegara antes de que la tarea arranque, .NET podría ejecutarla
-            // en línea en este mismo hilo (Task.Wait) y la comprobación del hilo fallaría por azar (CI del 28/09/2026).
+            // La copia arranca en segundo plano al llamar a Iniciar() y el hilo que escribe solo se detiene en Esperar(). Se
+            // comprueba con un apretón de manos (la copia avisa de que empezó y espera permiso para seguir), no con el
+            // identificador del hilo: .NET no garantiza en qué hilo corre una tarea (la CI del 28/09/2026 la vio dos veces
+            // en el mismo hilo que la prueba).
             using var empezo = new ManualResetEventSlim(false);
-            CopiaSeguridad.Copiador = (o, d) => { hiloCopia = Environment.CurrentManagedThreadId; empezo.Set(); Thread.Sleep(120); File.Copy(o, d, true); return new FileInfo(d).Length; };
+            using var continuar = new ManualResetEventSlim(false);
+            int invocaciones = 0;
+            CopiaSeguridad.Copiador = (o, d) =>
+            {
+                Interlocked.Increment(ref invocaciones);
+                empezo.Set();
+                continuar.Wait(TimeSpan.FromSeconds(10));
+                Thread.Sleep(120);
+                File.Copy(o, d, true);
+                return new FileInfo(d).Length;
+            };
             var registro = new System.Collections.Generic.List<string>();
             var copia = CopiaSeguridad.Planificar(_dwg, _backups, "asignar_objetivo", new DateTime(2026, 9, 28, 10, 0, 0), registro.Add).Iniciar();
-            Assert.True(empezo.Wait(TimeSpan.FromSeconds(10)), "la copia no llegó a empezar en otro hilo");
-            Assert.Equal("pendiente", copia.Info.Estado);
+            Assert.True(empezo.Wait(TimeSpan.FromSeconds(10)), "la copia no empezó en segundo plano tras Iniciar()");
+            Assert.Equal("pendiente", copia.Info.Estado);   // Iniciar() volvió con la copia todavía en marcha
+            Assert.False(copia.Terminada);
             Assert.False(copia.Info.Reutilizada);
             Assert.EndsWith("obra_20260928_100000_asignar_objetivo.dwg", copia.Info.Ruta);
+            continuar.Set();
             var info = copia.Esperar();
             Assert.Same(info, copia.Info);
             Assert.Equal("terminada", info.Estado);
@@ -55,7 +67,7 @@ namespace ArbaMcp.Pruebas
             Assert.Equal(4096, info.Bytes);
             Assert.True(info.Ms >= 100, "ms mide la copia: " + info.Ms);
             Assert.True(info.EsperaMs > 0, "se esperó porque la copia era lenta");
-            Assert.NotEqual(hiloPrincipal, hiloCopia);
+            Assert.Equal(1, invocaciones);
             Assert.Equal(File.GetLastWriteTime(_dwg).ToString("yyyy-MM-dd HH:mm:ss"), info.RefleaGuardadoDe);
             Assert.Equal(CopiaSeguridad.NotaDisco, info.Nota);
             Assert.Contains(registro, l => l.StartsWith("Copia de seguridad: "));
