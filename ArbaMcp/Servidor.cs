@@ -5,10 +5,10 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using ArbaMcp.Nucleo;
 using Autodesk.AutoCAD.ApplicationServices;
 using AcApp = Autodesk.AutoCAD.ApplicationServices.Application;
 
@@ -17,12 +17,14 @@ namespace ArbaMcp
     /// <summary>
     /// Servidor HTTP mínimo (sin http.sys, sin permisos de administrador) que escucha solo en 127.0.0.1.
     /// Contrato:
+    ///   GET  /ping                  → {"ok":true,"servidor":"ArbaMcp","version":"1.3.0"} (sin token; nada del dibujo)
     ///   GET  /tools                 → lista de herramientas con parámetros
-    ///   GET  /ping                  → estado
     ///   POST /execute {tool, args}  → {"ok":true,"result":...} o {"ok":false,"error":"..."}
     /// Puerto: variable de entorno ARBA_MCP_PORT (por defecto 8765). ARBA_MCP=0 desactiva el servidor.
     /// Este código corre en hilos del ThreadPool: nunca llama a la API de AutoCAD; cada herramienta se
     /// encola en HiloPrincipal, que la ejecuta en el hilo principal en el contexto que la herramienta declara.
+    /// El análisis de la petición, la decisión de autorización y el formato de las respuestas están en
+    /// ArbaMcp.Nucleo (Http, Autorizacion) y se prueban sin Civil 3D; aquí solo se mueven bytes por el socket.
     /// </summary>
     internal static class Servidor
     {
@@ -32,16 +34,16 @@ namespace ArbaMcp
         public static string UltimoError { get; private set; } = "";
         public static string TokenActual { get; private set; }
 
+        /// <summary>Versión del plugin ("1.3.0"), la que devuelve GET /ping.</summary>
+        public static string Version => typeof(Servidor).Assembly.GetName().Version?.ToString(3) ?? "?";
+
         private static TcpListener _oyente;
         private static CancellationTokenSource _cts;
+        private static readonly Registro401 Rechazos401 = new Registro401();
 
-        internal static readonly JsonSerializerOptions Json = new JsonSerializerOptions
-        {
-            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-            WriteIndented = false
-        };
+        /// <summary>Opciones de serialización compartidas (tildes sin escapar); las define el núcleo.</summary>
+        internal static readonly JsonSerializerOptions Json = Nucleo.Json.Opciones;
 
-        
         public static void Iniciar()
         {
             if (Activo) return;
@@ -120,72 +122,61 @@ namespace ArbaMcp
                         int n = await ns.ReadAsync(tmp, 0, tmp.Length);
                         if (n <= 0) return;
                         acumulado.Write(tmp, 0, n);
-                        finCab = Buscar(acumulado.GetBuffer(), (int)acumulado.Length, "\r\n\r\n");
-                        if (acumulado.Length > 1 << 20) { await Responder(ns, 413, Error("Petición demasiado grande")); return; }
+                        finCab = Http.BuscarFinCabeceras(acumulado.GetBuffer(), (int)acumulado.Length);
+                        if (acumulado.Length > 1 << 20) { await Responder(ns, 413, Http.Error("Petición demasiado grande")); return; }
                     }
 
                     string cabeceras = Encoding.ASCII.GetString(acumulado.GetBuffer(), 0, finCab);
-                    var lineas = cabeceras.Split(new[] { "\r\n" }, StringSplitOptions.RemoveEmptyEntries);
-                    var partes = lineas[0].Split(' ');
-                    if (partes.Length < 2) { await Responder(ns, 400, Error("Petición inválida")); return; }
-                    string metodo = partes[0].ToUpperInvariant();
-                    string ruta = partes[1];
-                    int qs = ruta.IndexOf('?');
-                    if (qs >= 0) ruta = ruta.Substring(0, qs);
-
-                    
-                    int largo = 0;
-                    var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                    foreach (var l in lineas.Skip(1)) {
-                        if (l.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase)) int.TryParse(l.Substring(15).Trim(), out largo);
-                        int idx = l.IndexOf(':');
-                        if (idx > 0) headers[l.Substring(0, idx).Trim()] = l.Substring(idx + 1).Trim();
-                    }
+                    if (!Http.IntentarAnalizarCabeceras(cabeceras, out var peticion, out string motivo)) { await Responder(ns, 400, Http.Error(motivo)); return; }
 
                     // 2. Cuerpo
                     int inicioCuerpo = finCab + 4;
                     var cuerpo = new MemoryStream();
                     cuerpo.Write(acumulado.GetBuffer(), inicioCuerpo, (int)acumulado.Length - inicioCuerpo);
-                    while (cuerpo.Length < largo)
+                    while (cuerpo.Length < peticion.LargoCuerpo)
                     {
                         int n = await ns.ReadAsync(tmp, 0, tmp.Length);
                         if (n <= 0) break;
                         cuerpo.Write(tmp, 0, n);
                     }
-                    string textoCuerpo = Encoding.UTF8.GetString(cuerpo.GetBuffer(), 0, (int)Math.Min(cuerpo.Length, largo));
+                    peticion.Cuerpo = Encoding.UTF8.GetString(cuerpo.GetBuffer(), 0, (int)Math.Min(cuerpo.Length, peticion.LargoCuerpo));
 
-                    // Las validaciones van DESPUÉS de leer el cuerpo: si se cierra la conexión con bytes
-                    // sin leer, Windows envía un reset y el cliente ve un error en vez del 401/403/415.
-                    if (headers.ContainsKey("Origin")) { await Responder(ns, 403, Error("Forbidden")); return; }
-                    
-                    if (!headers.TryGetValue("Host", out string host) || (host != "127.0.0.1:" + Puerto && host != "localhost:" + Puerto)) { await Responder(ns, 400, Error("Bad Request")); return; }
-                    
-                    if (!headers.TryGetValue("X-Arba-Token", out string tokenReq) || tokenReq != TokenActual) { await Responder(ns, 401, Error("Unauthorized")); return; }
-                    
-                    if (metodo == "POST" && (!headers.TryGetValue("Content-Type", out string ct) || !ct.StartsWith("application/json", StringComparison.OrdinalIgnoreCase))) { await Responder(ns, 415, Error("Unsupported Media Type")); return; }
+                    // 3. Autorización, DESPUÉS de leer el cuerpo: si se cierra la conexión con bytes sin leer, Windows
+                    // envía un reset y el cliente ve un error en vez del 401/403/415.
+                    int rechazo = Autorizacion.Decidir(peticion, Puerto, TokenActual);
+                    foreach (var linea in Rechazos401.Cerrar(DateTime.Now)) Historial.Registrar(linea);
+                    if (rechazo != Autorizacion.Autorizada)
+                    {
+                        // Los 401 se anotan una vez por ruta y minuto con el recuento, no uno por petición
+                        if (rechazo == 401) foreach (var linea in Rechazos401.Anotar(peticion.Metodo, peticion.Ruta, DateTime.Now)) Historial.Registrar(linea);
+                        await Responder(ns, rechazo, Http.Error(Http.TextoEstado(rechazo)));
+                        return;
+                    }
 
-                    // 3. Enrutado
+                    // 4. Enrutado
+                    string metodo = peticion.Metodo, ruta = peticion.Ruta;
                     if (metodo == "OPTIONS") { await Responder(ns, 204, ""); return; }
                     if (metodo == "GET" && (ruta == "/tools" || ruta == "/tools/"))
                     {
-                        await Responder(ns, 200, JsonSerializer.Serialize(new { ok = true, tools = Herramientas.Describir() }, Json));
+                        await Responder(ns, 200, Catalogo.SerializarTools(Herramientas.Descripciones()));
                         return;
                     }
-                    if (metodo == "GET" && (ruta == "/ping" || ruta == "/"))
+                    if (Autorizacion.EsPingPublico(metodo, ruta))
                     {
-                        await Responder(ns, 200, JsonSerializer.Serialize(new { ok = true, servidor = "ArbaMcp", puerto = Puerto }, Json));
+                        // Sin token y sin datos del dibujo: es lo que sondea el puente mientras Civil 3D arranca
+                        await Responder(ns, 200, Nucleo.Json.Serializar(new { ok = true, servidor = "ArbaMcp", version = Version }));
                         return;
                     }
                     if (metodo == "POST" && (ruta == "/execute" || ruta == "/execute/"))
                     {
-                        await Responder(ns, 200, await Ejecutar(textoCuerpo));
+                        await Responder(ns, 200, await Ejecutar(peticion.Cuerpo));
                         return;
                     }
-                    await Responder(ns, 404, Error("Ruta no encontrada: " + metodo + " " + ruta));
+                    await Responder(ns, 404, Http.Error("Ruta no encontrada: " + metodo + " " + ruta));
                 }
                 catch (System.Exception ex)
                 {
-                    try { await Responder(cliente.GetStream(), 500, Error(ex.Message)); } catch { }
+                    try { await Responder(cliente.GetStream(), 500, Http.Error(ex.Message)); } catch { }
                 }
             }
         }
@@ -206,87 +197,62 @@ namespace ArbaMcp
                     if (raiz.TryGetProperty("timeout_s", out var to) && to.TryGetInt32(out int ts) && ts > 0) timeoutS = ts;
                 }
             }
-            catch (System.Exception ex) { return Error("JSON inválido: " + ex.Message); }
+            catch (System.Exception ex) { return Http.Error("JSON inválido: " + ex.Message); }
 
             var herramienta = Herramientas.Buscar(nombre);
-            if (herramienta == null) return Error("Herramienta desconocida: '" + nombre + "'. Consulta GET /tools.");
+            if (herramienta == null) return Http.Error("Herramienta desconocida: '" + nombre + "'. Consulta GET /tools.");
 
             Historial.Registrar("MCP → " + nombre);
             var reloj = System.Diagnostics.Stopwatch.StartNew();
             try
             {
                 Task<object> tareaPrincipal;
-                HiloPrincipal.Pendiente pendiente = null;
+                Pendiente pendiente = null;
                 if (herramienta.EjecutarAsync != null)
                 {
                     tareaPrincipal = herramienta.EjecutarAsync(args);
                 }
                 else
                 {
-                    pendiente = HiloPrincipal.Encolar(() => herramienta.Ejecutar(args), herramienta.Contexto, nombre);
+                    // Una simulación (simular=true) solo lee: va en contexto de aplicación con bloqueo de lectura, como las
+                    // lecturas, y así no deja entrada en el menú Deshacer. La escritura real sigue en contexto de comando.
+                    var contexto = herramienta.Contexto;
+                    if (contexto == ContextoEjecucion.Documento && Argumentos.LeerSimular(args)) contexto = ContextoEjecucion.Aplicacion;
+                    pendiente = HiloPrincipal.Encolar(() => herramienta.Ejecutar(args), contexto, nombre);
                     tareaPrincipal = pendiente.Tarea;
                 }
 
                 var terminada = await Task.WhenAny(tareaPrincipal, Task.Delay(TimeSpan.FromSeconds(timeoutS + 5)));
                 if (terminada != tareaPrincipal)
                 {
-                    string detalle;
-                    if (pendiente == null)
-                        detalle = "el comando pudo haberse enviado; consulta leer_historial.";
-                    else if (pendiente.Descartar())
-                        detalle = "la acción seguía esperando a que Civil 3D quedara libre (comando activo o cuadro de diálogo) y se ha descartado: no se ejecutó.";
-                    else
-                        detalle = "Civil 3D empezó a ejecutarla y sigue ocupado; terminará por su cuenta.";
+                    string detalle = Pendiente.DescribirTiempoAgotado(pendiente);
                     Historial.Registrar("MCP ← " + nombre + " TIEMPO AGOTADO (" + timeoutS + " s): " + detalle);
-                    return Error("Tiempo agotado (" + timeoutS + " s): " + detalle + " Civil 3D puede estar ocupado o con un cuadro de diálogo abierto.");
+                    return Http.Error("Tiempo agotado (" + timeoutS + " s): " + detalle + " Civil 3D puede estar ocupado o con un cuadro de diálogo abierto.");
                 }
                 object resultado = await tareaPrincipal;
                 Historial.Registrar("MCP ✓ " + nombre + " OK (" + reloj.ElapsedMilliseconds + " ms)");
-                return JsonSerializer.Serialize(new { ok = true, tool = nombre, ms = reloj.ElapsedMilliseconds, result = resultado }, Json);
+                // ms: total visto por el servidor; ms_espera: en cola hasta que Civil 3D quedó libre; ms_ejecucion: la herramienta
+                // en el hilo principal (null en las herramientas asíncronas, que gestionan su propia espera).
+                return JsonSerializer.Serialize(new { ok = true, tool = nombre, ms = reloj.ElapsedMilliseconds, ms_espera = pendiente?.MsEspera, ms_ejecucion = pendiente?.MsEjecucion, result = resultado }, Json);
             }
             catch (OperationCanceledException)
             {
                 Historial.Registrar("MCP ← " + nombre + " CANCELADA: no llegó a ejecutarse");
-                return Error("La herramienta no llegó a ejecutarse: Civil 3D descartó la petición (¿se cerró el dibujo o se descargó el plugin?). Consulta leer_historial.");
+                return Http.Error("La herramienta no llegó a ejecutarse: Civil 3D descartó la petición (¿se cerró el dibujo o se descargó el plugin?). Consulta leer_historial.");
             }
             catch (System.Exception ex)
             {
                 var raiz = ex; while (raiz.InnerException != null) raiz = raiz.InnerException;
                 Historial.Registrar("MCP ← " + nombre + " ERROR: " + raiz.Message + " " + raiz.StackTrace);
-                return Error(raiz.GetType().Name + ": " + raiz.Message);
+                return Http.Error(raiz.GetType().Name + ": " + raiz.Message);
             }
         }
-
-        private static string Error(string msg) => JsonSerializer.Serialize(new { ok = false, error = msg }, Json);
 
         private static async Task Responder(NetworkStream ns, int codigo, string json)
         {
-            string estado = codigo switch
-            {
-                200 => "OK", 204 => "No Content", 400 => "Bad Request", 401 => "Unauthorized", 403 => "Forbidden",
-                404 => "Not Found", 413 => "Payload Too Large", 415 => "Unsupported Media Type", _ => "Internal Server Error"
-            };
-            var cuerpo = Encoding.UTF8.GetBytes(json ?? "");
-            var cab = "HTTP/1.1 " + codigo + " " + estado + "\r\n" +
-                      "Content-Type: application/json; charset=utf-8\r\n" +
-                      "Content-Length: " + cuerpo.Length + "\r\n" +
-                      "Connection: close\r\n\r\n";
-            var bytesCab = Encoding.ASCII.GetBytes(cab);
-            await ns.WriteAsync(bytesCab, 0, bytesCab.Length);
-            if (cuerpo.Length > 0) await ns.WriteAsync(cuerpo, 0, cuerpo.Length);
+            var bytes = Http.ConstruirRespuesta(codigo, json);
+            await ns.WriteAsync(bytes, 0, bytes.Length);
             await ns.FlushAsync();
-        }
-
-        private static int Buscar(byte[] datos, int largo, string patron)
-        {
-            var p = Encoding.ASCII.GetBytes(patron);
-            for (int i = 0; i <= largo - p.Length; i++)
-            {
-                int k = 0;
-                while (k < p.Length && datos[i + k] == p[k]) k++;
-                if (k == p.Length) return i;
-            }
-            return -1;
         }
     }
 

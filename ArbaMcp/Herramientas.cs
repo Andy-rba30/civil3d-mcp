@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using ArbaMcp.Nucleo;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.Civil.ApplicationServices;
@@ -19,19 +20,12 @@ using Civ = Autodesk.Civil.DatabaseServices;
 
 namespace ArbaMcp
 {
-    public class Parametro
-    {
-        public string name { get; set; }
-        public string type { get; set; }          // string | number | boolean
-        public string description { get; set; }
-        public bool required { get; set; }
-    }
+    /// <summary>Parámetro de una herramienta (string | number | boolean | json). Se mantiene como alias de ArbaMcp.Nucleo.Parametro para los plugins que ya lo usaban.</summary>
+    public class Parametro : Nucleo.Parametro { }
 
-    public class Herramienta
+    /// <summary>Herramienta expuesta por MCP: la descripción (nombre, texto, parámetros) es la del núcleo; aquí se añade cómo se ejecuta.</summary>
+    public class Herramienta : DescripcionHerramienta
     {
-        public string Nombre;
-        public string Descripcion;
-        public List<Parametro> Parametros = new List<Parametro>();
         public Func<JsonElement, object> Ejecutar;
         public Func<JsonElement, Task<object>> EjecutarAsync;
         /// <summary>
@@ -48,10 +42,11 @@ namespace ArbaMcp
     public static partial class Herramientas
     {
         private static readonly List<Herramienta> Lista = new List<Herramienta>();
-        private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
+        /// <summary>Registra (o sustituye por nombre) una herramienta. Valida el nombre y los tipos de sus parámetros.</summary>
         public static void Registrar(Herramienta h)
         {
+            Catalogo.Validar(h);
             lock (Lista)
             {
                 Lista.RemoveAll(x => x.Nombre == h.Nombre);
@@ -64,55 +59,49 @@ namespace ArbaMcp
             lock (Lista) return Lista.FirstOrDefault(h => string.Equals(h.Nombre, nombre, StringComparison.OrdinalIgnoreCase));
         }
 
-        public static object Describir()
+        /// <summary>Copia de las descripciones registradas, en orden, para GET /tools.</summary>
+        public static List<DescripcionHerramienta> Descripciones()
         {
-            lock (Lista)
-                return Lista.Select(h => new { name = h.Nombre, description = h.Descripcion, parameters = h.Parametros }).ToList();
+            lock (Lista) return Lista.Cast<DescripcionHerramienta>().ToList();
         }
+
+        public static object Describir() => Catalogo.Describir(Descripciones());
 
         private static Parametro P(string nombre, string tipo, string desc, bool req = false)
             => new Parametro { name = nombre, type = tipo, description = desc, required = req };
 
-        // ------------------------------------------------------------------ lectura de argumentos
-        private static bool Tiene(JsonElement a, string n) => a.ValueKind == JsonValueKind.Object && a.TryGetProperty(n, out var v) && v.ValueKind != JsonValueKind.Null;
-
-        private static string Str(JsonElement a, string n, string def = null)
-        {
-            if (!Tiene(a, n)) return def;
-            var v = a.GetProperty(n);
-            return v.ValueKind == JsonValueKind.String ? v.GetString() : v.ToString();
-        }
-
-        private static double Num(JsonElement a, string n, double def)
-        {
-            if (!Tiene(a, n)) return def;
-            var v = a.GetProperty(n);
-            if (v.ValueKind == JsonValueKind.Number) return v.GetDouble();
-            if (v.ValueKind == JsonValueKind.String && double.TryParse(v.GetString().Replace(',', '.'), NumberStyles.Float, Inv, out double d)) return d;
-            throw new ArgumentException("El parámetro '" + n + "' debe ser numérico.");
-        }
-
-        private static bool Bool(JsonElement a, string n, bool def)
-        {
-            if (!Tiene(a, n)) return def;
-            var v = a.GetProperty(n);
-            if (v.ValueKind == JsonValueKind.True) return true;
-            if (v.ValueKind == JsonValueKind.False) return false;
-            if (v.ValueKind == JsonValueKind.String) return v.GetString().Trim().ToLowerInvariant() is "1" or "si" or "sí" or "true" or "yes";
-            if (v.ValueKind == JsonValueKind.Number) return v.GetDouble() != 0;
-            return def;
-        }
-
-        private static string Requerido(JsonElement a, string n)
-        {
-            string s = Str(a, n);
-            if (string.IsNullOrWhiteSpace(s)) throw new ArgumentException("Falta el parámetro obligatorio '" + n + "'.");
-            return s;
-        }
-
-        private static double? N(double v) => double.IsNaN(v) || double.IsInfinity(v) ? (double?)null : Math.Round(v, 4);
+        // ------------------------------------------------------------------ lectura de argumentos (ArbaMcp.Nucleo.Argumentos)
+        private static bool Tiene(JsonElement a, string n) => Argumentos.Tiene(a, n);
+        private static string Str(JsonElement a, string n, string def = null) => Argumentos.Str(a, n, def);
+        private static double Num(JsonElement a, string n, double def) => Argumentos.Num(a, n, def);
+        private static bool Bool(JsonElement a, string n, bool def) => Argumentos.Bool(a, n, def);
+        private static string Requerido(JsonElement a, string n) => Argumentos.Requerido(a, n);
+        private static List<string> ListaTextos(JsonElement a, string n) => Argumentos.Lista(a, n);
+        private static JsonElement JsonArg(JsonElement a, string n) => Argumentos.Json(a, n);
+        private static double? N(double v) => Argumentos.Redondear(v);
 
         // ------------------------------------------------------------------ acceso al dibujo
+        /// <summary>
+        /// Bloqueo de solo lectura del dibujo (DocumentLockMode.Read) para las lecturas y las simulaciones, que corren en
+        /// contexto de aplicación. Un bloqueo de escritura fuera de un comando hace que AutoCAD anote un "Grupo de
+        /// comandos" en el menú Deshacer aunque no se cambie nada (validado el 28/09/2026); el de lectura no.
+        /// </summary>
+        private static DocumentLock BloquearParaLeer(Document doc) => doc.LockDocument(DocumentLockMode.Read, null, null, false);
+
+        /// <summary>
+        /// Añade claves de primer nivel a una respuesta ya construida (objeto anónimo o diccionario) sin tocar el núcleo:
+        /// la serializa y la vuelve a leer como diccionario de JsonElement. Lo usan las escrituras de objetivos ('restaurar')
+        /// y deshacer_objetivos ('deshacer').
+        /// </summary>
+        private static Dictionary<string, object> ConExtras(object respuesta, IDictionary<string, object> extras)
+        {
+            var d = new Dictionary<string, object>();
+            using (var doc = JsonDocument.Parse(Nucleo.Json.Serializar(respuesta)))
+                foreach (var p in doc.RootElement.EnumerateObject()) d[p.Name] = p.Value.Clone();
+            foreach (var kv in extras) d[kv.Key] = kv.Value;
+            return d;
+        }
+
         private static Document DocActivo()
         {
             var doc = AcApp.DocumentManager.MdiActiveDocument;
@@ -173,12 +162,13 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "listar_alineamientos",
+                Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
                 Descripcion = "Lista los alineamientos del dibujo activo con sus progresivas inicial y final y sus perfiles.",
                 Ejecutar = a =>
                 {
                     var doc = DocActivo();
                     var lista = new List<object>();
-                    using (doc.LockDocument())
+                    using (BloquearParaLeer(doc))
                     using (var tr = doc.Database.TransactionManager.StartTransaction())
                     {
                         foreach (ObjectId id in CivilApplication.ActiveDocument.GetAlignmentIds())
@@ -205,6 +195,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "listar_perfiles",
+                Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
                 Descripcion = "Lista los perfiles de un alineamiento: nombre, tipo (EG terreno, FG rasante), progresivas y número de PVI.",
                 Parametros = { P("alineamiento", "string", "Nombre del alineamiento", true) },
                 Ejecutar = a =>
@@ -212,7 +203,7 @@ namespace ArbaMcp
                     var doc = DocActivo();
                     string nombreAl = Requerido(a, "alineamiento");
                     var lista = new List<object>();
-                    using (doc.LockDocument())
+                    using (BloquearParaLeer(doc))
                     using (var tr = doc.Database.TransactionManager.StartTransaction())
                     {
                         var idAl = BuscarAlineamiento(tr, nombreAl);
@@ -240,12 +231,13 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "listar_superficies",
+                Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
                 Descripcion = "Lista las superficies del dibujo activo: tipo (TIN, Grid, TinVolume, GridVolume o Corridor), si está desactualizada, número de líneas de rotura y de contornos de la definición y, en superficies de corredor, el corredor que la genera.",
                 Ejecutar = a =>
                 {
                     var doc = DocActivo();
                     var lista = new List<object>();
-                    using (doc.LockDocument())
+                    using (BloquearParaLeer(doc))
                     using (var tr = doc.Database.TransactionManager.StartTransaction())
                     {
                         // Superficies generadas por corredores: nombre de superficie → corredor
@@ -374,6 +366,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "listar_pvis",
+                Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
                 Descripcion = "Devuelve la geometría vertical de un perfil: cada PVI con progresiva, cota, pendientes de entrada y salida, y la curva vertical que lo contiene (tipo y longitud) si existe.",
                 Parametros =
                 {
@@ -384,7 +377,7 @@ namespace ArbaMcp
                 {
                     var doc = DocActivo();
                     var lista = new List<object>();
-                    using (doc.LockDocument())
+                    using (BloquearParaLeer(doc))
                     using (var tr = doc.Database.TransactionManager.StartTransaction())
                     {
                         var idAl = BuscarAlineamiento(tr, Requerido(a, "alineamiento"));

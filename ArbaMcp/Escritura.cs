@@ -1,11 +1,11 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using ArbaMcp.Nucleo;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using AcApp = Autodesk.AutoCAD.ApplicationServices.Application;
@@ -15,15 +15,27 @@ namespace ArbaMcp
     /// <summary>
     /// Reglas comunes a toda herramienta de escritura:
     ///  1. Rechaza si hay un comando activo, el dibujo es de solo lectura o el mismo archivo está abierto dos veces.
-    ///  2. Antes del primer cambio de cada minuto guarda una copia en &lt;carpeta del dwg&gt;\backups (conserva 20).
+    ///  2. Copia de seguridad antes de cada escritura real: si el dibujo está guardado en disco, File.Copy del .dwg en
+    ///     un hilo aparte (se inicia al entrar y se espera justo antes de tocar el dibujo; se reutiliza si el .dwg no
+    ///     cambió de fecha ni tamaño); si no está guardado, SaveAs en %LOCALAPPDATA%\ArbaMcp\backups. Se conservan 20
+    ///     copias por dibujo. Nunca se escribe sin copia terminada: si falla, se responde error sin tocar nada.
     ///  3. Registra cada llamada en Historial y en &lt;carpeta del dwg&gt;\mcp_log.jsonl.
     ///  4. Compara el estado antes y después y falla si el dibujo no refleja el cambio pedido.
+    ///  5. Deshacer: cada herramienta corre como un pseudocomando de ExecuteInCommandContextAsync y AutoCAD la anota
+    ///     como UNA entrada "Executefunction" del menú Deshacer, con todas sus transacciones (validado en Civil 3D 2027
+    ///     el 28/09/2026, VALIDACION_122 paso 9). No hacen falta marcas de deshacer. `_.UNDO 1` revierte las frecuencias
+    ///     pero NO los objetivos: Civil 3D no deshace SetTargets ni los cambios de Propiedades de corredor (validado con
+    ///     la 1.3.2, pasos 9 y 9b). Por eso las escrituras de objetivos guardan lo anterior en Restauraciones y
+    ///     deshacer_objetivos lo reaplica (1.3.3).
     ///  6. Parámetro 'simular': devuelve lo que haría sin tocar nada.
-    /// Todo corre en el hilo principal de AutoCAD, en el contexto de comando del dibujo activo (lo llama el cuerpo de cada herramienta).
+    /// Todo corre en el hilo principal de AutoCAD, en el contexto de comando del dibujo activo (lo llama el cuerpo de
+    /// cada herramienta). La lógica que no toca AutoCAD (comparación, respuestas, copia de disco, poda, línea de log)
+    /// está en ArbaMcp.Nucleo y se prueba sin Civil 3D.
     /// </summary>
     internal static class Escritura
     {
-        public const int CopiasConservadas = 20;
+        public const int CopiasConservadas = Copias.Conservadas;
+        public const string NotaSaveAs = "El dibujo no está guardado en disco: la copia se hizo con SaveAs en %LOCALAPPDATA%\\ArbaMcp\\backups y refleja el estado en memoria.";
 
         public sealed class Contexto
         {
@@ -32,17 +44,30 @@ namespace ArbaMcp
             public bool Simular;
             public Document Doc;
             public Database Db => Doc.Database;
-            /// <summary>Ruta de la copia de seguridad hecha en esta llamada; null si ya había una de este minuto o se simula.</summary>
-            public string Copia;
+            /// <summary>
+            /// Información de la copia de seguridad de esta llamada (campo 'copia' de la respuesta); null si se simula o
+            /// la herramienta no hace copia. Con copia de disco, ms y espera_ms se completan al esperar.
+            /// </summary>
+            public InfoCopia Copia;
+            internal CopiaSeguridad CopiaPendiente;
             public List<string> Avisos = new List<string>();
+
+            /// <summary>
+            /// Espera a que termine la copia iniciada al entrar. Se llama justo antes de tocar el dibujo; lanza si la
+            /// copia falló (no se escribe sin copia). Idempotente.
+            /// </summary>
+            public void EsperarCopia()
+            {
+                if (CopiaPendiente == null) return;
+                Copia = CopiaPendiente.Esperar();
+            }
         }
 
-        private static readonly Dictionary<string, string> MinutoUltimaCopia = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private static readonly object Cerrojo = new object();
         private static readonly UTF8Encoding Utf8SinBom = new UTF8Encoding(false);
 
         // ------------------------------------------------------------------ 1 y 2: comprobaciones y copia
-        /// <summary>Comprueba que se puede escribir en el dibujo activo y, salvo en simulación, hace la copia del minuto.</summary>
+        /// <summary>Comprueba que se puede escribir en el dibujo activo y, salvo en simulación, inicia la copia de seguridad.</summary>
         public static Contexto Preparar(string herramienta, JsonElement args, bool conCopia = true)
         {
             var doc = AcApp.DocumentManager.MdiActiveDocument;
@@ -68,26 +93,43 @@ namespace ArbaMcp
                     throw new InvalidOperationException("El archivo " + ruta + " está abierto " + repetidos + " veces en Civil 3D; cierra las copias antes de escribir.");
             }
 
-            if (!ctx.Simular && conCopia) ctx.Copia = CopiaDelMinuto(doc, herramienta);
+            if (!ctx.Simular && conCopia) IniciarCopia(ctx);
             return ctx;
         }
 
-        /// <summary>Guarda una copia si aún no se hizo ninguna en este minuto para este dibujo. Devuelve la ruta o null.</summary>
-        public static string CopiaDelMinuto(Document doc, string herramienta)
+        /// <summary>
+        /// Copia de seguridad de esta escritura: si el dibujo está guardado en disco, File.Copy del .dwg en un hilo
+        /// aparte (ArbaMcp.Nucleo.CopiaSeguridad; refleja el último guardado, no el estado en memoria); si es un dibujo
+        /// sin guardar, SaveAs ahora mismo en %LOCALAPPDATA%\ArbaMcp\backups y la respuesta lo dice.
+        /// </summary>
+        private static void IniciarCopia(Contexto ctx)
         {
-            string clave = RutaDibujo(doc) ?? doc.Name;
-            string minuto = DateTime.Now.ToString("yyyyMMddHHmm");
-            lock (Cerrojo)
+            string ruta = RutaDibujo(ctx.Doc);
+            if (ruta == null)
             {
-                if (MinutoUltimaCopia.TryGetValue(clave, out string ultimo) && ultimo == minuto) return null;
-                MinutoUltimaCopia[clave] = minuto;
+                var reloj = Stopwatch.StartNew();
+                string destino = GuardarCopia(ctx.Doc, ctx.Herramienta);
+                ctx.Copia = new InfoCopia
+                {
+                    Ruta = destino,
+                    Metodo = CopiaSeguridad.MetodoSaveAs,
+                    Reutilizada = false,
+                    Ms = reloj.ElapsedMilliseconds,
+                    EsperaMs = 0,
+                    RefleaGuardadoDe = null,
+                    Bytes = File.Exists(destino) ? new FileInfo(destino).Length : (long?)null,
+                    Estado = "terminada",
+                    Nota = NotaSaveAs
+                };
+                return;
             }
-            return GuardarCopia(doc, herramienta);
+            ctx.CopiaPendiente = CopiaSeguridad.Planificar(ruta, Path.Combine(CarpetaDatos(ctx.Doc), "backups"), ctx.Herramienta, DateTime.Now, Historial.Registrar).Iniciar();
+            ctx.Copia = ctx.CopiaPendiente.Info;
         }
 
         /// <summary>
         /// Guarda backups\&lt;nombre&gt;_&lt;fecha&gt;_&lt;sufijo&gt;.dwg sin renombrar el dibujo activo (SaveAs con bBakAndRename=false)
-        /// y borra las copias de este dibujo que sobrepasen las últimas 20.
+        /// y borra las copias de este dibujo que sobrepasen las últimas 20. Lo usan guardar_copia y los dibujos sin guardar.
         /// </summary>
         public static string GuardarCopia(Document doc, string sufijo)
         {
@@ -95,18 +137,22 @@ namespace ArbaMcp
             string dir = Path.Combine(CarpetaDatos(doc), "backups");
             Directory.CreateDirectory(dir);
             string nombre = Path.GetFileNameWithoutExtension(RutaDibujo(doc) ?? doc.Name);
-            string destino = Path.Combine(dir, nombre + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + "_" + LimpiarNombre(sufijo) + ".dwg");
+            string destino = Path.Combine(dir, Copias.NombreCopia(nombre, DateTime.Now, sufijo));
             using (doc.LockDocument())
                 db.SaveAs(destino, false, DwgVersion.Current, db.SecurityParameters);
-            Historial.Registrar("Copia de seguridad: " + destino);
-
-            var copias = new DirectoryInfo(dir).GetFiles(nombre + "_*.dwg").OrderByDescending(f => f.LastWriteTimeUtc).ToList();
-            foreach (var sobrante in copias.Skip(CopiasConservadas))
-            {
-                try { sobrante.Delete(); Historial.Registrar("Copia antigua borrada: " + sobrante.Name); }
-                catch (Exception ex) { Historial.Registrar("No se pudo borrar la copia antigua " + sobrante.Name + ": " + ex.Message); }
-            }
+            Historial.Registrar("Copia de seguridad (SaveAs): " + destino);
+            PodarCopias(dir, nombre);
             return destino;
+        }
+
+        /// <summary>Borra las copias de este dibujo que sobrepasen las últimas 20 (ArbaMcp.Nucleo.Copias decide cuáles).</summary>
+        public static void PodarCopias(string dir, string nombreDibujo)
+        {
+            foreach (var sobrante in Copias.Sobrantes(dir, nombreDibujo))
+            {
+                try { File.Delete(sobrante); Historial.Registrar("Copia antigua borrada: " + Path.GetFileName(sobrante)); }
+                catch (Exception ex) { Historial.Registrar("No se pudo borrar la copia antigua " + Path.GetFileName(sobrante) + ": " + ex.Message); }
+            }
         }
 
         // ------------------------------------------------------------------ 3: registro por llamada
@@ -114,17 +160,8 @@ namespace ArbaMcp
 
         public static void RegistrarLog(Document doc, string herramienta, JsonElement args, bool ok, long ms, string error)
         {
-            object argsJson = args.ValueKind == JsonValueKind.Undefined ? null : (object)args;
-            string linea = JsonSerializer.Serialize(new
-            {
-                hora = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
-                herramienta,
-                args = argsJson,
-                ok,
-                ms,
-                error
-            }, Servidor.Json);
-            Historial.Registrar("Escritura " + herramienta + (ok ? " OK" : " ERROR: " + error) + " (" + ms + " ms)");
+            string linea = RegistroEscritura.LineaLog(DateTime.Now, herramienta, args, ok, ms, error);
+            Historial.Registrar(RegistroEscritura.LineaHistorial(herramienta, ok, ms, error));
             try
             {
                 string ruta = RutaLog(doc);
@@ -153,19 +190,25 @@ namespace ArbaMcp
 
         // ------------------------------------------------------------------ envoltorio de una herramienta de escritura
         /// <summary>
-        /// Ejecuta el cuerpo de una herramienta de escritura: prepara (comprobaciones y copia), mide el tiempo y
-        /// registra el resultado o el error en el log. El cuerpo recibe el contexto y devuelve el objeto de respuesta.
+        /// Ejecuta el cuerpo de una herramienta de escritura: prepara (comprobaciones e inicio de la copia), mide el
+        /// tiempo y registra el resultado o el error en el log. El cuerpo recibe el contexto, llama a ctx.EsperarCopia()
+        /// justo antes de tocar el dibujo (lo hacen CambiarCorredor, CambiarSuperficie y LoteCorredor) y devuelve el
+        /// objeto de respuesta.
         /// </summary>
         public static object Ejecutar(string herramienta, JsonElement args, Func<Contexto, object> cuerpo, bool conCopia = true)
         {
             var reloj = Stopwatch.StartNew();
             Document doc = null;
             string error = null;
+            Contexto ctx = null;
             try
             {
-                var ctx = Preparar(herramienta, args, conCopia);
+                ctx = Preparar(herramienta, args, conCopia);
                 doc = ctx.Doc;
-                return cuerpo(ctx);
+                object respuesta = cuerpo(ctx);
+                // El cuerpo ya esperó antes de escribir; esto garantiza que la información de la copia está completa al responder
+                ctx.EsperarCopia();
+                return respuesta;
             }
             catch (Exception ex)
             {
@@ -175,101 +218,28 @@ namespace ArbaMcp
             }
             finally
             {
+                // No dejar el hilo de la copia suelto ni su información a medias (si falló, el error ya está en la respuesta)
+                if (ctx?.CopiaPendiente != null) { try { ctx.EsperarCopia(); } catch { } }
                 if (doc == null) { try { doc = AcApp.DocumentManager.MdiActiveDocument; } catch { } }
                 RegistrarLog(doc, herramienta, args, error == null, reloj.ElapsedMilliseconds, error);
             }
         }
 
-        // ------------------------------------------------------------------ 4 y 6: antes/después, simulación
+        // ------------------------------------------------------------------ 4 y 6: antes/después, simulación (ArbaMcp.Nucleo.Verificacion)
         /// <summary>Respuesta de una simulación: el estado actual y el estado que tendría después.</summary>
         public static object Simulacion(Contexto ctx, IDictionary<string, object> antes, IDictionary<string, object> esperado, string accion)
-        {
-            var despues = new Dictionary<string, object>(antes);
-            foreach (var kv in esperado) despues[kv.Key] = kv.Value;
-            var cambios = Cambios(antes, despues);
-            return new
-            {
-                simulado = true,
-                herramienta = ctx.Herramienta,
-                accion,
-                cambios,
-                antes = Filtrar(antes, cambios),
-                despues = Filtrar(despues, cambios),
-                avisos = ctx.Avisos.Count > 0 ? ctx.Avisos : null
-            };
-        }
+            => Verificacion.Simulacion(ctx.Herramienta, antes, esperado, accion, ctx.Avisos);
 
         /// <summary>
         /// Respuesta de una escritura real. Comprueba que 'despues' (leído del dibujo tras el cambio) coincide con
         /// 'esperado'; si no, lanza un error con la explicación y no reintenta.
         /// </summary>
         public static object Resultado(Contexto ctx, IDictionary<string, object> antes, IDictionary<string, object> despues, IDictionary<string, object> esperado, string mensaje = null, object datos = null)
-        {
-            foreach (var kv in esperado)
-            {
-                despues.TryGetValue(kv.Key, out object real);
-                if (!Igual(real, kv.Value))
-                    throw new InvalidOperationException(
-                        "El dibujo no refleja el cambio pedido en '" + kv.Key + "': se pidió " + Texto(kv.Value) + " y después de escribir tiene " + Texto(real)
-                        + ". No se reintenta. antes=" + JsonSerializer.Serialize(antes, Servidor.Json) + " despues=" + JsonSerializer.Serialize(despues, Servidor.Json)
-                        + (ctx.Copia != null ? " copia=" + ctx.Copia : ""));
-            }
-            var cambios = Cambios(antes, despues);
-            return new
-            {
-                simulado = false,
-                herramienta = ctx.Herramienta,
-                mensaje,
-                cambios,
-                antes = Filtrar(antes, cambios),
-                despues = Filtrar(despues, cambios),
-                copia = ctx.Copia,
-                datos,
-                avisos = ctx.Avisos.Count > 0 ? ctx.Avisos : null
-            };
-        }
+            => Verificacion.Resultado(ctx.Herramienta, antes, despues, esperado, mensaje, datos, ctx.Copia, ctx.Avisos);
 
-        public static List<string> Cambios(IDictionary<string, object> antes, IDictionary<string, object> despues)
-        {
-            var claves = antes.Keys.Union(despues.Keys).ToList();
-            var cambios = new List<string>();
-            foreach (var k in claves)
-            {
-                antes.TryGetValue(k, out object a);
-                despues.TryGetValue(k, out object d);
-                if (!Igual(a, d)) cambios.Add(k);
-            }
-            return cambios;
-        }
+        public static List<string> Cambios(IDictionary<string, object> antes, IDictionary<string, object> despues) => Verificacion.Cambios(antes, despues);
 
-        /// <summary>Deja solo los campos que cambiaron; si no cambió nada, devuelve todo (para ver el estado).</summary>
-        private static IDictionary<string, object> Filtrar(IDictionary<string, object> d, List<string> cambios)
-        {
-            if (cambios.Count == 0) return d;
-            var r = new Dictionary<string, object>();
-            foreach (var k in cambios) if (d.TryGetValue(k, out object v)) r[k] = v;
-            return r;
-        }
-
-        public static bool Igual(object a, object b)
-        {
-            if (a == null || b == null) return a == null && b == null;
-            if (EsNumero(a) && EsNumero(b)) return Math.Abs(Convert.ToDouble(a) - Convert.ToDouble(b)) < 1e-6;
-            if (a is string sa && b is string sb) return string.Equals(sa.Trim(), sb.Trim(), StringComparison.OrdinalIgnoreCase);
-            if (a is bool ba && b is bool bb) return ba == bb;
-            if (a is IEnumerable ea && b is IEnumerable eb && !(a is string) && !(b is string))
-            {
-                var la = ea.Cast<object>().ToList(); var lb = eb.Cast<object>().ToList();
-                if (la.Count != lb.Count) return false;
-                for (int i = 0; i < la.Count; i++) if (!Igual(la[i], lb[i])) return false;
-                return true;
-            }
-            return a.Equals(b);
-        }
-
-        private static bool EsNumero(object o) => o is double || o is float || o is int || o is long || o is short || o is decimal || o is byte;
-
-        private static string Texto(object o) => o == null ? "null" : o is string s ? "'" + s + "'" : o is IEnumerable e && !(o is string) ? "[" + string.Join(", ", e.Cast<object>().Select(Texto)) + "]" : Convert.ToString(o, System.Globalization.CultureInfo.InvariantCulture);
+        public static bool Igual(object a, object b) => Verificacion.Igual(a, b);
 
         // ------------------------------------------------------------------ rutas
         /// <summary>Ruta completa del dwg si está guardado en disco; null si es un dibujo nuevo sin guardar.</summary>
@@ -292,21 +262,6 @@ namespace ArbaMcp
             return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ArbaMcp");
         }
 
-        private static string LimpiarNombre(string s)
-        {
-            if (string.IsNullOrWhiteSpace(s)) return "mcp";
-            var malos = Path.GetInvalidFileNameChars();
-            return new string(s.Trim().Select(c => malos.Contains(c) || char.IsWhiteSpace(c) ? '_' : c).ToArray());
-        }
-
-        private static bool LeerSimular(JsonElement a)
-        {
-            if (a.ValueKind != JsonValueKind.Object || !a.TryGetProperty("simular", out var v)) return false;
-            if (v.ValueKind == JsonValueKind.True) return true;
-            if (v.ValueKind == JsonValueKind.False || v.ValueKind == JsonValueKind.Null) return false;
-            if (v.ValueKind == JsonValueKind.Number) return v.GetDouble() != 0;
-            if (v.ValueKind == JsonValueKind.String) return v.GetString().Trim().ToLowerInvariant() is "1" or "si" or "sí" or "true" or "yes";
-            return false;
-        }
+        private static bool LeerSimular(JsonElement a) => Argumentos.LeerSimular(a);
     }
 }

@@ -1,0 +1,45 @@
+name: Pruebas
+
+# Ejecuta en cada PR y en cada push a main lo que se puede probar sin Civil 3D:
+#  - ArbaMcp.Pruebas (xUnit) sobre ArbaMcp.Nucleo, la lógica del plugin que no toca AutoCAD.
+#  - pytest del puente (PuenteMcp/tests) contra un servidor falso que imita el contrato del plugin.
+#  - Compilación del plugin contra sustitutos (herramientas-dev/CompilarSinCivil): detecta errores de
+#    sintaxis y de nombres en el código propio; NO demuestra nada sobre la API real.
+# El plugin ArbaMcp no se compila aquí: ArbaMcp.csproj referencia acdbmgd.dll, acmgd.dll, AeccDbMgd.dll,
+# AecBaseMgd.dll y AdWindows.dll de una instalación local de Civil 3D 2027 (C3DPath), que no existe en
+# GitHub Actions y no se puede redistribuir. Lo que depende de esas DLL se valida a mano con
+# herramientas-dev/VALIDACION_13.md y se anota en herramientas-dev/miembros_por_verificar_civil3d.md.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  nucleo:
+    name: xUnit del núcleo (ArbaMcp.Nucleo)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Pruebas del núcleo
+        run: dotnet test ArbaMcp.Pruebas/ArbaMcp.Pruebas.csproj --nologo
+      - name: Compilación del plugin contra sustitutos (sin Civil 3D)
+        run: dotnet build herramientas-dev/CompilarSinCivil/CompilarSinCivil.csproj --nologo -warnaserror:CS0103,CS0246,CS1061,CS0117
+
+  puente:
+    name: pytest del puente (PuenteMcp)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: PuenteMcp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - name: Comprobar que uv.lock coincide con pyproject.toml
+        run: uv lock --check
+      - name: Pruebas
+        run: uv run --frozen pytest -q

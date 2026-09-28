@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+using ArbaMcp.Nucleo;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Geometry;
@@ -31,13 +32,14 @@ namespace ArbaMcp
         {
             var doc = ctx.Doc;
             Dictionary<string, object> antes, esperado;
-            using (doc.LockDocument())
+            using (ctx.Simular ? BloquearParaLeer(doc) : doc.LockDocument())   // simulación: contexto de aplicación y solo lectura, sin entrada de Deshacer
             using (var tr = doc.Database.TransactionManager.StartTransaction())
             {
                 var su = (CivSurface)tr.GetObject(BuscarSuperficie(tr, nombre), ctx.Simular ? OpenMode.ForRead : OpenMode.ForWrite);
                 antes = leer(tr, su);
                 esperado = esperar(tr, su);
                 if (ctx.Simular) { tr.Commit(); return Escritura.Simulacion(ctx, antes, esperado, accion); }
+                ctx.EsperarCopia();   // nunca se escribe sin copia terminada
                 cambiar(tr, su);
                 tr.Commit();
             }
@@ -211,6 +213,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "punto_a_pk",
+                Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
                 Descripcion = "Proyecta un punto (x, y) sobre un alineamiento y devuelve progresiva, desplazamiento y lado (Alignment.StationOffset).",
                 Parametros =
                 {
@@ -223,7 +226,7 @@ namespace ArbaMcp
                     var doc = DocActivo();
                     double x = Num(a, "x", double.NaN), y = Num(a, "y", double.NaN);
                     if (double.IsNaN(x) || double.IsNaN(y)) throw new ArgumentException("Faltan los parámetros obligatorios 'x' e 'y'.");
-                    using (doc.LockDocument())
+                    using (BloquearParaLeer(doc))
                     using (var tr = doc.Database.TransactionManager.StartTransaction())
                     {
                         var al = (CivAlignment)tr.GetObject(BuscarAlineamiento(tr, Requerido(a, "alineamiento")), OpenMode.ForRead);
@@ -239,6 +242,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "pk_a_punto",
+                Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
                 Descripcion = "Devuelve las coordenadas (x, y) de una progresiva y desplazamiento de un alineamiento (Alignment.PointLocation) y, si se indica 'perfil', la cota (Profile.ElevationAt).",
                 Parametros =
                 {
@@ -253,7 +257,7 @@ namespace ArbaMcp
                     double pk = Num(a, "pk", double.NaN), off = Num(a, "desplazamiento", 0);
                     if (double.IsNaN(pk)) throw new ArgumentException("Falta el parámetro obligatorio 'pk'.");
                     string perfil = Str(a, "perfil");
-                    using (doc.LockDocument())
+                    using (BloquearParaLeer(doc))
                     using (var tr = doc.Database.TransactionManager.StartTransaction())
                     {
                         var idAl = BuscarAlineamiento(tr, Requerido(a, "alineamiento"));
@@ -277,6 +281,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "cota_superficie",
+                Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
                 Descripcion = "Cota de una superficie en un punto (Surface.FindElevationAtXY); error si el punto queda fuera de la superficie.",
                 Parametros =
                 {
@@ -289,7 +294,7 @@ namespace ArbaMcp
                     var doc = DocActivo();
                     double x = Num(a, "x", double.NaN), y = Num(a, "y", double.NaN);
                     if (double.IsNaN(x) || double.IsNaN(y)) throw new ArgumentException("Faltan los parámetros obligatorios 'x' e 'y'.");
-                    using (doc.LockDocument())
+                    using (BloquearParaLeer(doc))
                     using (var tr = doc.Database.TransactionManager.StartTransaction())
                     {
                         var su = (CivSurface)tr.GetObject(BuscarSuperficie(tr, Requerido(a, "superficie")), OpenMode.ForRead);
@@ -305,6 +310,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "interseccion_ejes",
+                Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
                 Descripcion = "Puntos de cruce entre dos alineamientos con sus progresivas en cada uno (Entity.IntersectWith; si no devuelve nada, muestreo cada 0.5 m).",
                 Parametros =
                 {
@@ -316,7 +322,7 @@ namespace ArbaMcp
                     var doc = DocActivo();
                     var lista = new List<object>();
                     string metodo;
-                    using (doc.LockDocument())
+                    using (BloquearParaLeer(doc))
                     using (var tr = doc.Database.TransactionManager.StartTransaction())
                     {
                         var alA = (CivAlignment)tr.GetObject(BuscarAlineamiento(tr, Requerido(a, "alineamiento_a")), OpenMode.ForRead);
@@ -369,7 +375,7 @@ namespace ArbaMcp
 
                     List<string> CodigosPedidos(Transaction tr)
                     {
-                        if (!string.IsNullOrWhiteSpace(codigo)) return codigo.Split(';').Select(c => c.Trim()).Where(c => c.Length > 0).ToList();
+                        if (!string.IsNullOrWhiteSpace(codigo)) return ListaTextos(a, "codigo");
                         var cor = (Civ.Corridor)tr.GetObject(BuscarCorredor(tr, corredor), OpenMode.ForRead);
                         var l = Codigos(BuscarSuperficieCorredor(cor, supCor), "punto") ?? new List<string>();
                         if (l.Count == 0) throw new ArgumentException("La superficie '" + supCor + "' del corredor no tiene códigos de punto; indica 'codigo' con los códigos de línea característica (por ejemplo Crown;ETW;Daylight).");

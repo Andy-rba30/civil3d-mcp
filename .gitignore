@@ -17,3 +17,9 @@ __pycache__/
 # Restos de trabajo local
 patch_*.py
 captura_*.png
+
+# Pruebas y compilación de comprobación
+.pytest_cache/
+TestResults/
+herramientas-dev/CompilarSinCivil/bin/
+herramientas-dev/CompilarSinCivil/obj/

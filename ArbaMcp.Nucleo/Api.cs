@@ -5,7 +5,7 @@ using System.Globalization;
 using System.Linq;
 using System.Reflection;
 
-namespace ArbaMcp
+namespace ArbaMcp.Nucleo
 {
     /// <summary>
     /// Acceso por reflexión a los miembros de la API de Civil 3D cuyo nombre exacto cambia entre versiones
@@ -14,7 +14,7 @@ namespace ArbaMcp
     /// el error enumera los miembros disponibles para poder corregir el nombre sin adivinar.
     /// Los miembros estables de la API se usan directamente; este ayudante es solo para los dudosos.
     /// </summary>
-    internal static class Api
+    public static class Api
     {
         private const BindingFlags Flags = BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase;
 

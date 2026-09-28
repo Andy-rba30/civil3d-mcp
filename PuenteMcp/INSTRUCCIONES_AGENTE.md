@@ -9,6 +9,8 @@ Estas herramientas actúan sobre el dibujo activo de Civil 3D 2027 a través del
 3. **`capturar_pantalla` solo para diagnosticar**: úsala cuando una llamada devuelve "tiempo agotado" o sospechas que hay un cuadro de diálogo abierto. No la uses para "ver" el modelo: los datos se leen con las herramientas de lectura.
 4. `leer_historial` y `leer_log` sirven para saber qué se ejecutó y con qué resultado; `leer_log` devuelve una línea JSON por cada escritura (hora, herramienta, args, ok, ms, error).
 5. **Civil 3D ocupado**: las herramientas que tocan el dibujo esperan a que Civil 3D esté libre (sin comando activo ni cuadro de diálogo) y, si el tiempo se agota mientras esperan, se descartan sin ejecutarse. `ping`, `leer_historial`, `leer_log`, `leer_variable` y `capturar_pantalla` responden siempre. Si una llamada devuelve "tiempo agotado" o "Civil 3D siguió ocupado", pide al usuario que termine el comando o cierre el diálogo antes de repetirla; `leer_historial` muestra `MCP ⏳ <herramienta> espera: <motivo>`.
+6. **Antes de encadenar varias llamadas iguales, usa el lote**: varios `asignar_objetivo` son un `asignar_objetivos` (parámetro `asignaciones`, arreglo JSON como texto con los argumentos de cada asignación) y varios `establecer_frecuencia` son un `establecer_frecuencias` (parámetro `regiones`). Un lote es un solo contexto de comando, una copia de seguridad, una línea de log y **una** entrada de Deshacer (en Civil 3D se llama `Executefunction`; las lecturas no dejan entrada); con `simular=true` devuelve el `plan` por índice; un elemento cuyo objeto no existe va a `fallidos` con su motivo y el resto se aplica. Límite de 200 elementos salvo `forzar=true`. Los parámetros de tipo `json` se pasan como texto con el JSON dentro. Para deshacer una asignación de objetivos usa **`deshacer_objetivos`** (por defecto deshace la última; `id` para una concreta, el `restaurar.args.id` de la respuesta): Civil 3D no revierte objetivos con `_.UNDO 1` ni con Ctrl+Z, ni siquiera los cambiados desde su propio cuadro. Si la pila se perdió (Civil 3D reiniciado), reasigna con `restaurar.antes`. Nunca pongas como objetivo una superficie generada por el mismo corredor (`listar_superficies` la marca con `corredor`): el plugin la rechaza, igual que Civil 3D.
+7. **Civil 3D arrancando**: el puente sondea `GET /ping` del plugin (sin token) y registra las herramientas en cuanto responde; si tu lista de herramientas está vacía o incompleta, espera unos segundos y vuelve a pedirla (o reconecta el servidor MCP). No llames a `ejecutar_comando` para "despertar" a Civil 3D.
 
 ## 2. Flujo obligatorio para cambios en corredores
 
@@ -18,7 +20,7 @@ Estas herramientas actúan sobre el dibujo activo de Civil 3D 2027 a través del
 4. **Propón el plan al usuario en una tabla** con columnas: región, ensamblaje, objetivo antes → objetivo después (y opción). No ejecutes nada antes de mostrarla.
 5. Ejecuta cada escritura con **`simular=true`** y muestra el resultado (`antes`/`despues` previstos).
 6. **Confirma con el usuario**.
-7. Ejecuta sin `simular`. Cada escritura hace una copia de seguridad (`backups\`), escribe en `mcp_log.jsonl` y devuelve `antes`/`despues` leídos del dibujo; si el dibujo no refleja el cambio, la herramienta falla y **no debes reintentar sin avisar al usuario**.
+7. Ejecuta sin `simular`. Cada escritura hace una copia de seguridad (`backups\`), escribe en `mcp_log.jsonl` y devuelve `antes`/`despues` leídos del dibujo; si el dibujo no refleja el cambio, la herramienta falla y **no debes reintentar sin avisar al usuario**. La copia (`copia.ruta`) es una copia del `.dwg` de disco: **refleja el último guardado en disco, no el estado en memoria** (`copia.refleja_guardado_de` dice de cuándo; `copia.reutilizada=true` si el archivo no cambió desde la copia anterior). Si el usuario quiere conservar el estado actual antes de una serie de cambios, `guardar_dibujo` o `guardar_copia` (esta sí guarda lo que hay en memoria) primero.
 8. `reconstruir_corredor`.
 9. `estado_corredor` → comprueba `esta_desactualizado=false` y el estado de las superficies del corredor.
 
@@ -74,3 +76,12 @@ Después de cada escritura comprueba `esta_desactualizado` (corredor) o `esta_de
 ## 6. Exportaciones
 
 `exportar_landxml` y `exportar_imx` no tienen API .NET: envían el comando correspondiente y el usuario debe completar el cuadro de diálogo en Civil 3D. Indícale qué alineamientos y superficies marcar y comprueba `existe=true` en la respuesta.
+
+## 7. Qué lleva cada respuesta
+
+- Los argumentos de cada herramienta van dentro de `args` (`{"args": {"corredor": "Corredor 1"}}`).
+- Toda respuesta trae los tiempos: `ms` (lo que tardó Civil 3D en la herramienta, medido por el plugin), `ms_espera` (lo que esperó en cola a que Civil 3D estuviera libre), `ms_ejecucion` (la herramienta en el hilo principal) y `ms_puente` (total visto desde el puente). Si el resultado es un objeto, van como claves suyas; si es una lista o un valor, la respuesta es `{"result": ..., "ms": ..., "ms_puente": ...}`.
+- Un error es `{"ok": false, "error": "...", "ms_puente": ...}`. Los mensajes "Civil 3D no está abierto o ArbaMcp no cargó" y "Civil 3D no respondió en N s" vienen del puente; el resto, del plugin.
+- Las escrituras devuelven `simulado`, `cambios`, `antes`, `despues`, `copia` (objeto: `ruta`, `metodo`, `reutilizada`, `ms`, `espera_ms`, `refleja_guardado_de`, `nota`), `datos` y `avisos`; los lotes añaden `fallidos` y, simulados, `plan`.
+- Si una herramienta que conocías ya no existe, el servidor responde con la sustituta (tabla de nombres retirados del puente).
+
