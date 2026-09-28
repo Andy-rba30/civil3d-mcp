@@ -96,7 +96,7 @@ namespace ArbaMcp
         private static Dictionary<string, object> ConExtras(object respuesta, IDictionary<string, object> extras)
         {
             var d = new Dictionary<string, object>();
-            using (var doc = JsonDocument.Parse(Json.Serializar(respuesta)))
+            using (var doc = JsonDocument.Parse(Nucleo.Json.Serializar(respuesta)))
                 foreach (var p in doc.RootElement.EnumerateObject()) d[p.Name] = p.Value.Clone();
             foreach (var kv in extras) d[kv.Key] = kv.Value;
             return d;

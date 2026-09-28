@@ -1298,7 +1298,7 @@ namespace ArbaMcp
                     if (entrada == null)
                         throw new InvalidOperationException(id == null
                             ? "No hay escrituras de objetivos que deshacer en este dibujo desde que se abrió Civil 3D (la pila vive en memoria; reasigna con 'antes' de la respuesta original o con listar_objetivos)."
-                            : "No hay ninguna entrada " + id + " en la pila de este dibujo. Pendientes: " + Json.Serializar(Restauraciones.Pendientes(clave)) + ".");
+                            : "No hay ninguna entrada " + id + " en la pila de este dibujo. Pendientes: " + Nucleo.Json.Serializar(Restauraciones.Pendientes(clave)) + ".");
                     var db = ctx.Db;
                     var g = entrada.Elementos;
 
