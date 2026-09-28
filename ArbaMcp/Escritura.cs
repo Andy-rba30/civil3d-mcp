@@ -15,15 +15,23 @@ namespace ArbaMcp
     /// <summary>
     /// Reglas comunes a toda herramienta de escritura:
     ///  1. Rechaza si hay un comando activo, el dibujo es de solo lectura o el mismo archivo está abierto dos veces.
-    ///  2. Antes del primer cambio de cada minuto guarda una copia en &lt;carpeta del dwg&gt;\backups (conserva 20).
+    ///  2. Copia de seguridad antes de cada escritura real: si el dibujo está guardado en disco, File.Copy del .dwg en
+    ///     un hilo aparte (se inicia al entrar y se espera justo antes de tocar el dibujo; se reutiliza si el .dwg no
+    ///     cambió de fecha ni tamaño); si no está guardado, SaveAs en %LOCALAPPDATA%\ArbaMcp\backups. Se conservan 20
+    ///     copias por dibujo. Nunca se escribe sin copia terminada: si falla, se responde error sin tocar nada.
     ///  3. Registra cada llamada en Historial y en &lt;carpeta del dwg&gt;\mcp_log.jsonl.
     ///  4. Compara el estado antes y después y falla si el dibujo no refleja el cambio pedido.
+    ///  5. Marca de deshacer (Document.StartUndoMark/EndUndoMark) alrededor de la escritura, para que quede como una
+    ///     sola entrada del menú Deshacer aunque haga varias transacciones.
     ///  6. Parámetro 'simular': devuelve lo que haría sin tocar nada.
-    /// Todo corre en el hilo principal de AutoCAD, en el contexto de comando del dibujo activo (lo llama el cuerpo de cada herramienta).
+    /// Todo corre en el hilo principal de AutoCAD, en el contexto de comando del dibujo activo (lo llama el cuerpo de
+    /// cada herramienta). La lógica que no toca AutoCAD (comparación, respuestas, copia de disco, poda, línea de log)
+    /// está en ArbaMcp.Nucleo y se prueba sin Civil 3D.
     /// </summary>
     internal static class Escritura
     {
         public const int CopiasConservadas = Copias.Conservadas;
+        public const string NotaSaveAs = "El dibujo no está guardado en disco: la copia se hizo con SaveAs en %LOCALAPPDATA%\\ArbaMcp\\backups y refleja el estado en memoria.";
 
         public sealed class Contexto
         {
@@ -32,17 +40,30 @@ namespace ArbaMcp
             public bool Simular;
             public Document Doc;
             public Database Db => Doc.Database;
-            /// <summary>Ruta de la copia de seguridad hecha en esta llamada; null si ya había una de este minuto o se simula.</summary>
-            public string Copia;
+            /// <summary>
+            /// Información de la copia de seguridad de esta llamada (campo 'copia' de la respuesta); null si se simula o
+            /// la herramienta no hace copia. Con copia de disco, ms y espera_ms se completan al esperar.
+            /// </summary>
+            public InfoCopia Copia;
+            internal CopiaSeguridad CopiaPendiente;
             public List<string> Avisos = new List<string>();
+
+            /// <summary>
+            /// Espera a que termine la copia iniciada al entrar. Se llama justo antes de tocar el dibujo; lanza si la
+            /// copia falló (no se escribe sin copia). Idempotente.
+            /// </summary>
+            public void EsperarCopia()
+            {
+                if (CopiaPendiente == null) return;
+                Copia = CopiaPendiente.Esperar();
+            }
         }
 
-        private static readonly Dictionary<string, string> MinutoUltimaCopia = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private static readonly object Cerrojo = new object();
         private static readonly UTF8Encoding Utf8SinBom = new UTF8Encoding(false);
 
         // ------------------------------------------------------------------ 1 y 2: comprobaciones y copia
-        /// <summary>Comprueba que se puede escribir en el dibujo activo y, salvo en simulación, hace la copia del minuto.</summary>
+        /// <summary>Comprueba que se puede escribir en el dibujo activo y, salvo en simulación, inicia la copia de seguridad.</summary>
         public static Contexto Preparar(string herramienta, JsonElement args, bool conCopia = true)
         {
             var doc = AcApp.DocumentManager.MdiActiveDocument;
@@ -68,26 +89,43 @@ namespace ArbaMcp
                     throw new InvalidOperationException("El archivo " + ruta + " está abierto " + repetidos + " veces en Civil 3D; cierra las copias antes de escribir.");
             }
 
-            if (!ctx.Simular && conCopia) ctx.Copia = CopiaDelMinuto(doc, herramienta);
+            if (!ctx.Simular && conCopia) IniciarCopia(ctx);
             return ctx;
         }
 
-        /// <summary>Guarda una copia si aún no se hizo ninguna en este minuto para este dibujo. Devuelve la ruta o null.</summary>
-        public static string CopiaDelMinuto(Document doc, string herramienta)
+        /// <summary>
+        /// Copia de seguridad de esta escritura: si el dibujo está guardado en disco, File.Copy del .dwg en un hilo
+        /// aparte (ArbaMcp.Nucleo.CopiaSeguridad; refleja el último guardado, no el estado en memoria); si es un dibujo
+        /// sin guardar, SaveAs ahora mismo en %LOCALAPPDATA%\ArbaMcp\backups y la respuesta lo dice.
+        /// </summary>
+        private static void IniciarCopia(Contexto ctx)
         {
-            string clave = RutaDibujo(doc) ?? doc.Name;
-            string minuto = DateTime.Now.ToString("yyyyMMddHHmm");
-            lock (Cerrojo)
+            string ruta = RutaDibujo(ctx.Doc);
+            if (ruta == null)
             {
-                if (MinutoUltimaCopia.TryGetValue(clave, out string ultimo) && ultimo == minuto) return null;
-                MinutoUltimaCopia[clave] = minuto;
+                var reloj = Stopwatch.StartNew();
+                string destino = GuardarCopia(ctx.Doc, ctx.Herramienta);
+                ctx.Copia = new InfoCopia
+                {
+                    Ruta = destino,
+                    Metodo = CopiaSeguridad.MetodoSaveAs,
+                    Reutilizada = false,
+                    Ms = reloj.ElapsedMilliseconds,
+                    EsperaMs = 0,
+                    RefleaGuardadoDe = null,
+                    Bytes = File.Exists(destino) ? new FileInfo(destino).Length : (long?)null,
+                    Estado = "terminada",
+                    Nota = NotaSaveAs
+                };
+                return;
             }
-            return GuardarCopia(doc, herramienta);
+            ctx.CopiaPendiente = CopiaSeguridad.Planificar(ruta, Path.Combine(CarpetaDatos(ctx.Doc), "backups"), ctx.Herramienta, DateTime.Now, Historial.Registrar).Iniciar();
+            ctx.Copia = ctx.CopiaPendiente.Info;
         }
 
         /// <summary>
         /// Guarda backups\&lt;nombre&gt;_&lt;fecha&gt;_&lt;sufijo&gt;.dwg sin renombrar el dibujo activo (SaveAs con bBakAndRename=false)
-        /// y borra las copias de este dibujo que sobrepasen las últimas 20.
+        /// y borra las copias de este dibujo que sobrepasen las últimas 20. Lo usan guardar_copia y los dibujos sin guardar.
         /// </summary>
         public static string GuardarCopia(Document doc, string sufijo)
         {
@@ -98,7 +136,7 @@ namespace ArbaMcp
             string destino = Path.Combine(dir, Copias.NombreCopia(nombre, DateTime.Now, sufijo));
             using (doc.LockDocument())
                 db.SaveAs(destino, false, DwgVersion.Current, db.SecurityParameters);
-            Historial.Registrar("Copia de seguridad: " + destino);
+            Historial.Registrar("Copia de seguridad (SaveAs): " + destino);
             PodarCopias(dir, nombre);
             return destino;
         }
@@ -148,19 +186,27 @@ namespace ArbaMcp
 
         // ------------------------------------------------------------------ envoltorio de una herramienta de escritura
         /// <summary>
-        /// Ejecuta el cuerpo de una herramienta de escritura: prepara (comprobaciones y copia), mide el tiempo y
-        /// registra el resultado o el error en el log. El cuerpo recibe el contexto y devuelve el objeto de respuesta.
+        /// Ejecuta el cuerpo de una herramienta de escritura: prepara (comprobaciones e inicio de la copia), abre la
+        /// marca de deshacer, mide el tiempo y registra el resultado o el error en el log. El cuerpo recibe el contexto,
+        /// llama a ctx.EsperarCopia() justo antes de tocar el dibujo (lo hacen CambiarCorredor y CambiarSuperficie) y
+        /// devuelve el objeto de respuesta.
         /// </summary>
         public static object Ejecutar(string herramienta, JsonElement args, Func<Contexto, object> cuerpo, bool conCopia = true)
         {
             var reloj = Stopwatch.StartNew();
             Document doc = null;
             string error = null;
+            Contexto ctx = null;
+            bool marca = false;
             try
             {
-                var ctx = Preparar(herramienta, args, conCopia);
+                ctx = Preparar(herramienta, args, conCopia);
                 doc = ctx.Doc;
-                return cuerpo(ctx);
+                if (!ctx.Simular) marca = AbrirMarcaDeshacer(ctx);
+                object respuesta = cuerpo(ctx);
+                // El cuerpo ya esperó antes de escribir; esto garantiza que la información de la copia está completa al responder
+                ctx.EsperarCopia();
+                return respuesta;
             }
             catch (Exception ex)
             {
@@ -170,9 +216,40 @@ namespace ArbaMcp
             }
             finally
             {
+                if (marca) CerrarMarcaDeshacer(ctx);
+                // No dejar el hilo de la copia suelto ni su información a medias (si falló, el error ya está en la respuesta)
+                if (ctx?.CopiaPendiente != null) { try { ctx.EsperarCopia(); } catch { } }
                 if (doc == null) { try { doc = AcApp.DocumentManager.MdiActiveDocument; } catch { } }
                 RegistrarLog(doc, herramienta, args, error == null, reloj.ElapsedMilliseconds, error);
             }
+        }
+
+        // ------------------------------------------------------------------ 5: marca de deshacer
+        /// <summary>
+        /// Abre una marca de deshacer para que la escritura entera (todas sus transacciones) quede como una sola entrada
+        /// del menú Deshacer. ExecuteInCommandContextAsync debería agrupar por sí solo (un comando, una entrada), pero no
+        /// se ha podido comprobar en Civil 3D: por eso se pone la marca. Si la API no tiene el método o falla, se avisa
+        /// en la respuesta y se sigue (por verificar en herramientas-dev/miembros_por_verificar_civil3d.md).
+        /// </summary>
+        private static bool AbrirMarcaDeshacer(Contexto ctx)
+        {
+            try
+            {
+                if (Api.IntentarInvocar(ctx.Doc, out _, new[] { "StartUndoMark", "BeginUndoMark" })) return true;
+                ctx.Avisos.Add("Sin marca de deshacer: Document no tiene StartUndoMark en esta versión de la API; cada transacción puede quedar como una entrada de Deshacer.");
+            }
+            catch (Exception ex)
+            {
+                ctx.Avisos.Add("No se pudo abrir la marca de deshacer: " + ex.Message);
+                Historial.Registrar("StartUndoMark falló en " + ctx.Herramienta + ": " + ex.Message);
+            }
+            return false;
+        }
+
+        private static void CerrarMarcaDeshacer(Contexto ctx)
+        {
+            try { Api.IntentarInvocar(ctx.Doc, out _, new[] { "EndUndoMark" }); }
+            catch (Exception ex) { Historial.Registrar("EndUndoMark falló en " + ctx.Herramienta + ": " + ex.Message); }
         }
 
         // ------------------------------------------------------------------ 4 y 6: antes/después, simulación (ArbaMcp.Nucleo.Verificacion)
@@ -211,8 +288,6 @@ namespace ArbaMcp
             if (ruta != null) return Path.GetDirectoryName(ruta);
             return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ArbaMcp");
         }
-
-        private static string LimpiarNombre(string s) => Copias.LimpiarNombre(s);
 
         private static bool LeerSimular(JsonElement a) => Argumentos.LeerSimular(a);
     }

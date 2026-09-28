@@ -506,6 +506,7 @@ namespace ArbaMcp
                 antes = leer(tr, cor);
                 esperado = esperar(tr, cor);
                 if (ctx.Simular) { tr.Commit(); return Escritura.Simulacion(ctx, antes, esperado, accion); }
+                ctx.EsperarCopia();   // nunca se escribe sin copia terminada
                 cambiar(tr, cor);
                 tr.Commit();
             }
@@ -519,6 +520,90 @@ namespace ArbaMcp
             }
             return Escritura.Resultado(ctx, antes, despues, esperado, accion, extra?.Invoke());
         }
+
+        /// <summary>
+        /// Patrón de escritura por lotes sobre un corredor (asignar_objetivos, establecer_frecuencias): un solo contexto
+        /// de comando, una copia, una línea de log y una entrada de Deshacer. Primero lee 'antes' y calcula 'esperado' de
+        /// todos los elementos sin tocar nada (lo que no existe va a 'fallidos' con su motivo); en simulación devuelve el
+        /// plan por índice; si no, espera la copia, aplica 'cambiar' en orden a los válidos, confirma, relee 'despues' en
+        /// otra transacción y verifica cada elemento (ArbaMcp.Nucleo.Lotes). Una excepción de la API que no sea de
+        /// argumentos aborta el lote entero: la transacción se descarta y nada queda a medias.
+        /// </summary>
+        private static object LoteCorredor(Escritura.Contexto ctx, string corredor, int total,
+            Func<Transaction, Civ.Corridor, int, Dictionary<string, object>> leer,
+            Func<Transaction, Civ.Corridor, int, Dictionary<string, object>> esperar,
+            Action<Transaction, Civ.Corridor, int> cambiar,
+            Func<int, string> accion, string que)
+        {
+            var doc = ctx.Doc;
+            var elementos = new List<ElementoLote>();
+            for (int i = 0; i < total; i++) elementos.Add(new ElementoLote { Indice = i, Accion = accion(i) });
+            using (doc.LockDocument())
+            using (var tr = doc.Database.TransactionManager.StartTransaction())
+            {
+                var cor = (Civ.Corridor)tr.GetObject(BuscarCorredor(tr, corredor), ctx.Simular ? OpenMode.ForRead : OpenMode.ForWrite);
+                // 1. Validar todo (antes y esperado) sin tocar nada; lo que no existe va a fallidos
+                foreach (var e in elementos)
+                {
+                    try { e.Antes = leer(tr, cor, e.Indice); e.Esperado = esperar(tr, cor, e.Indice); }
+                    catch (ArgumentException ex) { e.Error = ex.Message; }
+                }
+                if (ctx.Simular) { tr.Commit(); return Lotes.Simulacion(ctx.Herramienta, elementos, Lotes.ResumenSimulado(que, elementos), ctx.Avisos); }
+                // 2. Aplicar en orden, con la copia terminada
+                ctx.EsperarCopia();
+                foreach (var e in elementos)
+                {
+                    if (e.Fallido) continue;
+                    try { cambiar(tr, cor, e.Indice); }
+                    catch (ArgumentException ex) { e.Error = ex.Message; }
+                }
+                tr.Commit();
+            }
+            // 3. Releer y verificar por índice
+            using (doc.LockDocument())
+            using (var tr = doc.Database.TransactionManager.StartTransaction())
+            {
+                var cor = (Civ.Corridor)tr.GetObject(BuscarCorredor(tr, corredor), OpenMode.ForRead);
+                foreach (var e in elementos) if (!e.Fallido) e.Despues = leer(tr, cor, e.Indice);
+                tr.Commit();
+            }
+            return Lotes.Resultado(ctx.Herramienta, elementos, Lotes.Resumen(que, elementos), ctx.Copia, ctx.Avisos);
+        }
+
+        // ------------------------------------------------------------------ frecuencias (establecer_frecuencia y establecer_frecuencias)
+        /// <summary>Frecuencias pedidas en los argumentos (tangentes, curvas, espirales, perfil): al menos una y mayores que 0.</summary>
+        private static Dictionary<string, double> LeerFrecuencias(JsonElement a)
+        {
+            var pedidas = new Dictionary<string, double>();
+            if (Tiene(a, "tangentes")) pedidas["frecuencia_tangentes"] = Num(a, "tangentes", 0);
+            if (Tiene(a, "curvas")) pedidas["frecuencia_curvas"] = Num(a, "curvas", 0);
+            if (Tiene(a, "espirales")) pedidas["frecuencia_espirales"] = Num(a, "espirales", 0);
+            if (Tiene(a, "perfil")) pedidas["frecuencia_perfil"] = Num(a, "perfil", 0);
+            if (pedidas.Count == 0) throw new ArgumentException("Indica al menos una frecuencia: tangentes, curvas, espirales o perfil.");
+            foreach (var kv in pedidas) if (kv.Value <= 0) throw new ArgumentException("La frecuencia '" + kv.Key + "' debe ser mayor que 0.");
+            return pedidas;
+        }
+
+        private static Dictionary<string, object> EstadoFrecuencias(Civ.BaselineRegion reg) => new Dictionary<string, object>
+        {
+            ["region"] = reg.Name,
+            ["frecuencia_tangentes"] = Frecuencia(reg, "tangentes"),
+            ["frecuencia_curvas"] = Frecuencia(reg, "curvas"),
+            ["frecuencia_espirales"] = Frecuencia(reg, "espirales"),
+            ["frecuencia_perfil"] = Frecuencia(reg, "perfil")
+        };
+
+        private static void AplicarFrecuencias(Civ.BaselineRegion reg, Dictionary<string, double> pedidas)
+        {
+            var s = reg.AppliedAssemblySetting;
+            if (pedidas.TryGetValue("frecuencia_tangentes", out double ft)) s.FrequencyAlongTangents = ft;
+            if (pedidas.TryGetValue("frecuencia_curvas", out double fc)) s.FrequencyAlongCurves = fc;
+            if (pedidas.TryGetValue("frecuencia_espirales", out double fe)) s.FrequencyAlongSpirals = fe;
+            if (pedidas.TryGetValue("frecuencia_perfil", out double fp)) s.FrequencyAlongProfileCurves = fp;
+        }
+
+        private static string TextoFrecuencias(Dictionary<string, double> pedidas)
+            => string.Join(", ", pedidas.Select(kv => kv.Key + "=" + kv.Value.ToString(CultureInfo.InvariantCulture)));
 
         private static void ComprobarSolape(Civ.Baseline bl, Civ.BaselineRegion reg, double inicio, double fin)
         {
@@ -939,6 +1024,66 @@ namespace ArbaMcp
 
             Registrar(new Herramienta
             {
+                Nombre = "asignar_objetivos",
+                Descripcion = "Lote de asignar_objetivo: varias asignaciones de objetivos en un solo contexto de comando, con una copia de seguridad, una línea de log y una entrada de Deshacer. Valida todas antes de tocar nada; si un objeto no existe, esa asignación va a 'fallidos' y el resto se aplica. Antes de encadenar varias llamadas a asignar_objetivo, usa esta.",
+                Parametros =
+                {
+                    P("corredor", "string", "Nombre del corredor (común a todo el lote)", true),
+                    P("linea_base", "string", "Línea base por defecto para las asignaciones que no la indiquen"),
+                    P("asignaciones", "json", "Arreglo JSON (como texto) con los argumentos de asignar_objetivo por elemento: linea_base, region, subensamblaje, tipo, objetivo y los opcionales alineamiento_del_perfil, opcion, mismo_lado, grupo, parametro. Ejemplo: [{\"region\":\"0\",\"subensamblaje\":\"DaylightGeneral - (Right)\",\"tipo\":\"superficie\",\"objetivo\":\"Terreno\"},{\"region\":\"0\",\"subensamblaje\":\"LaneSuperelevationAOR - (Left)\",\"tipo\":\"desplazamiento\",\"objetivo\":\"Borde izq\",\"opcion\":\"mas_cercano\"}]", true),
+                    P("forzar", "boolean", "Permitir más de " + Lotes.Limite + " elementos en el lote"),
+                    P("simular", "boolean", "Con true devuelve el plan por índice sin tocar nada")
+                },
+                Ejecutar = a => Escritura.Ejecutar("asignar_objetivos", a, ctx =>
+                {
+                    string corredor = Requerido(a, "corredor");
+                    var elementos = Lotes.LeerLista(a, "asignaciones", Bool(a, "forzar", false));
+                    var items = new List<(string lineaBase, string region, string sub, string tipo, string objetivo, string alPerfil, string opcion, string grupo, string parametro, bool? mismoLado)>();
+                    for (int i = 0; i < elementos.Count; i++)
+                    {
+                        var e = Lotes.ConDefectos(elementos[i], a, "linea_base");
+                        try
+                        {
+                            string opcion = Str(e, "opcion");
+                            if (!string.IsNullOrWhiteSpace(opcion)) OpcionApi(opcion);   // valida el valor antes de tocar nada
+                            items.Add((Requerido(e, "linea_base"), Requerido(e, "region"), Requerido(e, "subensamblaje"), NormalizarTipoObjetivo(Requerido(e, "tipo")),
+                                Requerido(e, "objetivo"), Str(e, "alineamiento_del_perfil"), opcion, Str(e, "grupo"), Str(e, "parametro"),
+                                Tiene(e, "mismo_lado") ? Bool(e, "mismo_lado", false) : (bool?)null));
+                        }
+                        catch (ArgumentException ex) { throw new ArgumentException("asignaciones[" + i + "]: " + ex.Message); }
+                    }
+                    var db = ctx.Db;
+                    return LoteCorredor(ctx, corredor, items.Count,
+                        (tr, cor, i) =>
+                        {
+                            var it = items[i];
+                            return EstadoObjetivo(tr, BuscarObjetivoInfo(tr, BuscarRegion(BuscarLineaBase(cor, it.lineaBase), it.region), it.sub, it.tipo, it.grupo, it.parametro).info);
+                        },
+                        (tr, cor, i) =>
+                        {
+                            var it = items[i];
+                            var ids = ResolverObjetivo(tr, db, it.tipo, it.objetivo, it.alPerfil);
+                            var e = new Dictionary<string, object> { ["objetivos"] = ids.Cast<ObjectId>().Select(id => TextoObjeto(tr, id)).ToList() };
+                            if (!string.IsNullOrWhiteSpace(it.opcion)) e["opcion"] = OpcionApi(it.opcion) == "Nearest" ? "mas_cercano" : OpcionApi(it.opcion) == "Farthest" ? "exterior" : "interior";
+                            return e;
+                        },
+                        (tr, cor, i) =>
+                        {
+                            var it = items[i];
+                            var reg = BuscarRegion(BuscarLineaBase(cor, it.lineaBase), it.region);
+                            var (coleccion, info) = BuscarObjetivoInfo(tr, reg, it.sub, it.tipo, it.grupo, it.parametro);
+                            info.TargetIds = ResolverObjetivo(tr, db, it.tipo, it.objetivo, it.alPerfil);
+                            if (!string.IsNullOrWhiteSpace(it.opcion) && Enum.TryParse<Civ.SubassemblyTargetToOption>(OpcionApi(it.opcion), true, out var opt)) info.TargetToOption = opt;
+                            if (it.mismoLado.HasValue) info.UseSameSideTarget = it.mismoLado.Value;
+                            reg.SetTargets(coleccion);
+                        },
+                        i => "Asignar '" + items[i].objetivo + "' como objetivo de " + items[i].tipo + " del subensamblaje '" + items[i].sub + "' en la región '" + items[i].region + "' de '" + items[i].lineaBase + "'",
+                        "asignaciones");
+                })
+            });
+
+            Registrar(new Herramienta
+            {
                 Nombre = "asignar_objetivos_superficie",
                 Descripcion = "Pone una superficie en todos los objetivos de tipo superficie del corredor, de una línea base o de una región (equivale a 'Establecer todos los objetivos' de superficie).",
                 Parametros =
@@ -1129,38 +1274,45 @@ namespace ArbaMcp
                 Ejecutar = a => Escritura.Ejecutar("establecer_frecuencia", a, ctx =>
                 {
                     string lineaBase = Requerido(a, "linea_base"), region = Requerido(a, "region");
-                    var pedidas = new Dictionary<string, double>();
-                    if (Tiene(a, "tangentes")) pedidas["frecuencia_tangentes"] = Num(a, "tangentes", 0);
-                    if (Tiene(a, "curvas")) pedidas["frecuencia_curvas"] = Num(a, "curvas", 0);
-                    if (Tiene(a, "espirales")) pedidas["frecuencia_espirales"] = Num(a, "espirales", 0);
-                    if (Tiene(a, "perfil")) pedidas["frecuencia_perfil"] = Num(a, "perfil", 0);
-                    if (pedidas.Count == 0) throw new ArgumentException("Indica al menos una frecuencia: tangentes, curvas, espirales o perfil.");
-                    foreach (var kv in pedidas) if (kv.Value <= 0) throw new ArgumentException("La frecuencia '" + kv.Key + "' debe ser mayor que 0.");
+                    var pedidas = LeerFrecuencias(a);
 
                     return CambiarCorredor(ctx, Requerido(a, "corredor"),
-                        (tr, cor) =>
-                        {
-                            var reg = BuscarRegion(BuscarLineaBase(cor, lineaBase), region);
-                            return new Dictionary<string, object>
-                            {
-                                ["region"] = reg.Name,
-                                ["frecuencia_tangentes"] = Frecuencia(reg, "tangentes"),
-                                ["frecuencia_curvas"] = Frecuencia(reg, "curvas"),
-                                ["frecuencia_espirales"] = Frecuencia(reg, "espirales"),
-                                ["frecuencia_perfil"] = Frecuencia(reg, "perfil")
-                            };
-                        },
+                        (tr, cor) => EstadoFrecuencias(BuscarRegion(BuscarLineaBase(cor, lineaBase), region)),
                         (tr, cor) => pedidas.ToDictionary(kv => kv.Key, kv => (object)N(kv.Value)),
-                        (tr, cor) =>
-                        {
-                            var reg = BuscarRegion(BuscarLineaBase(cor, lineaBase), region);
-                            var s = reg.AppliedAssemblySetting;
-                            if (pedidas.TryGetValue("frecuencia_tangentes", out double ft)) s.FrequencyAlongTangents = ft;
-                            if (pedidas.TryGetValue("frecuencia_curvas", out double fc)) s.FrequencyAlongCurves = fc;
-                            if (pedidas.TryGetValue("frecuencia_espirales", out double fe)) s.FrequencyAlongSpirals = fe;
-                            if (pedidas.TryGetValue("frecuencia_perfil", out double fp)) s.FrequencyAlongProfileCurves = fp;
-                        },
-                        "Cambiar frecuencias de la región '" + region + "': " + string.Join(", ", pedidas.Select(kv => kv.Key + "=" + kv.Value.ToString(CultureInfo.InvariantCulture))));
+                        (tr, cor) => AplicarFrecuencias(BuscarRegion(BuscarLineaBase(cor, lineaBase), region), pedidas),
+                        "Cambiar frecuencias de la región '" + region + "': " + TextoFrecuencias(pedidas));
+                })
+            });
+
+            Registrar(new Herramienta
+            {
+                Nombre = "establecer_frecuencias",
+                Descripcion = "Lote de establecer_frecuencia: cambia las frecuencias de varias regiones en un solo contexto de comando, con una copia de seguridad, una línea de log y una entrada de Deshacer. Valida todo antes de tocar nada; una región inexistente va a 'fallidos' sin abortar el lote. Antes de encadenar varias llamadas a establecer_frecuencia, usa esta.",
+                Parametros =
+                {
+                    P("corredor", "string", "Nombre del corredor (común a todo el lote)", true),
+                    P("linea_base", "string", "Línea base por defecto para las regiones que no la indiquen"),
+                    P("regiones", "json", "Arreglo JSON (como texto): por elemento, region (nombre o índice), linea_base opcional y las frecuencias a cambiar (tangentes, curvas, espirales, perfil; al menos una, mayores que 0). Ejemplo: [{\"region\":\"0\",\"tangentes\":10,\"curvas\":5},{\"region\":\"Región (2)\",\"linea_base\":\"BL - Eje\",\"perfil\":20}]", true),
+                    P("forzar", "boolean", "Permitir más de " + Lotes.Limite + " elementos en el lote"),
+                    P("simular", "boolean", "Con true devuelve el plan por índice sin tocar nada")
+                },
+                Ejecutar = a => Escritura.Ejecutar("establecer_frecuencias", a, ctx =>
+                {
+                    string corredor = Requerido(a, "corredor");
+                    var elementos = Lotes.LeerLista(a, "regiones", Bool(a, "forzar", false));
+                    var items = new List<(string lineaBase, string region, Dictionary<string, double> pedidas)>();
+                    for (int i = 0; i < elementos.Count; i++)
+                    {
+                        var e = Lotes.ConDefectos(elementos[i], a, "linea_base");
+                        try { items.Add((Requerido(e, "linea_base"), Requerido(e, "region"), LeerFrecuencias(e))); }
+                        catch (ArgumentException ex) { throw new ArgumentException("regiones[" + i + "]: " + ex.Message); }
+                    }
+                    return LoteCorredor(ctx, corredor, items.Count,
+                        (tr, cor, i) => EstadoFrecuencias(BuscarRegion(BuscarLineaBase(cor, items[i].lineaBase), items[i].region)),
+                        (tr, cor, i) => items[i].pedidas.ToDictionary(kv => kv.Key, kv => (object)N(kv.Value)),
+                        (tr, cor, i) => AplicarFrecuencias(BuscarRegion(BuscarLineaBase(cor, items[i].lineaBase), items[i].region), items[i].pedidas),
+                        i => "Cambiar frecuencias de la región '" + items[i].region + "' de '" + items[i].lineaBase + "': " + TextoFrecuencias(items[i].pedidas),
+                        "regiones");
                 })
             });
 

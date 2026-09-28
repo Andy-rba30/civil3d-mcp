@@ -10,7 +10,8 @@ Pruebas del servidor local de ArbaMcp (con Civil 3D abierto y el plugin cargado)
       3. asignar_objetivo real se refleja en listar_objetivos y crea un archivo en backups\\
       4. ejecutar_comando sin undo no envía _.UNDO
       5. mcp_log.jsonl recibe una línea por cada llamada de escritura
-  --sin-escritura  omite las pruebas 3 y 5 (no toca el dibujo).
+      6. _.UNDO 1 revierte entera la última escritura (una entrada de deshacer por herramienta, 1.3.0)
+  --sin-escritura  omite las pruebas 3, 5 y 6 (no toca el dibujo).
 """
 import argparse
 import json
@@ -240,7 +241,7 @@ def pruebas_dibujo(dwg, con_escritura):
     resultado("mcp_log.jsonl registra la simulación", len(lineas_log(dwg)) == log_antes + 1, f"{log_antes} -> {len(lineas_log(dwg))}")
 
     if not con_escritura:
-        print("\n(--sin-escritura: se omiten las pruebas 3 y 5)")
+        print("\n(--sin-escritura: se omiten las pruebas 3, 5 y 6)")
         pruebas_undo()
         return
 
@@ -272,6 +273,19 @@ def pruebas_dibujo(dwg, con_escritura):
         resultado("última línea del log tiene hora/herramienta/args/ok/ms", all(k in ultima for k in ("hora", "herramienta", "args", "ok", "ms")), str(ultima)[:200])
     except Exception as e:
         resultado("última línea del log es JSON", False, str(e))
+
+    # ---- 6. deshacer (1.3.0): cada escritura queda como UNA entrada; _.UNDO 1 revierte la última entera
+    print("\n--- 6. _.UNDO 1 revierte la última escritura entera ---")
+    ok, r, _ = llamar("ejecutar_comando", {"comando": "_.UNDO 1", "timeout_s": 30}, timeout_s=40)
+    resultado("_.UNDO 1 terminado", ok and r == "terminado", str(r))
+    tras_undo = list(llamar("listar_objetivos", {"corredor": cor["nombre"], "linea_base": reg["linea_base"], "region": reg["nombre"]})[1] or [])
+    obj_undo = next((o for o in tras_undo if o.get("subensamblaje") == obj_sup["subensamblaje"] and o.get("tipo") == "superficie" and o.get("parametro") == obj_sup.get("parametro")), None)
+    nombres_undo = [o.get("nombre") for o in (obj_undo or {}).get("objetivos", [])]
+    resultado("tras _.UNDO 1 el objetivo vuelve al valor previo a la última escritura (la restauración se deshizo entera)", nombres_undo == esperado, f"{nombres_undo} (esperado {esperado})")
+    ok3, r3, _ = llamar("asignar_objetivo", dict(base, objetivo=nombre_actual or "ninguno"))
+    resultado("restaurar de nuevo el objetivo original", ok3, str(r3)[:300])
+    copia3 = (r3 or {}).get("copia") if isinstance(r3, dict) else None
+    resultado("la respuesta lleva copia como objeto (ruta, reutilizada, ms, espera_ms, refleja_guardado_de)", isinstance(copia3, dict) and all(k in copia3 for k in ("ruta", "reutilizada", "ms", "espera_ms", "refleja_guardado_de")), str(copia3)[:300])
 
     pruebas_undo()
 

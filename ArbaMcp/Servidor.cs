@@ -223,7 +223,9 @@ namespace ArbaMcp
                 }
                 object resultado = await tareaPrincipal;
                 Historial.Registrar("MCP ✓ " + nombre + " OK (" + reloj.ElapsedMilliseconds + " ms)");
-                return JsonSerializer.Serialize(new { ok = true, tool = nombre, ms = reloj.ElapsedMilliseconds, result = resultado }, Json);
+                // ms: total visto por el servidor; ms_espera: en cola hasta que Civil 3D quedó libre; ms_ejecucion: la herramienta
+                // en el hilo principal (null en las herramientas asíncronas, que gestionan su propia espera).
+                return JsonSerializer.Serialize(new { ok = true, tool = nombre, ms = reloj.ElapsedMilliseconds, ms_espera = pendiente?.MsEspera, ms_ejecucion = pendiente?.MsEjecucion, result = resultado }, Json);
             }
             catch (OperationCanceledException)
             {

@@ -39,6 +39,7 @@ namespace ArbaMcp
                 antes = leer(tr, su);
                 esperado = esperar(tr, su);
                 if (ctx.Simular) { tr.Commit(); return Escritura.Simulacion(ctx, antes, esperado, accion); }
+                ctx.EsperarCopia();   // nunca se escribe sin copia terminada
                 cambiar(tr, su);
                 tr.Commit();
             }
