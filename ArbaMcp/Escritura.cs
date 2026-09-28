@@ -1,11 +1,11 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using ArbaMcp.Nucleo;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using AcApp = Autodesk.AutoCAD.ApplicationServices.Application;
@@ -23,7 +23,7 @@ namespace ArbaMcp
     /// </summary>
     internal static class Escritura
     {
-        public const int CopiasConservadas = 20;
+        public const int CopiasConservadas = Copias.Conservadas;
 
         public sealed class Contexto
         {
@@ -95,18 +95,22 @@ namespace ArbaMcp
             string dir = Path.Combine(CarpetaDatos(doc), "backups");
             Directory.CreateDirectory(dir);
             string nombre = Path.GetFileNameWithoutExtension(RutaDibujo(doc) ?? doc.Name);
-            string destino = Path.Combine(dir, nombre + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + "_" + LimpiarNombre(sufijo) + ".dwg");
+            string destino = Path.Combine(dir, Copias.NombreCopia(nombre, DateTime.Now, sufijo));
             using (doc.LockDocument())
                 db.SaveAs(destino, false, DwgVersion.Current, db.SecurityParameters);
             Historial.Registrar("Copia de seguridad: " + destino);
-
-            var copias = new DirectoryInfo(dir).GetFiles(nombre + "_*.dwg").OrderByDescending(f => f.LastWriteTimeUtc).ToList();
-            foreach (var sobrante in copias.Skip(CopiasConservadas))
-            {
-                try { sobrante.Delete(); Historial.Registrar("Copia antigua borrada: " + sobrante.Name); }
-                catch (Exception ex) { Historial.Registrar("No se pudo borrar la copia antigua " + sobrante.Name + ": " + ex.Message); }
-            }
+            PodarCopias(dir, nombre);
             return destino;
+        }
+
+        /// <summary>Borra las copias de este dibujo que sobrepasen las últimas 20 (ArbaMcp.Nucleo.Copias decide cuáles).</summary>
+        public static void PodarCopias(string dir, string nombreDibujo)
+        {
+            foreach (var sobrante in Copias.Sobrantes(dir, nombreDibujo))
+            {
+                try { File.Delete(sobrante); Historial.Registrar("Copia antigua borrada: " + Path.GetFileName(sobrante)); }
+                catch (Exception ex) { Historial.Registrar("No se pudo borrar la copia antigua " + Path.GetFileName(sobrante) + ": " + ex.Message); }
+            }
         }
 
         // ------------------------------------------------------------------ 3: registro por llamada
@@ -114,17 +118,8 @@ namespace ArbaMcp
 
         public static void RegistrarLog(Document doc, string herramienta, JsonElement args, bool ok, long ms, string error)
         {
-            object argsJson = args.ValueKind == JsonValueKind.Undefined ? null : (object)args;
-            string linea = JsonSerializer.Serialize(new
-            {
-                hora = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
-                herramienta,
-                args = argsJson,
-                ok,
-                ms,
-                error
-            }, Servidor.Json);
-            Historial.Registrar("Escritura " + herramienta + (ok ? " OK" : " ERROR: " + error) + " (" + ms + " ms)");
+            string linea = RegistroEscritura.LineaLog(DateTime.Now, herramienta, args, ok, ms, error);
+            Historial.Registrar(RegistroEscritura.LineaHistorial(herramienta, ok, ms, error));
             try
             {
                 string ruta = RutaLog(doc);
@@ -180,96 +175,21 @@ namespace ArbaMcp
             }
         }
 
-        // ------------------------------------------------------------------ 4 y 6: antes/después, simulación
+        // ------------------------------------------------------------------ 4 y 6: antes/después, simulación (ArbaMcp.Nucleo.Verificacion)
         /// <summary>Respuesta de una simulación: el estado actual y el estado que tendría después.</summary>
         public static object Simulacion(Contexto ctx, IDictionary<string, object> antes, IDictionary<string, object> esperado, string accion)
-        {
-            var despues = new Dictionary<string, object>(antes);
-            foreach (var kv in esperado) despues[kv.Key] = kv.Value;
-            var cambios = Cambios(antes, despues);
-            return new
-            {
-                simulado = true,
-                herramienta = ctx.Herramienta,
-                accion,
-                cambios,
-                antes = Filtrar(antes, cambios),
-                despues = Filtrar(despues, cambios),
-                avisos = ctx.Avisos.Count > 0 ? ctx.Avisos : null
-            };
-        }
+            => Verificacion.Simulacion(ctx.Herramienta, antes, esperado, accion, ctx.Avisos);
 
         /// <summary>
         /// Respuesta de una escritura real. Comprueba que 'despues' (leído del dibujo tras el cambio) coincide con
         /// 'esperado'; si no, lanza un error con la explicación y no reintenta.
         /// </summary>
         public static object Resultado(Contexto ctx, IDictionary<string, object> antes, IDictionary<string, object> despues, IDictionary<string, object> esperado, string mensaje = null, object datos = null)
-        {
-            foreach (var kv in esperado)
-            {
-                despues.TryGetValue(kv.Key, out object real);
-                if (!Igual(real, kv.Value))
-                    throw new InvalidOperationException(
-                        "El dibujo no refleja el cambio pedido en '" + kv.Key + "': se pidió " + Texto(kv.Value) + " y después de escribir tiene " + Texto(real)
-                        + ". No se reintenta. antes=" + JsonSerializer.Serialize(antes, Servidor.Json) + " despues=" + JsonSerializer.Serialize(despues, Servidor.Json)
-                        + (ctx.Copia != null ? " copia=" + ctx.Copia : ""));
-            }
-            var cambios = Cambios(antes, despues);
-            return new
-            {
-                simulado = false,
-                herramienta = ctx.Herramienta,
-                mensaje,
-                cambios,
-                antes = Filtrar(antes, cambios),
-                despues = Filtrar(despues, cambios),
-                copia = ctx.Copia,
-                datos,
-                avisos = ctx.Avisos.Count > 0 ? ctx.Avisos : null
-            };
-        }
+            => Verificacion.Resultado(ctx.Herramienta, antes, despues, esperado, mensaje, datos, ctx.Copia, ctx.Avisos);
 
-        public static List<string> Cambios(IDictionary<string, object> antes, IDictionary<string, object> despues)
-        {
-            var claves = antes.Keys.Union(despues.Keys).ToList();
-            var cambios = new List<string>();
-            foreach (var k in claves)
-            {
-                antes.TryGetValue(k, out object a);
-                despues.TryGetValue(k, out object d);
-                if (!Igual(a, d)) cambios.Add(k);
-            }
-            return cambios;
-        }
+        public static List<string> Cambios(IDictionary<string, object> antes, IDictionary<string, object> despues) => Verificacion.Cambios(antes, despues);
 
-        /// <summary>Deja solo los campos que cambiaron; si no cambió nada, devuelve todo (para ver el estado).</summary>
-        private static IDictionary<string, object> Filtrar(IDictionary<string, object> d, List<string> cambios)
-        {
-            if (cambios.Count == 0) return d;
-            var r = new Dictionary<string, object>();
-            foreach (var k in cambios) if (d.TryGetValue(k, out object v)) r[k] = v;
-            return r;
-        }
-
-        public static bool Igual(object a, object b)
-        {
-            if (a == null || b == null) return a == null && b == null;
-            if (EsNumero(a) && EsNumero(b)) return Math.Abs(Convert.ToDouble(a) - Convert.ToDouble(b)) < 1e-6;
-            if (a is string sa && b is string sb) return string.Equals(sa.Trim(), sb.Trim(), StringComparison.OrdinalIgnoreCase);
-            if (a is bool ba && b is bool bb) return ba == bb;
-            if (a is IEnumerable ea && b is IEnumerable eb && !(a is string) && !(b is string))
-            {
-                var la = ea.Cast<object>().ToList(); var lb = eb.Cast<object>().ToList();
-                if (la.Count != lb.Count) return false;
-                for (int i = 0; i < la.Count; i++) if (!Igual(la[i], lb[i])) return false;
-                return true;
-            }
-            return a.Equals(b);
-        }
-
-        private static bool EsNumero(object o) => o is double || o is float || o is int || o is long || o is short || o is decimal || o is byte;
-
-        private static string Texto(object o) => o == null ? "null" : o is string s ? "'" + s + "'" : o is IEnumerable e && !(o is string) ? "[" + string.Join(", ", e.Cast<object>().Select(Texto)) + "]" : Convert.ToString(o, System.Globalization.CultureInfo.InvariantCulture);
+        public static bool Igual(object a, object b) => Verificacion.Igual(a, b);
 
         // ------------------------------------------------------------------ rutas
         /// <summary>Ruta completa del dwg si está guardado en disco; null si es un dibujo nuevo sin guardar.</summary>
@@ -292,21 +212,8 @@ namespace ArbaMcp
             return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ArbaMcp");
         }
 
-        private static string LimpiarNombre(string s)
-        {
-            if (string.IsNullOrWhiteSpace(s)) return "mcp";
-            var malos = Path.GetInvalidFileNameChars();
-            return new string(s.Trim().Select(c => malos.Contains(c) || char.IsWhiteSpace(c) ? '_' : c).ToArray());
-        }
+        private static string LimpiarNombre(string s) => Copias.LimpiarNombre(s);
 
-        private static bool LeerSimular(JsonElement a)
-        {
-            if (a.ValueKind != JsonValueKind.Object || !a.TryGetProperty("simular", out var v)) return false;
-            if (v.ValueKind == JsonValueKind.True) return true;
-            if (v.ValueKind == JsonValueKind.False || v.ValueKind == JsonValueKind.Null) return false;
-            if (v.ValueKind == JsonValueKind.Number) return v.GetDouble() != 0;
-            if (v.ValueKind == JsonValueKind.String) return v.GetString().Trim().ToLowerInvariant() is "1" or "si" or "sí" or "true" or "yes";
-            return false;
-        }
+        private static bool LeerSimular(JsonElement a) => Argumentos.LeerSimular(a);
     }
 }

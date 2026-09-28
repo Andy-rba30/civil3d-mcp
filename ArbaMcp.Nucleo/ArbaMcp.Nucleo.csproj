@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Núcleo del conector Civil 3D ↔ MCP: toda la lógica que no depende de AutoCAD ni de Civil 3D
+    (análisis y autorización HTTP, lectura de argumentos, verificación antes/después, copias de
+    seguridad, cola de trabajos, reflexión sobre la API). Se compila y se prueba sin Civil 3D
+    (ArbaMcp.Pruebas, xUnit); el plugin ArbaMcp la referencia.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <AssemblyName>ArbaMcp.Nucleo</AssemblyName>
+    <RootNamespace>ArbaMcp.Nucleo</RootNamespace>
+    <Version>1.3.0</Version>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ArbaMcp.Pruebas" />
+  </ItemGroup>
+
+</Project>

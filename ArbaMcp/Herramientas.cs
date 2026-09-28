@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using ArbaMcp.Nucleo;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.Civil.ApplicationServices;
@@ -19,19 +20,12 @@ using Civ = Autodesk.Civil.DatabaseServices;
 
 namespace ArbaMcp
 {
-    public class Parametro
-    {
-        public string name { get; set; }
-        public string type { get; set; }          // string | number | boolean
-        public string description { get; set; }
-        public bool required { get; set; }
-    }
+    /// <summary>Parámetro de una herramienta (string | number | boolean | json). Se mantiene como alias de ArbaMcp.Nucleo.Parametro para los plugins que ya lo usaban.</summary>
+    public class Parametro : Nucleo.Parametro { }
 
-    public class Herramienta
+    /// <summary>Herramienta expuesta por MCP: la descripción (nombre, texto, parámetros) es la del núcleo; aquí se añade cómo se ejecuta.</summary>
+    public class Herramienta : DescripcionHerramienta
     {
-        public string Nombre;
-        public string Descripcion;
-        public List<Parametro> Parametros = new List<Parametro>();
         public Func<JsonElement, object> Ejecutar;
         public Func<JsonElement, Task<object>> EjecutarAsync;
         /// <summary>
@@ -48,10 +42,11 @@ namespace ArbaMcp
     public static partial class Herramientas
     {
         private static readonly List<Herramienta> Lista = new List<Herramienta>();
-        private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
+        /// <summary>Registra (o sustituye por nombre) una herramienta. Valida el nombre y los tipos de sus parámetros.</summary>
         public static void Registrar(Herramienta h)
         {
+            Catalogo.Validar(h);
             lock (Lista)
             {
                 Lista.RemoveAll(x => x.Nombre == h.Nombre);
@@ -64,53 +59,26 @@ namespace ArbaMcp
             lock (Lista) return Lista.FirstOrDefault(h => string.Equals(h.Nombre, nombre, StringComparison.OrdinalIgnoreCase));
         }
 
-        public static object Describir()
+        /// <summary>Copia de las descripciones registradas, en orden, para GET /tools.</summary>
+        public static List<DescripcionHerramienta> Descripciones()
         {
-            lock (Lista)
-                return Lista.Select(h => new { name = h.Nombre, description = h.Descripcion, parameters = h.Parametros }).ToList();
+            lock (Lista) return Lista.Cast<DescripcionHerramienta>().ToList();
         }
+
+        public static object Describir() => Catalogo.Describir(Descripciones());
 
         private static Parametro P(string nombre, string tipo, string desc, bool req = false)
             => new Parametro { name = nombre, type = tipo, description = desc, required = req };
 
-        // ------------------------------------------------------------------ lectura de argumentos
-        private static bool Tiene(JsonElement a, string n) => a.ValueKind == JsonValueKind.Object && a.TryGetProperty(n, out var v) && v.ValueKind != JsonValueKind.Null;
-
-        private static string Str(JsonElement a, string n, string def = null)
-        {
-            if (!Tiene(a, n)) return def;
-            var v = a.GetProperty(n);
-            return v.ValueKind == JsonValueKind.String ? v.GetString() : v.ToString();
-        }
-
-        private static double Num(JsonElement a, string n, double def)
-        {
-            if (!Tiene(a, n)) return def;
-            var v = a.GetProperty(n);
-            if (v.ValueKind == JsonValueKind.Number) return v.GetDouble();
-            if (v.ValueKind == JsonValueKind.String && double.TryParse(v.GetString().Replace(',', '.'), NumberStyles.Float, Inv, out double d)) return d;
-            throw new ArgumentException("El parámetro '" + n + "' debe ser numérico.");
-        }
-
-        private static bool Bool(JsonElement a, string n, bool def)
-        {
-            if (!Tiene(a, n)) return def;
-            var v = a.GetProperty(n);
-            if (v.ValueKind == JsonValueKind.True) return true;
-            if (v.ValueKind == JsonValueKind.False) return false;
-            if (v.ValueKind == JsonValueKind.String) return v.GetString().Trim().ToLowerInvariant() is "1" or "si" or "sí" or "true" or "yes";
-            if (v.ValueKind == JsonValueKind.Number) return v.GetDouble() != 0;
-            return def;
-        }
-
-        private static string Requerido(JsonElement a, string n)
-        {
-            string s = Str(a, n);
-            if (string.IsNullOrWhiteSpace(s)) throw new ArgumentException("Falta el parámetro obligatorio '" + n + "'.");
-            return s;
-        }
-
-        private static double? N(double v) => double.IsNaN(v) || double.IsInfinity(v) ? (double?)null : Math.Round(v, 4);
+        // ------------------------------------------------------------------ lectura de argumentos (ArbaMcp.Nucleo.Argumentos)
+        private static bool Tiene(JsonElement a, string n) => Argumentos.Tiene(a, n);
+        private static string Str(JsonElement a, string n, string def = null) => Argumentos.Str(a, n, def);
+        private static double Num(JsonElement a, string n, double def) => Argumentos.Num(a, n, def);
+        private static bool Bool(JsonElement a, string n, bool def) => Argumentos.Bool(a, n, def);
+        private static string Requerido(JsonElement a, string n) => Argumentos.Requerido(a, n);
+        private static List<string> ListaTextos(JsonElement a, string n) => Argumentos.Lista(a, n);
+        private static JsonElement JsonArg(JsonElement a, string n) => Argumentos.Json(a, n);
+        private static double? N(double v) => Argumentos.Redondear(v);
 
         // ------------------------------------------------------------------ acceso al dibujo
         private static Document DocActivo()

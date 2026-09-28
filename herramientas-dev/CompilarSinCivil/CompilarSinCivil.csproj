@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Compilación de comprobación del plugin SIN Civil 3D: compila los mismos .cs de ArbaMcp contra unos sustitutos
+    mínimos (Stubs\) de los tipos de AutoCAD y Civil 3D que el plugin usa. No produce nada instalable: solo detecta
+    errores de sintaxis, nombres y tipos en el código propio (el que no depende de la API). Que compile aquí no
+    demuestra que los miembros de la API existan ni que funcionen: eso lo dice la validación en Civil 3D
+    (herramientas-dev/miembros_por_verificar_civil3d.md).
+      dotnet build herramientas-dev/CompilarSinCivil
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <OutputType>Library</OutputType>
+    <AssemblyName>ArbaMcp.CompilarSinCivil</AssemblyName>
+    <RootNamespace>ArbaMcp</RootNamespace>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoWarn>$(NoWarn);CS0067;CS0169;CS0649;CS0414;CS1998;CS0108</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\ArbaMcp.Nucleo\ArbaMcp.Nucleo.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\ArbaMcp\*.cs" Link="ArbaMcp\%(Filename)%(Extension)" />
+    <Compile Include="Stubs\*.cs" />
+    <EmbeddedResource Include="..\..\ArbaMcp\Recursos\*.png" />
+  </ItemGroup>
+
+</Project>

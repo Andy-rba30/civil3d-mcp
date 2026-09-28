@@ -1,40 +1,13 @@
 using System;
-using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Threading;
+using ArbaMcp.Nucleo;
 using AcApp = Autodesk.AutoCAD.ApplicationServices.Application;
 
 namespace ArbaMcp
 {
-    /// <summary>
-    /// Dónde y cuándo se ejecuta una herramienta dentro de Civil 3D. Siempre en el hilo principal; lo que cambia es
-    /// el contexto de AutoCAD y si se espera a que Civil 3D esté libre (sin comando activo ni cuadro de diálogo).
-    /// </summary>
-    public enum ContextoEjecucion
-    {
-        /// <summary>
-        /// Contexto de comando del dibujo activo (DocumentManager.ExecuteInCommandContextAsync): la herramienta corre
-        /// como si fuera un comando, con el documento bloqueado y la actualización de gráficos al terminar. Espera a
-        /// que Civil 3D esté libre. Valor por defecto y el único válido para leer o modificar el dibujo.
-        /// </summary>
-        Documento = 0,
-
-        /// <summary>
-        /// Contexto de aplicación en el hilo principal, esperando también a que Civil 3D esté libre. Para lo que no
-        /// admite contexto de comando: abrir o activar dibujos, enviar una orden a la línea de comandos.
-        /// </summary>
-        Aplicacion = 1,
-
-        /// <summary>
-        /// Contexto de aplicación en el hilo principal, sin esperar: corre aunque haya un comando activo o un cuadro
-        /// de diálogo abierto, y nunca se queda detrás de otros trabajos. Solo para acciones que no tocan la base de
-        /// datos del dibujo: enviar teclas (ESC), leer variables de sistema, capturar la pantalla, leer el historial.
-        /// </summary>
-        Inmediato = 2
-    }
-
     /// <summary>
     /// Cola de trabajos que se ejecutan en el hilo principal de AutoCAD. El servidor HTTP corre en otros hilos y nunca
     /// toca la API de AutoCAD directamente: encola aquí y espera la tarea.
@@ -44,55 +17,21 @@ namespace ArbaMcp
     /// respaldo y como reintento natural. Un trabajo de contexto Documento se entrega además a
     /// ExecuteInCommandContextAsync, que lo ejecuta en el contexto de comando del dibujo activo.
     ///
-    /// Reglas: los trabajos Documento y Aplicacion esperan a que Civil 3D esté libre (CMDACTIVE = 0 y ventana
-    /// principal habilitada, es decir, sin cuadro de diálogo modal) y se ejecutan de uno en uno; los Inmediato se
-    /// atienden siempre y por delante. Mientras un trabajo espera, el servidor puede descartarlo (tiempo agotado) y
+    /// La política (qué trabajo va antes, cuándo se espera, cuándo se descarta) está en ArbaMcp.Nucleo.Planificador y
+    /// se prueba sin Civil 3D; aquí solo queda lo que necesita AutoCAD: el despachador, la ventana principal, CMDACTIVE
+    /// y el contexto de comando. Los trabajos Documento y Aplicacion esperan a que Civil 3D esté libre (CMDACTIVE = 0
+    /// y ventana principal habilitada, es decir, sin cuadro de diálogo modal) y se ejecutan de uno en uno; los Inmediato
+    /// se atienden siempre y por delante. Mientras un trabajo espera, el servidor puede descartarlo (tiempo agotado) y
     /// entonces no se ejecuta a destiempo cuando Civil 3D se libere.
     /// </summary>
     internal static class HiloPrincipal
     {
-        internal sealed class Pendiente
-        {
-            private const int EnCola = 0, Ejecutando = 1, Descartado = 2;
-            private int _estado = EnCola;
-
-            internal Func<object> Funcion;
-            internal ContextoEjecucion Contexto;
-            internal string Nombre = "";
-            internal bool AvisoEsperaDado;
-            internal readonly TaskCompletionSource<object> Resultado =
-                new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-            public Task<object> Tarea => Resultado.Task;
-
-            /// <summary>Descarta el trabajo si aún no empezó. Devuelve true si se descartó (no se ejecutará).</summary>
-            public bool Descartar() => Interlocked.CompareExchange(ref _estado, Descartado, EnCola) == EnCola;
-
-            /// <summary>Lo reclama el hilo principal justo antes de ejecutarlo. False si ya fue descartado.</summary>
-            internal bool Reclamar() => Interlocked.CompareExchange(ref _estado, Ejecutando, EnCola) == EnCola;
-
-            internal bool EstaDescartado => Volatile.Read(ref _estado) == Descartado;
-            internal bool EstaEjecutando => Volatile.Read(ref _estado) == Ejecutando;
-        }
-
-        /// <summary>Cada cuánto se vuelve a comprobar si Civil 3D quedó libre mientras hay trabajos esperando.</summary>
-        public static readonly TimeSpan EsperaReintento = TimeSpan.FromMilliseconds(500);
-
-        /// <summary>
-        /// Si un trabajo entregado al contexto de comando no arranca en este tiempo y el servidor ya lo descartó,
-        /// se deja de esperar por él (por ejemplo, porque se cerró el dibujo antes de que AutoCAD lo atendiera).
-        /// </summary>
-        public static readonly TimeSpan MaximoEnCurso = TimeSpan.FromMinutes(10);
-
-        private static readonly ConcurrentQueue<Pendiente> Cola = new ConcurrentQueue<Pendiente>();          // Documento y Aplicacion, en orden de llegada
-        private static readonly ConcurrentQueue<Pendiente> ColaInmediata = new ConcurrentQueue<Pendiente>(); // Inmediato: nunca esperan detrás de los demás
+        private static readonly Planificador Plan = new Planificador();
 
         private static Dispatcher _despachador;
         private static int _idHiloPrincipal = -1;
         private static IntPtr _ventanaPrincipal;
         private static bool _enganchado;
-        private static Pendiente _enCurso;       // trabajo Documento entregado a ExecuteInCommandContextAsync y aún sin terminar
-        private static DateTime _inicioEnCurso;
         private static int _atendiendo;          // evita reentrar en Atender (el despachador y el Idle pueden coincidir)
         private static int _reintentoProgramado;
 
@@ -115,8 +54,18 @@ namespace ArbaMcp
         {
             get
             {
-                var p = Volatile.Read(ref _enCurso);
+                var p = Plan.EnCurso;
                 return EnHiloPrincipal && p != null && p.EstaEjecutando;
+            }
+        }
+
+        /// <summary>Trabajo de contexto Documento que se está ejecutando en este momento (null si ninguno).</summary>
+        public static Pendiente TrabajoEnCurso
+        {
+            get
+            {
+                var p = Plan.EnCurso;
+                return p != null && p.EstaEjecutando ? p : null;
             }
         }
 
@@ -143,17 +92,7 @@ namespace ArbaMcp
             if (!_enganchado) return;
             AcApp.Idle -= AlEstarInactivo;
             _enganchado = false;
-            Vaciar(ColaInmediata);
-            Vaciar(Cola);
-        }
-
-        private static void Vaciar(ConcurrentQueue<Pendiente> cola)
-        {
-            while (cola.TryDequeue(out var p))
-            {
-                p.Descartar();
-                p.Resultado.TrySetCanceled();
-            }
+            Plan.Vaciar();
         }
 
         // Solo en el hilo principal. Al cargar el plugin la ventana puede no existir aún; se reintenta al atender.
@@ -168,12 +107,10 @@ namespace ArbaMcp
         public static Task<object> Ejecutar(Func<object> funcion, ContextoEjecucion contexto = ContextoEjecucion.Documento, string nombre = null)
             => Encolar(funcion, contexto, nombre).Tarea;
 
-        /// <summary>Como Ejecutar, pero devuelve el trabajo para poder descartarlo si sigue en cola.</summary>
+        /// <summary>Como Ejecutar, pero devuelve el trabajo para poder descartarlo si sigue en cola y leer sus tiempos.</summary>
         public static Pendiente Encolar(Func<object> funcion, ContextoEjecucion contexto = ContextoEjecucion.Documento, string nombre = null)
         {
-            var p = new Pendiente { Funcion = funcion, Contexto = contexto, Nombre = nombre ?? "" };
-            if (contexto == ContextoEjecucion.Inmediato) ColaInmediata.Enqueue(p);
-            else Cola.Enqueue(p);
+            var p = Plan.Encolar(funcion, contexto, nombre);
             Despertar();
             return p;
         }
@@ -219,7 +156,7 @@ namespace ArbaMcp
         private static void ProgramarReintento()
         {
             if (Interlocked.Exchange(ref _reintentoProgramado, 1) != 0) return;
-            Task.Delay(EsperaReintento).ContinueWith(_ =>
+            Task.Delay(Planificador.EsperaReintento).ContinueWith(_ =>
             {
                 Interlocked.Exchange(ref _reintentoProgramado, 0);
                 Despertar();
@@ -238,47 +175,25 @@ namespace ArbaMcp
                 CapturarVentanaPrincipal();
 
                 // 1. Inmediatos: siempre, aunque Civil 3D esté ocupado o haya un trabajo de documento en curso
-                while (ColaInmediata.TryDequeue(out var inmediato)) Correr(inmediato);
+                foreach (var inmediato in Plan.TomarInmediatos()) inmediato.Correr();
 
-                // 2. Fuera de la cabeza los trabajos que el servidor ya dio por agotados
-                while (Cola.TryPeek(out var cabeza) && cabeza.EstaDescartado && Cola.TryDequeue(out var descartado))
-                    descartado.Resultado.TrySetCanceled();
-                if (!Cola.TryPeek(out var siguiente)) return;
+                // 2. Documento y Aplicacion: la política del planificador decide (descartados, trabajo en curso, Civil 3D libre)
+                if (Plan.Encolados == 0) return;
+                bool libre = CivilLibre(out string motivo);
+                var decision = Plan.Decidir(libre, motivo, DateTime.UtcNow);
+                if (decision.Aviso != null)
+                    foreach (var linea in decision.Aviso.Split('\n')) Historial.Registrar(linea);
 
-                // 3. Un trabajo de documento sigue en curso (en cola de AutoCAD o ejecutándose): esperar a que termine
-                var enCurso = Volatile.Read(ref _enCurso);
-                if (enCurso != null)
-                {
-                    if (!enCurso.EstaDescartado || DateTime.UtcNow - _inicioEnCurso < MaximoEnCurso)
-                    {
-                        ProgramarReintento();
-                        return;
-                    }
-                    // El servidor ya lo descartó y el contexto de comando nunca lo arrancó: se deja de esperar por él
-                    Historial.Registrar("HiloPrincipal: se deja de esperar por '" + enCurso.Nombre + "' (descartado y sin arrancar tras "
-                        + MaximoEnCurso.TotalMinutes + " min)");
-                    Interlocked.CompareExchange(ref _enCurso, null, enCurso);
-                }
+                if (decision.Accion == AccionPlanificada.Nada) return;
+                if (decision.Accion == AccionPlanificada.Reintentar) { ProgramarReintento(); return; }
 
-                // 4. Documento y Aplicacion solo con Civil 3D libre
-                if (!CivilLibre(out string motivo))
-                {
-                    if (!siguiente.AvisoEsperaDado)
-                    {
-                        siguiente.AvisoEsperaDado = true;
-                        Historial.Registrar("MCP ⏳ " + siguiente.Nombre + " espera: " + motivo);
-                    }
-                    ProgramarReintento();
-                    return;
-                }
-
-                if (!Cola.TryDequeue(out var trabajo)) return;
+                var trabajo = decision.Trabajo;
                 if (trabajo.Contexto == ContextoEjecucion.Documento && AcApp.DocumentManager.MdiActiveDocument != null)
                     EntregarAlDocumento(trabajo);
                 else
-                    Correr(trabajo); // Aplicacion, o Documento sin dibujo abierto (la herramienta responderá que no hay dibujo)
+                    trabajo.Correr(); // Aplicacion, o Documento sin dibujo abierto (la herramienta responderá que no hay dibujo)
 
-                if (!Cola.IsEmpty || !ColaInmediata.IsEmpty) Despertar();
+                if (Plan.HayTrabajo) Despertar();
             }
             finally
             {
@@ -305,18 +220,6 @@ namespace ArbaMcp
             return true;
         }
 
-        // Ejecuta el trabajo aquí mismo (hilo principal) y entrega el resultado o la excepción al servidor
-        private static void Correr(Pendiente p)
-        {
-            if (!p.Reclamar())
-            {
-                p.Resultado.TrySetCanceled();
-                return;
-            }
-            try { p.Resultado.TrySetResult(p.Funcion()); }
-            catch (System.Exception ex) { p.Resultado.TrySetException(ex); }
-        }
-
         /// <summary>
         /// Entrega un trabajo al contexto de comando del dibujo activo sin bloquear el hilo principal. El propio
         /// delegado avisa al terminar (Terminar), así no dependemos del valor devuelto por ExecuteInCommandContextAsync,
@@ -325,13 +228,12 @@ namespace ArbaMcp
         /// </summary>
         private static void EntregarAlDocumento(Pendiente p)
         {
-            Volatile.Write(ref _enCurso, p);
-            _inicioEnCurso = DateTime.UtcNow;
+            Plan.MarcarEnCurso(p, DateTime.UtcNow);
             try
             {
                 object devuelto = AcApp.DocumentManager.ExecuteInCommandContextAsync(_ =>
                 {
-                    try { Correr(p); }
+                    try { p.Correr(); }
                     finally { Terminar(p); }
                     return Task.CompletedTask;
                 }, null);
@@ -376,7 +278,7 @@ namespace ArbaMcp
 
         private static void Terminar(Pendiente p)
         {
-            Interlocked.CompareExchange(ref _enCurso, null, p);
+            Plan.Terminar(p);
             Despertar();
         }
     }

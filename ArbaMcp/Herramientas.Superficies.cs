@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+using ArbaMcp.Nucleo;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Geometry;
@@ -369,7 +370,7 @@ namespace ArbaMcp
 
                     List<string> CodigosPedidos(Transaction tr)
                     {
-                        if (!string.IsNullOrWhiteSpace(codigo)) return codigo.Split(';').Select(c => c.Trim()).Where(c => c.Length > 0).ToList();
+                        if (!string.IsNullOrWhiteSpace(codigo)) return ListaTextos(a, "codigo");
                         var cor = (Civ.Corridor)tr.GetObject(BuscarCorredor(tr, corredor), OpenMode.ForRead);
                         var l = Codigos(BuscarSuperficieCorredor(cor, supCor), "punto") ?? new List<string>();
                         if (l.Count == 0) throw new ArgumentException("La superficie '" + supCor + "' del corredor no tiene códigos de punto; indica 'codigo' con los códigos de línea característica (por ejemplo Crown;ETW;Daylight).");
