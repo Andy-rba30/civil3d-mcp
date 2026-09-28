@@ -23,9 +23,10 @@ namespace ArbaMcp
     ///  4. Compara el estado antes y después y falla si el dibujo no refleja el cambio pedido.
     ///  5. Deshacer: cada herramienta corre como un pseudocomando de ExecuteInCommandContextAsync y AutoCAD la anota
     ///     como UNA entrada "Executefunction" del menú Deshacer, con todas sus transacciones (validado en Civil 3D 2027
-    ///     el 28/09/2026, VALIDACION_122 paso 9). No hacen falta marcas de deshacer. En la 1.3.1 `_.UNDO 1` revertía las
-    ///     frecuencias pero no los objetivos (SetTargets, VALIDACION_13 pasos 9, 14, 17 y 18); desde 1.3.2 CambiarCorredor
-    ///     y LoteCorredor graban el estado del corredor antes de tocarlo (Herramientas.RegistrarDeshacer), por verificar.
+    ///     el 28/09/2026, VALIDACION_122 paso 9). No hacen falta marcas de deshacer. `_.UNDO 1` revierte las frecuencias
+    ///     pero NO los objetivos: Civil 3D no deshace SetTargets ni los cambios de Propiedades de corredor (validado con
+    ///     la 1.3.2, pasos 9 y 9b). Por eso las escrituras de objetivos guardan lo anterior en Restauraciones y
+    ///     deshacer_objetivos lo reaplica (1.3.3).
     ///  6. Parámetro 'simular': devuelve lo que haría sin tocar nada.
     /// Todo corre en el hilo principal de AutoCAD, en el contexto de comando del dibujo activo (lo llama el cuerpo de
     /// cada herramienta). La lógica que no toca AutoCAD (comparación, respuestas, copia de disco, poda, línea de log)

@@ -488,15 +488,15 @@ namespace ArbaMcp
 
         // ------------------------------------------------------------------ patrón de escritura sobre un corredor
         /// <summary>
-        /// Abre el corredor (ForWrite salvo en simulación), lee 'antes', calcula 'esperado', graba el corredor en la pila
-        /// de deshacer (RegistrarDeshacer, 1.3.2), aplica 'cambiar', confirma y vuelve a leer 'despues' en otra
-        /// transacción. Devuelve la respuesta estándar con antes/después verificados.
+        /// Abre el corredor (ForWrite salvo en simulación), lee 'antes', calcula 'esperado', aplica 'cambiar', confirma
+        /// (y avisa a 'alConfirmar', que usan las escrituras de objetivos para apilar la restauración) y vuelve a leer
+        /// 'despues' en otra transacción. Devuelve la respuesta estándar con antes/después verificados.
         /// </summary>
         private static object CambiarCorredor(Escritura.Contexto ctx, string corredor,
             Func<Transaction, Civ.Corridor, Dictionary<string, object>> leer,
             Func<Transaction, Civ.Corridor, Dictionary<string, object>> esperar,
             Action<Transaction, Civ.Corridor> cambiar,
-            string accion, Func<object> extra = null)
+            string accion, Func<object> extra = null, Action alConfirmar = null)
         {
             var doc = ctx.Doc;
             Dictionary<string, object> antes, esperado;
@@ -508,10 +508,10 @@ namespace ArbaMcp
                 esperado = esperar(tr, cor);
                 if (ctx.Simular) { tr.Commit(); return Escritura.Simulacion(ctx, antes, esperado, accion); }
                 ctx.EsperarCopia();   // nunca se escribe sin copia terminada
-                RegistrarDeshacer(cor);   // 1.3.2: graba el corredor en la pila de deshacer antes de tocarlo (ver Herramientas.cs)
                 cambiar(tr, cor);
                 tr.Commit();
             }
+            alConfirmar?.Invoke();
             Dictionary<string, object> despues;
             using (doc.LockDocument())
             using (var tr = doc.Database.TransactionManager.StartTransaction())
@@ -535,7 +535,7 @@ namespace ArbaMcp
             Func<Transaction, Civ.Corridor, int, Dictionary<string, object>> leer,
             Func<Transaction, Civ.Corridor, int, Dictionary<string, object>> esperar,
             Action<Transaction, Civ.Corridor, int> cambiar,
-            Func<int, string> accion, string que)
+            Func<int, string> accion, string que, Action<IList<ElementoLote>> alConfirmar = null)
         {
             var doc = ctx.Doc;
             var elementos = new List<ElementoLote>();
@@ -551,9 +551,8 @@ namespace ArbaMcp
                     catch (ArgumentException ex) { e.Error = ex.Message; }
                 }
                 if (ctx.Simular) { tr.Commit(); return Lotes.Simulacion(ctx.Herramienta, elementos, Lotes.ResumenSimulado(que, elementos), ctx.Avisos); }
-                // 2. Aplicar en orden, con la copia terminada y el corredor grabado en la pila de deshacer (1.3.2)
+                // 2. Aplicar en orden, con la copia terminada
                 ctx.EsperarCopia();
-                RegistrarDeshacer(cor);
                 foreach (var e in elementos)
                 {
                     if (e.Fallido) continue;
@@ -562,6 +561,7 @@ namespace ArbaMcp
                 }
                 tr.Commit();
             }
+            alConfirmar?.Invoke(elementos);
             // 3. Releer y verificar por índice
             using (doc.LockDocument())
             using (var tr = doc.Database.TransactionManager.StartTransaction())
@@ -571,6 +571,92 @@ namespace ArbaMcp
                 tr.Commit();
             }
             return Lotes.Resultado(ctx.Herramienta, elementos, Lotes.Resumen(que, elementos), ctx.Copia, ctx.Avisos);
+        }
+
+        // ------------------------------------------------------------------ deshacer propio de objetivos (1.3.3)
+        // Civil 3D no revierte los objetivos con _.UNDO ni con Ctrl+Z (ver Restauraciones.cs). Cada escritura de objetivos
+        // guarda lo que había antes y deshacer_objetivos lo reaplica.
+
+        /// <summary>Clave de la pila de restauración: la ruta del .dwg o, si no está guardado, el nombre del documento.</summary>
+        private static string ClaveDibujo(Document doc) => Escritura.RutaDibujo(doc) ?? doc.Name;
+
+        /// <summary>Estado de un objetivo antes de tocarlo (handles, textos, opción y lado) para poder devolverlo.</summary>
+        private static ObjetivoGuardado GuardarObjetivo(Transaction tr, Civ.Baseline bl, Civ.BaselineRegion reg, Civ.SubassemblyTargetInfo info)
+        {
+            var g = new ObjetivoGuardado
+            {
+                LineaBase = bl.Name,
+                Region = reg.Name,
+                Subensamblaje = info.SubassemblyName,
+                Tipo = TipoObjetivo(info),
+                Grupo = info.AssemblyGroupName ?? GrupoDeSubensamblaje(tr, reg.AssemblyId, info.SubassemblyName),
+                Parametro = info.LogicalName
+            };
+            foreach (var id in IdsObjetivo(info)) { g.AntesHandles.Add(id.Handle.ToString()); g.AntesTexto.Add(TextoObjeto(tr, id)); }
+            g.AntesOpcionApi = Seguro(() => info.TargetToOption.ToString(), null);
+            g.AntesOpcion = OpcionObjetivo(info);
+            g.AntesMismoLado = Seguro(() => (bool?)info.UseSameSideTarget, null);
+            return g;
+        }
+
+        /// <summary>Lo que dejó la escritura en ese objetivo, para comprobar al deshacer que nadie lo cambió después.</summary>
+        private static ObjetivoGuardado CerrarObjetivoGuardado(Transaction tr, ObjetivoGuardado g, Civ.SubassemblyTargetInfo info)
+        {
+            foreach (var id in IdsObjetivo(info)) { g.DespuesHandles.Add(id.Handle.ToString()); g.DespuesTexto.Add(TextoObjeto(tr, id)); }
+            g.DespuesOpcionApi = Seguro(() => info.TargetToOption.ToString(), null);
+            g.DespuesOpcion = OpcionObjetivo(info);
+            g.DespuesMismoLado = Seguro(() => (bool?)info.UseSameSideTarget, null);
+            return g;
+        }
+
+        /// <summary>Bloque 'restaurar' de la respuesta de una escritura de objetivos: cómo deshacerla y qué había antes.</summary>
+        private static object BloqueRestaurar(EntradaRestauracion entrada)
+        {
+            if (entrada == null) return null;
+            return new
+            {
+                nota = "Civil 3D no revierte los objetivos con _.UNDO ni con Ctrl+Z (validado el 28/09/2026): para volver atrás usa deshacer_objetivos, que reaplica lo que había antes. La pila vive en memoria hasta cerrar Civil 3D; 'antes' sirve para reasignar a mano con asignar_objetivos si hiciera falta.",
+                herramienta = "deshacer_objetivos",
+                args = new { id = entrada.Id },
+                antes = entrada.Elementos.Select(g => new
+                {
+                    linea_base = g.LineaBase,
+                    region = g.Region,
+                    subensamblaje = g.Subensamblaje,
+                    grupo = g.Grupo,
+                    parametro = g.Parametro,
+                    tipo = g.Tipo,
+                    objetivos = g.AntesTexto,
+                    opcion = g.AntesOpcion,
+                    mismo_lado = g.AntesMismoLado
+                }).ToList()
+            };
+        }
+
+        /// <summary>
+        /// Rechaza como objetivo una superficie generada por el propio corredor: Civil 3D no la ofrece en Propiedades de
+        /// corredor (sería circular), pero SetTargets la acepta sin error (la validación de la 1.3.2 asignó 'Interseccion 3',
+        /// la superficie del corredor 'Interseccion 3').
+        /// </summary>
+        private static void ComprobarNoSuperficieDelCorredor(Transaction tr, Civ.Corridor cor, string tipo, ObjectIdCollection ids)
+        {
+            if (tipo != "superficie" || ids == null || ids.Count == 0) return;
+            foreach (ObjectId id in ids)
+            {
+                string nombre = NombreDe(tr, id);
+                bool propia = false;
+                try
+                {
+                    foreach (Civ.CorridorSurface cs in cor.CorridorSurfaces)
+                    {
+                        var idSu = Api.Leer<ObjectId>(cs, ObjectId.Null, "SurfaceId");
+                        if ((!idSu.IsNull && idSu.Equals(id)) || string.Equals(cs.Name, nombre, StringComparison.OrdinalIgnoreCase)) { propia = true; break; }
+                    }
+                }
+                catch { }
+                if (propia)
+                    throw new ArgumentException("La superficie '" + nombre + "' la genera el propio corredor '" + cor.Name + "' y no puede ser su objetivo (sería circular; Civil 3D tampoco la ofrece en Propiedades de corredor). Elige otra superficie.");
+            }
         }
 
         // ------------------------------------------------------------------ frecuencias (establecer_frecuencia y establecer_frecuencias)
@@ -1008,27 +1094,38 @@ namespace ArbaMcp
                     string objetivo = Requerido(a, "objetivo"), alPerfil = Str(a, "alineamiento_del_perfil");
                     string opcion = Str(a, "opcion"), grupo = Str(a, "grupo"), parametro = Str(a, "parametro");
                     bool? mismoLado = Tiene(a, "mismo_lado") ? Bool(a, "mismo_lado", false) : (bool?)null;
+                    string corredor = Requerido(a, "corredor");
                     var db = ctx.Db;
+                    var guardados = new List<ObjetivoGuardado>();
+                    EntradaRestauracion entrada = null;
 
-                    return CambiarCorredor(ctx, Requerido(a, "corredor"),
+                    var respuesta = CambiarCorredor(ctx, corredor,
                         (tr, cor) => EstadoObjetivo(tr, BuscarObjetivoInfo(tr, BuscarRegion(BuscarLineaBase(cor, lineaBase), region), sub, tipo, grupo, parametro).info),
                         (tr, cor) =>
                         {
                             var ids = ResolverObjetivo(tr, db, tipo, objetivo, alPerfil);
+                            ComprobarNoSuperficieDelCorredor(tr, cor, tipo, ids);   // 1.3.3
                             var e = new Dictionary<string, object> { ["objetivos"] = ids.Cast<ObjectId>().Select(id => TextoObjeto(tr, id)).ToList() };
                             if (!string.IsNullOrWhiteSpace(opcion)) e["opcion"] = OpcionApi(opcion) == "Nearest" ? "mas_cercano" : OpcionApi(opcion) == "Farthest" ? "exterior" : "interior";
                             return e;
                         },
                         (tr, cor) =>
                         {
-                            var reg = BuscarRegion(BuscarLineaBase(cor, lineaBase), region);
+                            var bl = BuscarLineaBase(cor, lineaBase);
+                            var reg = BuscarRegion(bl, region);
                             var (coleccion, info) = BuscarObjetivoInfo(tr, reg, sub, tipo, grupo, parametro);
-                            info.TargetIds = ResolverObjetivo(tr, db, tipo, objetivo, alPerfil);
+                            var ids = ResolverObjetivo(tr, db, tipo, objetivo, alPerfil);
+                            ComprobarNoSuperficieDelCorredor(tr, cor, tipo, ids);
+                            var g = GuardarObjetivo(tr, bl, reg, info);
+                            info.TargetIds = ids;
                             if (!string.IsNullOrWhiteSpace(opcion) && Enum.TryParse<Civ.SubassemblyTargetToOption>(OpcionApi(opcion), true, out var opt)) info.TargetToOption = opt;
                             if (mismoLado.HasValue) info.UseSameSideTarget = mismoLado.Value;
                             reg.SetTargets(coleccion);
+                            guardados.Add(CerrarObjetivoGuardado(tr, g, info));
                         },
-                        "Asignar '" + objetivo + "' como objetivo de " + tipo + " del subensamblaje '" + sub + "' en la región '" + region + "'");
+                        "Asignar '" + objetivo + "' como objetivo de " + tipo + " del subensamblaje '" + sub + "' en la región '" + region + "'",
+                        alConfirmar: () => entrada = Restauraciones.Guardar(ClaveDibujo(ctx.Doc), "asignar_objetivo", corredor, guardados));
+                    return entrada == null ? respuesta : ConExtras(respuesta, new Dictionary<string, object> { ["restaurar"] = BloqueRestaurar(entrada) });
                 })
             });
 
@@ -1063,7 +1160,9 @@ namespace ArbaMcp
                         catch (ArgumentException ex) { throw new ArgumentException("asignaciones[" + i + "]: " + ex.Message); }
                     }
                     var db = ctx.Db;
-                    return LoteCorredor(ctx, corredor, items.Count,
+                    var guardados = new List<ObjetivoGuardado>();
+                    EntradaRestauracion entrada = null;
+                    var respuesta = LoteCorredor(ctx, corredor, items.Count,
                         (tr, cor, i) =>
                         {
                             var it = items[i];
@@ -1073,6 +1172,7 @@ namespace ArbaMcp
                         {
                             var it = items[i];
                             var ids = ResolverObjetivo(tr, db, it.tipo, it.objetivo, it.alPerfil);
+                            ComprobarNoSuperficieDelCorredor(tr, cor, it.tipo, ids);   // 1.3.3: va a 'fallidos' sin abortar el lote
                             var e = new Dictionary<string, object> { ["objetivos"] = ids.Cast<ObjectId>().Select(id => TextoObjeto(tr, id)).ToList() };
                             if (!string.IsNullOrWhiteSpace(it.opcion)) e["opcion"] = OpcionApi(it.opcion) == "Nearest" ? "mas_cercano" : OpcionApi(it.opcion) == "Farthest" ? "exterior" : "interior";
                             return e;
@@ -1080,15 +1180,22 @@ namespace ArbaMcp
                         (tr, cor, i) =>
                         {
                             var it = items[i];
-                            var reg = BuscarRegion(BuscarLineaBase(cor, it.lineaBase), it.region);
+                            var bl = BuscarLineaBase(cor, it.lineaBase);
+                            var reg = BuscarRegion(bl, it.region);
                             var (coleccion, info) = BuscarObjetivoInfo(tr, reg, it.sub, it.tipo, it.grupo, it.parametro);
-                            info.TargetIds = ResolverObjetivo(tr, db, it.tipo, it.objetivo, it.alPerfil);
+                            var ids = ResolverObjetivo(tr, db, it.tipo, it.objetivo, it.alPerfil);
+                            ComprobarNoSuperficieDelCorredor(tr, cor, it.tipo, ids);
+                            var g = GuardarObjetivo(tr, bl, reg, info);
+                            info.TargetIds = ids;
                             if (!string.IsNullOrWhiteSpace(it.opcion) && Enum.TryParse<Civ.SubassemblyTargetToOption>(OpcionApi(it.opcion), true, out var opt)) info.TargetToOption = opt;
                             if (it.mismoLado.HasValue) info.UseSameSideTarget = it.mismoLado.Value;
                             reg.SetTargets(coleccion);
+                            guardados.Add(CerrarObjetivoGuardado(tr, g, info));
                         },
                         i => "Asignar '" + items[i].objetivo + "' como objetivo de " + items[i].tipo + " del subensamblaje '" + items[i].sub + "' en la región '" + items[i].region + "' de '" + items[i].lineaBase + "'",
-                        "asignaciones");
+                        "asignaciones",
+                        alConfirmar: _ => entrada = Restauraciones.Guardar(ClaveDibujo(ctx.Doc), "asignar_objetivos", corredor, guardados));
+                    return entrada == null ? respuesta : ConExtras(respuesta, new Dictionary<string, object> { ["restaurar"] = BloqueRestaurar(entrada) });
                 })
             });
 
@@ -1131,11 +1238,16 @@ namespace ArbaMcp
                         return d;
                     }
                     string nombreReal = null;
-                    return CambiarCorredor(ctx, Requerido(a, "corredor"),
+                    string corredor = Requerido(a, "corredor");
+                    var guardados = new List<ObjetivoGuardado>();
+                    EntradaRestauracion entrada = null;
+                    var respuesta = CambiarCorredor(ctx, corredor,
                         Leer,
                         (tr, cor) =>
                         {
-                            nombreReal = NombreDe(tr, BuscarSuperficie(tr, superficie));
+                            var idSu = BuscarSuperficie(tr, superficie);
+                            ComprobarNoSuperficieDelCorredor(tr, cor, "superficie", new ObjectIdCollection { idSu });   // 1.3.3
+                            nombreReal = NombreDe(tr, idSu);
                             var e = new Dictionary<string, object>();
                             foreach (var k in Leer(tr, cor).Keys) e[k] = nombreReal;
                             if (e.Count == 0) throw new InvalidOperationException("No hay objetivos de superficie en el ámbito indicado.");
@@ -1144,16 +1256,109 @@ namespace ArbaMcp
                         (tr, cor) =>
                         {
                             var idSu = BuscarSuperficie(tr, superficie);
+                            ComprobarNoSuperficieDelCorredor(tr, cor, "superficie", new ObjectIdCollection { idSu });
                             foreach (var (bl, reg) in Ambito(cor))
                             {
                                 var col = reg.GetTargets();
-                                bool tocada = false;
+                                var tocados = new List<(ObjetivoGuardado g, Civ.SubassemblyTargetInfo info)>();
                                 foreach (Civ.SubassemblyTargetInfo info in col)
-                                    if (TipoObjetivo(info) == "superficie") { info.TargetIds = new ObjectIdCollection { idSu }; tocada = true; }
-                                if (tocada) reg.SetTargets(col);
+                                    if (TipoObjetivo(info) == "superficie")
+                                    {
+                                        var g = GuardarObjetivo(tr, bl, reg, info);
+                                        info.TargetIds = new ObjectIdCollection { idSu };
+                                        tocados.Add((g, info));
+                                    }
+                                if (tocados.Count == 0) continue;
+                                reg.SetTargets(col);
+                                foreach (var (g, info) in tocados) guardados.Add(CerrarObjetivoGuardado(tr, g, info));
                             }
                         },
-                        "Poner la superficie '" + superficie + "' en todos los objetivos de superficie" + (lineaBase != null ? " de '" + lineaBase + "'" : " del corredor") + (region != null ? " región '" + region + "'" : ""));
+                        "Poner la superficie '" + superficie + "' en todos los objetivos de superficie" + (lineaBase != null ? " de '" + lineaBase + "'" : " del corredor") + (region != null ? " región '" + region + "'" : ""),
+                        alConfirmar: () => entrada = Restauraciones.Guardar(ClaveDibujo(ctx.Doc), "asignar_objetivos_superficie", corredor, guardados));
+                    return entrada == null ? respuesta : ConExtras(respuesta, new Dictionary<string, object> { ["restaurar"] = BloqueRestaurar(entrada) });
+                })
+            });
+
+            Registrar(new Herramienta
+            {
+                Nombre = "deshacer_objetivos",
+                Descripcion = "Deshace la última escritura de objetivos de este dibujo (asignar_objetivo, asignar_objetivos o asignar_objetivos_superficie) devolviendo a cada objetivo lo que tenía antes. Es el único deshacer que funciona para objetivos: Civil 3D no los revierte con _.UNDO ni con Ctrl+Z (validado el 28/09/2026). Antes de tocar nada comprueba que cada objetivo sigue como lo dejó esa escritura; si alguien lo cambió después, ese elemento va a 'fallidos' salvo con forzar=true. La pila vive en memoria hasta cerrar Civil 3D; con simular=true devuelve el plan y las entradas pendientes sin tocar nada.",
+                Parametros =
+                {
+                    P("id", "number", "Entrada concreta de la pila (el 'restaurar.args.id' de la respuesta de la escritura); por defecto, la última"),
+                    P("forzar", "boolean", "Devolver el valor anterior aunque el objetivo ya no esté como lo dejó la escritura"),
+                    P("simular", "boolean", "Con true devuelve el plan por índice y las entradas pendientes sin tocar nada")
+                },
+                Ejecutar = a => Escritura.Ejecutar("deshacer_objetivos", a, ctx =>
+                {
+                    string clave = ClaveDibujo(ctx.Doc);
+                    int? id = Tiene(a, "id") ? (int?)Convert.ToInt32(Num(a, "id", 0)) : null;
+                    bool forzar = Bool(a, "forzar", false);
+                    var entrada = Restauraciones.Buscar(clave, id);
+                    if (entrada == null)
+                        throw new InvalidOperationException(id == null
+                            ? "No hay escrituras de objetivos que deshacer en este dibujo desde que se abrió Civil 3D (la pila vive en memoria; reasigna con 'antes' de la respuesta original o con listar_objetivos)."
+                            : "No hay ninguna entrada " + id + " en la pila de este dibujo. Pendientes: " + Json.Serializar(Restauraciones.Pendientes(clave)) + ".");
+                    var db = ctx.Db;
+                    var g = entrada.Elementos;
+
+                    Civ.SubassemblyTargetInfo Info(Transaction tr, Civ.Corridor cor, ObjetivoGuardado o, out Civ.BaselineRegion reg, out Civ.SubassemblyTargetInfoCollection col)
+                    {
+                        reg = BuscarRegion(BuscarLineaBase(cor, o.LineaBase), o.Region);
+                        var (c, info) = BuscarObjetivoInfo(tr, reg, o.Subensamblaje, o.Tipo, o.Grupo, o.Parametro);
+                        col = c;
+                        return info;
+                    }
+                    ObjectIdCollection IdsAntes(ObjetivoGuardado o)
+                    {
+                        var ids = new ObjectIdCollection();
+                        foreach (var h in o.AntesHandles)
+                        {
+                            if (!IntentarHandle(db, h, out ObjectId idH)) throw new ArgumentException("El objetivo anterior (" + o.TextoAntes + ", handle " + h + ") ya no existe en el dibujo; no se puede devolver.");
+                            ids.Add(idH);
+                        }
+                        return ids;
+                    }
+
+                    var respuesta = LoteCorredor(ctx, entrada.Corredor, g.Count,
+                        (tr, cor, i) => EstadoObjetivo(tr, Info(tr, cor, g[i], out _, out _)),
+                        (tr, cor, i) =>
+                        {
+                            var o = g[i];
+                            var info = Info(tr, cor, o, out _, out _);
+                            var ahora = IdsObjetivo(info);
+                            if (!forzar && !ahora.Select(x => x.Handle.ToString()).SequenceEqual(o.DespuesHandles))
+                                throw new ArgumentException("El objetivo de " + o.Donde + " ya no está como lo dejó la escritura (ahora " + string.Join(", ", ahora.Select(x => TextoObjeto(tr, x)).DefaultIfEmpty("ninguno")) + "; la escritura dejó " + o.TextoDespues + "). Pásalo con forzar=true para devolverlo igualmente a " + o.TextoAntes + ".");
+                            IdsAntes(o);   // comprueba que los objetos anteriores siguen existiendo
+                            return new Dictionary<string, object>
+                            {
+                                ["subensamblaje"] = o.Subensamblaje,
+                                ["tipo"] = o.Tipo,
+                                ["parametro"] = o.Parametro,
+                                ["objetivos"] = new List<string>(o.AntesTexto),
+                                ["opcion"] = o.AntesOpcion
+                            };
+                        },
+                        (tr, cor, i) =>
+                        {
+                            var o = g[i];
+                            var info = Info(tr, cor, o, out var reg, out var col);
+                            info.TargetIds = IdsAntes(o);
+                            if (o.AntesOpcionApi != null && Enum.TryParse<Civ.SubassemblyTargetToOption>(o.AntesOpcionApi, true, out var opt)) info.TargetToOption = opt;
+                            if (o.AntesMismoLado.HasValue) info.UseSameSideTarget = o.AntesMismoLado.Value;
+                            reg.SetTargets(col);
+                        },
+                        i => "Devolver el objetivo de " + g[i].Donde + " a " + g[i].TextoAntes,
+                        "objetivos",
+                        alConfirmar: elementos =>
+                        {
+                            if (elementos.All(e => !e.Fallido)) Restauraciones.Quitar(clave, entrada.Id);
+                            else ctx.Avisos.Add("Quedan " + elementos.Count(e => e.Fallido) + " objetivos sin devolver; la entrada " + entrada.Id + " sigue en la pila (mira 'fallidos' y repite con forzar=true si procede).");
+                        });
+                    return ConExtras(respuesta, new Dictionary<string, object>
+                    {
+                        ["deshacer"] = new { entrada = entrada.Resumen(), pendientes = Restauraciones.Pendientes(clave) }
+                    });
                 })
             });
 

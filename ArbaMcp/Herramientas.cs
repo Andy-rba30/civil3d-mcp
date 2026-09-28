@@ -89,21 +89,17 @@ namespace ArbaMcp
         private static DocumentLock BloquearParaLeer(Document doc) => doc.LockDocument(DocumentLockMode.Read, null, null, false);
 
         /// <summary>
-        /// Graba el estado de una entidad de Civil 3D en la pila de deshacer antes de modificarla. AutoCAD guarda el
-        /// estado completo de un objeto la primera vez que, dentro del comando, uno de sus métodos llama a
-        /// assertWriteEnabled; abrirlo ForWrite no basta. En la validación de la 1.3.1 (28/09/2026, VALIDACION_13 pasos
-        /// 9, 14, 17 y 18) `_.UNDO 1` retiraba la entrada Executefunction pero los objetivos cambiados con
-        /// BaselineRegion.SetTargets seguían en el valor nuevo, mientras que las frecuencias (AppliedAssemblySetting) sí
-        /// volvían: todo apunta a que SetTargets no provoca esa grabación. Escribir y restaurar Description es una
-        /// modificación inocua que sí la provoca, con el estado anterior (objetivos incluidos). Por verificar en Civil 3D
-        /// (1.3.2, pasos 9 y 14); si no surte efecto, el diagnóstico con la interfaz del paso 9b dice si el problema está
-        /// en la escritura del plugin o en Civil 3D.
+        /// Añade claves de primer nivel a una respuesta ya construida (objeto anónimo o diccionario) sin tocar el núcleo:
+        /// la serializa y la vuelve a leer como diccionario de JsonElement. Lo usan las escrituras de objetivos ('restaurar')
+        /// y deshacer_objetivos ('deshacer').
         /// </summary>
-        private static void RegistrarDeshacer(Civ.Entity entidad)
+        private static Dictionary<string, object> ConExtras(object respuesta, IDictionary<string, object> extras)
         {
-            string d = entidad.Description ?? "";
-            entidad.Description = d + " ";
-            entidad.Description = d;
+            var d = new Dictionary<string, object>();
+            using (var doc = JsonDocument.Parse(Json.Serializar(respuesta)))
+                foreach (var p in doc.RootElement.EnumerateObject()) d[p.Name] = p.Value.Clone();
+            foreach (var kv in extras) d[kv.Key] = kv.Value;
+            return d;
         }
 
         private static Document DocActivo()
