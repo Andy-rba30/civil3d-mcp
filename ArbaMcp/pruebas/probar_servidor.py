@@ -341,7 +341,7 @@ def pruebas_fase13_servidor():
     except Exception:
         pass
     resultado("ping sin token responde 200", r is not None and r.status_code == 200)
-    resultado("ping sin token devuelve ok, servidor y version 1.3.0 y nada más", cuerpo.get("ok") is True and cuerpo.get("servidor") == "ArbaMcp" and str(cuerpo.get("version", "")).startswith("1.3.0") and set(cuerpo) == {"ok", "servidor", "version"}, str(cuerpo)[:160])
+    resultado("ping sin token devuelve ok, servidor y version 1.3.x y nada más", cuerpo.get("ok") is True and cuerpo.get("servidor") == "ArbaMcp" and str(cuerpo.get("version", "")).startswith("1.3.") and set(cuerpo) == {"ok", "servidor", "version"}, str(cuerpo)[:160])
     r = test_req("GET /ping con token malo (200)", "GET", "/ping", {"X-Arba-Token": "malo"})
     resultado("ping con token malo también responde 200", r is not None and r.status_code == 200)
     r = test_req("GET /tools sin token (401)", "GET", "/tools", {})

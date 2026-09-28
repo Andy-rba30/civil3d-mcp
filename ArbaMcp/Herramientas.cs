@@ -81,6 +81,13 @@ namespace ArbaMcp
         private static double? N(double v) => Argumentos.Redondear(v);
 
         // ------------------------------------------------------------------ acceso al dibujo
+        /// <summary>
+        /// Bloqueo de solo lectura del dibujo (DocumentLockMode.Read) para las lecturas y las simulaciones, que corren en
+        /// contexto de aplicación. Un bloqueo de escritura fuera de un comando hace que AutoCAD anote un "Grupo de
+        /// comandos" en el menú Deshacer aunque no se cambie nada (validado el 28/09/2026); el de lectura no.
+        /// </summary>
+        private static DocumentLock BloquearParaLeer(Document doc) => doc.LockDocument(DocumentLockMode.Read, null, null, false);
+
         private static Document DocActivo()
         {
             var doc = AcApp.DocumentManager.MdiActiveDocument;
@@ -147,7 +154,7 @@ namespace ArbaMcp
                 {
                     var doc = DocActivo();
                     var lista = new List<object>();
-                    using (doc.LockDocument())
+                    using (BloquearParaLeer(doc))
                     using (var tr = doc.Database.TransactionManager.StartTransaction())
                     {
                         foreach (ObjectId id in CivilApplication.ActiveDocument.GetAlignmentIds())
@@ -182,7 +189,7 @@ namespace ArbaMcp
                     var doc = DocActivo();
                     string nombreAl = Requerido(a, "alineamiento");
                     var lista = new List<object>();
-                    using (doc.LockDocument())
+                    using (BloquearParaLeer(doc))
                     using (var tr = doc.Database.TransactionManager.StartTransaction())
                     {
                         var idAl = BuscarAlineamiento(tr, nombreAl);
@@ -216,7 +223,7 @@ namespace ArbaMcp
                 {
                     var doc = DocActivo();
                     var lista = new List<object>();
-                    using (doc.LockDocument())
+                    using (BloquearParaLeer(doc))
                     using (var tr = doc.Database.TransactionManager.StartTransaction())
                     {
                         // Superficies generadas por corredores: nombre de superficie → corredor
@@ -356,7 +363,7 @@ namespace ArbaMcp
                 {
                     var doc = DocActivo();
                     var lista = new List<object>();
-                    using (doc.LockDocument())
+                    using (BloquearParaLeer(doc))
                     using (var tr = doc.Database.TransactionManager.StartTransaction())
                     {
                         var idAl = BuscarAlineamiento(tr, Requerido(a, "alineamiento"));

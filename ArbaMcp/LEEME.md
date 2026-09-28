@@ -34,8 +34,8 @@ Las herramientas que modifican el dibujo (`asignar_*`, `establecer_*`, `agregar_
 Desde la versión 1.2.2 el servidor HTTP nunca llama a la API de AutoCAD: cada herramienta se lleva al hilo principal
 por el Dispatcher de WPF esperando a que Civil 3D esté libre (sin comando activo ni cuadro de diálogo). Las de
 escritura se ejecutan en el contexto de comando del dibujo activo (`ExecuteInCommandContextAsync`, una entrada de
-Deshacer por herramienta); desde 1.3.0 las de solo lectura corren en contexto de aplicación con el dibujo bloqueado,
-para no llenar el menú Deshacer de entradas vacías. `ping`, `leer_historial`, `leer_log`,
+Deshacer por herramienta); desde 1.3.0 las de solo lectura (y desde 1.3.1 también las simulaciones) corren en contexto
+de aplicación con el dibujo bloqueado en modo lectura, para no llenar el menú Deshacer de entradas vacías. `ping`, `leer_historial`, `leer_log`,
 `leer_variable` y `capturar_pantalla` responden siempre. Si Civil 3D se cierra con errores o traza en blanco con el
 plugin cargado, sigue `ESTABILIDAD.md`.
 

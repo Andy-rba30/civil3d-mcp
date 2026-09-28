@@ -214,7 +214,11 @@ namespace ArbaMcp
                 }
                 else
                 {
-                    pendiente = HiloPrincipal.Encolar(() => herramienta.Ejecutar(args), herramienta.Contexto, nombre);
+                    // Una simulación (simular=true) solo lee: va en contexto de aplicación con bloqueo de lectura, como las
+                    // lecturas, y así no deja entrada en el menú Deshacer. La escritura real sigue en contexto de comando.
+                    var contexto = herramienta.Contexto;
+                    if (contexto == ContextoEjecucion.Documento && Argumentos.LeerSimular(args)) contexto = ContextoEjecucion.Aplicacion;
+                    pendiente = HiloPrincipal.Encolar(() => herramienta.Ejecutar(args), contexto, nombre);
                     tareaPrincipal = pendiente.Tarea;
                 }
 

@@ -162,6 +162,7 @@ namespace Autodesk.AutoCAD.ApplicationServices
 
     public class CommandEventArgs : EventArgs { public string GlobalCommandName => ""; }
     public delegate void CommandEventHandler(object sender, CommandEventArgs e);
+    public enum DocumentLockMode { None = 0, AutoWrite = 1, NotLocked = 2, Write = 4, ProtectedAutoWrite = 8, Read = 16, XWrite = 32 }
     public class DocumentLock : IDisposable { public void Dispose() { } }
     public class Document
     {
@@ -171,6 +172,7 @@ namespace Autodesk.AutoCAD.ApplicationServices
         public bool IsReadOnly => false;
         public bool IsActive => true;
         public DocumentLock LockDocument() => new DocumentLock();
+        public DocumentLock LockDocument(DocumentLockMode modo, string comandoGlobal, string comandoLocal, bool preguntar) => new DocumentLock();
         public void SendStringToExecute(string s, bool activate, bool wrapUpInactiveDoc, bool echo) { }
         public void StartUndoMark() { }
         public void EndUndoMark() { }

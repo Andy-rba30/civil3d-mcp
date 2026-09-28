@@ -499,7 +499,7 @@ namespace ArbaMcp
         {
             var doc = ctx.Doc;
             Dictionary<string, object> antes, esperado;
-            using (doc.LockDocument())
+            using (ctx.Simular ? BloquearParaLeer(doc) : doc.LockDocument())   // simulación: contexto de aplicación y solo lectura, sin entrada de Deshacer
             using (var tr = doc.Database.TransactionManager.StartTransaction())
             {
                 var cor = (Civ.Corridor)tr.GetObject(BuscarCorredor(tr, corredor), ctx.Simular ? OpenMode.ForRead : OpenMode.ForWrite);
@@ -538,7 +538,7 @@ namespace ArbaMcp
             var doc = ctx.Doc;
             var elementos = new List<ElementoLote>();
             for (int i = 0; i < total; i++) elementos.Add(new ElementoLote { Indice = i, Accion = accion(i) });
-            using (doc.LockDocument())
+            using (ctx.Simular ? BloquearParaLeer(doc) : doc.LockDocument())
             using (var tr = doc.Database.TransactionManager.StartTransaction())
             {
                 var cor = (Civ.Corridor)tr.GetObject(BuscarCorredor(tr, corredor), ctx.Simular ? OpenMode.ForRead : OpenMode.ForWrite);
@@ -632,7 +632,7 @@ namespace ArbaMcp
                 {
                     var doc = DocActivo();
                     var lista = new List<object>();
-                    using (doc.LockDocument())
+                    using (BloquearParaLeer(doc))
                     using (var tr = doc.Database.TransactionManager.StartTransaction())
                     {
                         foreach (ObjectId id in CivilApplication.ActiveDocument.CorridorCollection)
@@ -678,7 +678,7 @@ namespace ArbaMcp
                     var doc = DocActivo();
                     string lineaBase = Str(a, "linea_base");
                     var lista = new List<object>();
-                    using (doc.LockDocument())
+                    using (BloquearParaLeer(doc))
                     using (var tr = doc.Database.TransactionManager.StartTransaction())
                     {
                         var cor = (Civ.Corridor)tr.GetObject(BuscarCorredor(tr, Requerido(a, "corredor")), OpenMode.ForRead);
@@ -711,7 +711,7 @@ namespace ArbaMcp
                 {
                     var doc = DocActivo();
                     var lista = new List<object>();
-                    using (doc.LockDocument())
+                    using (BloquearParaLeer(doc))
                     using (var tr = doc.Database.TransactionManager.StartTransaction())
                     {
                         var cor = (Civ.Corridor)tr.GetObject(BuscarCorredor(tr, Requerido(a, "corredor")), OpenMode.ForRead);
@@ -733,7 +733,7 @@ namespace ArbaMcp
                 {
                     var doc = DocActivo();
                     var lista = new List<object>();
-                    using (doc.LockDocument())
+                    using (BloquearParaLeer(doc))
                     using (var tr = doc.Database.TransactionManager.StartTransaction())
                     {
                         // Uso de cada ensamblaje en los corredores
@@ -799,7 +799,7 @@ namespace ArbaMcp
                 {
                     var doc = DocActivo();
                     var lista = new List<object>();
-                    using (doc.LockDocument())
+                    using (BloquearParaLeer(doc))
                     using (var tr = doc.Database.TransactionManager.StartTransaction())
                     {
                         var clase = Autodesk.AutoCAD.Runtime.RXObject.GetClass(typeof(Civ.Intersection));
@@ -932,7 +932,7 @@ namespace ArbaMcp
                 {
                     var doc = DocActivo();
                     string nombre = Requerido(a, "corredor");
-                    using (doc.LockDocument())
+                    using (BloquearParaLeer(doc))
                     using (var tr = doc.Database.TransactionManager.StartTransaction())
                     {
                         var cor = (Civ.Corridor)tr.GetObject(BuscarCorredor(tr, nombre), OpenMode.ForRead);

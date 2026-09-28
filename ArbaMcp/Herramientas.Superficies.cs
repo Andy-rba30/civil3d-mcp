@@ -32,7 +32,7 @@ namespace ArbaMcp
         {
             var doc = ctx.Doc;
             Dictionary<string, object> antes, esperado;
-            using (doc.LockDocument())
+            using (ctx.Simular ? BloquearParaLeer(doc) : doc.LockDocument())   // simulación: contexto de aplicación y solo lectura, sin entrada de Deshacer
             using (var tr = doc.Database.TransactionManager.StartTransaction())
             {
                 var su = (CivSurface)tr.GetObject(BuscarSuperficie(tr, nombre), ctx.Simular ? OpenMode.ForRead : OpenMode.ForWrite);
@@ -226,7 +226,7 @@ namespace ArbaMcp
                     var doc = DocActivo();
                     double x = Num(a, "x", double.NaN), y = Num(a, "y", double.NaN);
                     if (double.IsNaN(x) || double.IsNaN(y)) throw new ArgumentException("Faltan los parámetros obligatorios 'x' e 'y'.");
-                    using (doc.LockDocument())
+                    using (BloquearParaLeer(doc))
                     using (var tr = doc.Database.TransactionManager.StartTransaction())
                     {
                         var al = (CivAlignment)tr.GetObject(BuscarAlineamiento(tr, Requerido(a, "alineamiento")), OpenMode.ForRead);
@@ -257,7 +257,7 @@ namespace ArbaMcp
                     double pk = Num(a, "pk", double.NaN), off = Num(a, "desplazamiento", 0);
                     if (double.IsNaN(pk)) throw new ArgumentException("Falta el parámetro obligatorio 'pk'.");
                     string perfil = Str(a, "perfil");
-                    using (doc.LockDocument())
+                    using (BloquearParaLeer(doc))
                     using (var tr = doc.Database.TransactionManager.StartTransaction())
                     {
                         var idAl = BuscarAlineamiento(tr, Requerido(a, "alineamiento"));
@@ -294,7 +294,7 @@ namespace ArbaMcp
                     var doc = DocActivo();
                     double x = Num(a, "x", double.NaN), y = Num(a, "y", double.NaN);
                     if (double.IsNaN(x) || double.IsNaN(y)) throw new ArgumentException("Faltan los parámetros obligatorios 'x' e 'y'.");
-                    using (doc.LockDocument())
+                    using (BloquearParaLeer(doc))
                     using (var tr = doc.Database.TransactionManager.StartTransaction())
                     {
                         var su = (CivSurface)tr.GetObject(BuscarSuperficie(tr, Requerido(a, "superficie")), OpenMode.ForRead);
@@ -322,7 +322,7 @@ namespace ArbaMcp
                     var doc = DocActivo();
                     var lista = new List<object>();
                     string metodo;
-                    using (doc.LockDocument())
+                    using (BloquearParaLeer(doc))
                     using (var tr = doc.Database.TransactionManager.StartTransaction())
                     {
                         var alA = (CivAlignment)tr.GetObject(BuscarAlineamiento(tr, Requerido(a, "alineamiento_a")), OpenMode.ForRead);

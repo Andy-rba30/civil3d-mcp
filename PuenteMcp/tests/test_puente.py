@@ -172,4 +172,4 @@ def test_construir_app_expone_mcp_y_sse(puente):
     rutas = sorted(getattr(r, "path", "") for r in app.routes)
     assert "/mcp" in rutas and "/sse" in rutas
     assert puente.PUERTO_PUENTE == 8001
-    assert puente.__version__ == "1.3.0"
+    assert puente.__version__ == "1.3.1"
