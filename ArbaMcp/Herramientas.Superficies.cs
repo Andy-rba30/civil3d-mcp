@@ -309,6 +309,74 @@ namespace ArbaMcp
 
             Registrar(new Herramienta
             {
+                Nombre = "extension_superficie",
+                Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
+                Descripcion = "Extensión de una superficie (Surface.GetGeneralProperties): mínimos y máximos de X (este), Y (norte) y cota, centro, número de puntos y el sistema de coordenadas del dibujo (UnitZoneSettings.CoordinateSystemCode). Para llevar la superficie a Revit por coordenadas compartidas: pasa 'origen_sugerido' (centro redondeado) a set_project_coordinates del MCP de Revit y vincula el DWG con link_file placement='shared'. Avisa si la superficie supera los 16 km recomendados o los 33 km que admite Revit.",
+                Parametros = { P("superficie", "string", "Nombre de la superficie", true) },
+                Ejecutar = a =>
+                {
+                    var doc = DocActivo();
+                    string nombre, tipo;
+                    double minX, maxX, minY, maxY, minZ, maxZ;
+                    long nPuntos;
+                    using (BloquearParaLeer(doc))
+                    using (var tr = doc.Database.TransactionManager.StartTransaction())
+                    {
+                        var su = (CivSurface)tr.GetObject(BuscarSuperficie(tr, Requerido(a, "superficie")), OpenMode.ForRead);
+                        var p = su.GetGeneralProperties();
+                        nombre = su.Name;
+                        tipo = TipoSuperficie(su);
+                        minX = p.MinimumCoordinateX; maxX = p.MaximumCoordinateX;
+                        minY = p.MinimumCoordinateY; maxY = p.MaximumCoordinateY;
+                        minZ = p.MinimumElevation; maxZ = p.MaximumElevation;
+                        nPuntos = Convert.ToInt64(p.NumberOfPoints);
+                        tr.Commit();
+                    }
+
+                    // Sistema de coordenadas y unidades del dibujo (Configuración del dibujo → Unidades y zona)
+                    string codigo = null, unidades = null, nota = null;
+                    try
+                    {
+                        var uz = CivilApplication.ActiveDocument.Settings.DrawingSettings.UnitZoneSettings;
+                        codigo = uz.CoordinateSystemCode;
+                        unidades = uz.DrawingUnits.ToString();
+                    }
+                    catch (Exception ex) { nota = "No se pudo leer el sistema de coordenadas del dibujo: " + ex.Message; }
+                    if (string.IsNullOrWhiteSpace(codigo))
+                    {
+                        codigo = null;
+                        nota = nota ?? "El dibujo no tiene sistema de coordenadas asignado; las coordenadas son las del WCS tal cual.";
+                    }
+
+                    // Límites de Revit: 16 km (10 millas) recomendados por Autodesk, 33 km (20 millas) de aviso y cambio de posición
+                    double aMetros = string.Equals(unidades, "Feet", StringComparison.OrdinalIgnoreCase) ? 0.3048 : 1.0;
+                    double anchoX = maxX - minX, altoY = maxY - minY;
+                    double diagonal = Math.Sqrt(anchoX * anchoX + altoY * altoY);
+                    double diagonalKm = diagonal * aMetros / 1000.0;
+                    var avisos = new List<string>();
+                    if (diagonalKm > 32.187)
+                        avisos.Add("La superficie mide " + N(diagonalKm) + " km en diagonal: supera los 33 km (20 millas) que Revit admite; aunque se centre, Revit avisará y forzará 'centro con centro'. Recorta la superficie o el DWG antes de vincular.");
+                    else if (diagonalKm > 16.093)
+                        avisos.Add("La superficie mide " + N(diagonalKm) + " km en diagonal: supera los 16 km (10 millas) recomendados por Autodesk; puede perderse precisión en los bordes.");
+
+                    double centroX = (minX + maxX) / 2, centroY = (minY + maxY) / 2, centroZ = (minZ + maxZ) / 2;
+                    return new
+                    {
+                        superficie = nombre,
+                        tipo_superficie = tipo,
+                        n_puntos = nPuntos,
+                        min_x = N(minX), max_x = N(maxX), min_y = N(minY), max_y = N(maxY), min_z = N(minZ), max_z = N(maxZ),
+                        ancho_x = N(anchoX), alto_y = N(altoY), diagonal = N(diagonal),
+                        centro = new { x = N(centroX), y = N(centroY), z = N(centroZ) },
+                        origen_sugerido = new { este = Math.Round(centroX / 100) * 100, norte = Math.Round(centroY / 100) * 100, cota = Math.Round(centroZ / 10) * 10 },
+                        sistema_coordenadas = new { codigo, unidades, nota },
+                        avisos
+                    };
+                }
+            });
+
+            Registrar(new Herramienta
+            {
                 Nombre = "interseccion_ejes",
                 Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
                 Descripcion = "Puntos de cruce entre dos alineamientos con sus progresivas en cada uno (Entity.IntersectWith; si no devuelve nada, muestreo cada 0.5 m).",

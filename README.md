@@ -10,7 +10,7 @@ Dos piezas, con la misma estructura que el conector de Revit:
 | [`PuenteMcp`](PuenteMcp/) | Puente MCP en Python. Lee las herramientas del plugin y las expone al agente por `streamable-http`. Con `tests/` (pytest). | 8001 |
 | [`herramientas-dev`](herramientas-dev/) | Prompts de validación para el agente local, tabla de miembros de la API por verificar, `InspectC3D` y `CompilarSinCivil`. | — |
 
-Versión actual: **1.3.0** (plugin, bundle y puente).
+Versión actual: **1.4.0** (plugin, bundle y puente): añade `extension_superficie` y el flujo de superficies a Revit por coordenadas compartidas (`PuenteMcp/INSTRUCCIONES_AGENTE.md`, sección 7; validación en `herramientas-dev/VALIDACION_14.md`).
 
 ## Instalar el plugin
 

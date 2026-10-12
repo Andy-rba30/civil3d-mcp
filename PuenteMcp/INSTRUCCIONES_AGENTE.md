@@ -4,7 +4,7 @@ Estas herramientas actúan sobre el dibujo activo de Civil 3D 2027 a través del
 
 ## 1. Precedencia de herramientas
 
-1. **API primero**: usa siempre la herramienta específica (`listar_*`, `asignar_*`, `establecer_*`, `agregar_*`, `reconstruir_*`, `pegar_superficie`, `guardar_*`, `punto_a_pk`, `pk_a_punto`, `cota_superficie`, `interseccion_ejes`).
+1. **API primero**: usa siempre la herramienta específica (`listar_*`, `asignar_*`, `establecer_*`, `agregar_*`, `reconstruir_*`, `pegar_superficie`, `guardar_*`, `punto_a_pk`, `pk_a_punto`, `cota_superficie`, `extension_superficie`, `interseccion_ejes`).
 2. **`ejecutar_comando` solo si ninguna herramienta cubre la acción**. Es el último recurso: envía texto a la línea de comandos, no sabe qué ha cambiado y no verifica nada. Por defecto ya no envuelve la orden en UNDO; pásale `undo=true` si quieres un grupo de deshacer.
 3. **`capturar_pantalla` solo para diagnosticar**: úsala cuando una llamada devuelve "tiempo agotado" o sospechas que hay un cuadro de diálogo abierto. No la uses para "ver" el modelo: los datos se leen con las herramientas de lectura.
 4. `leer_historial` y `leer_log` sirven para saber qué se ejecutó y con qué resultado; `leer_log` devuelve una línea JSON por cada escritura (hora, herramienta, args, ok, ms, error).
@@ -77,7 +77,20 @@ Después de cada escritura comprueba `esta_desactualizado` (corredor) o `esta_de
 
 `exportar_landxml` y `exportar_imx` no tienen API .NET: envían el comando correspondiente y el usuario debe completar el cuadro de diálogo en Civil 3D. Indícale qué alineamientos y superficies marcar y comprueba `existe=true` en la respuesta.
 
-## 7. Qué lleva cada respuesta
+## 7. Llevar una superficie a Revit (coordenadas compartidas)
+
+Revit tiene un origen interno que no se mueve y toda su geometría debe quedar a menos de 16 km de él (a partir de 33 km avisa y cambia la posición a "centro con centro" por su cuenta). Una superficie en UTM está a cientos de kilómetros del 0,0, así que **nunca se vincula "origen con origen"**: el aviso "muy lejos del origen" sale siempre, por muy georreferenciados que estén los dos archivos. El flujo correcto, con el MCP de Revit conectado:
+
+1. `listar_superficies` y `extension_superficie` (superficie): anota `origen_sugerido` (este, norte, cota), `sistema_coordenadas.codigo` y `avisos`. Si hay un aviso de más de 33 km, recorta la superficie o el DWG antes de seguir; no hay posición que lo arregle.
+2. En Revit, `get_project_coordinates`: si `shared_coordinates_set` es false, el modelo nunca se georreferenció.
+3. En Revit, `set_project_coordinates` con `east`, `north`, `elevation` = `origen_sugerido` (en metros, `units="m"`) y `angle_degrees=0` si el DWG está alineado al norte de cuadrícula. Se hace una sola vez por modelo; si ya tenía coordenadas compartidas (por ejemplo adquiridas de otro modelo), no las cambies sin confirmar con el usuario.
+4. `guardar_dibujo` en Civil 3D si hay cambios sin guardar: Revit lee el DWG de disco.
+5. En Revit, `link_file` con la ruta del DWG y `placement="shared"`. Comprueba en la respuesta `extents.far_from_origin=false` y que `center_shared_m` coincide con el centro de la superficie; si `beyond_revit_limit` es true, Revit forzará "centro con centro" y hay que recortar.
+6. En Revit, el Toposolid se crea desde el vínculo ("Crear a partir de importación"); si el usuario lo pide por herramienta, `execute_revit_code`.
+
+Si Revit ya tenía el DWG vinculado "origen con origen", vuelve a vincularlo con `placement="shared"` después del paso 3: el vínculo viejo no se recoloca solo.
+
+## 8. Qué lleva cada respuesta
 
 - Los argumentos de cada herramienta van dentro de `args` (`{"args": {"corredor": "Corredor 1"}}`).
 - Toda respuesta trae los tiempos: `ms` (lo que tardó Civil 3D en la herramienta, medido por el plugin), `ms_espera` (lo que esperó en cola a que Civil 3D estuviera libre), `ms_ejecucion` (la herramienta en el hilo principal) y `ms_puente` (total visto desde el puente). Si el resultado es un objeto, van como claves suyas; si es una lista o un valor, la respuesta es `{"result": ..., "ms": ..., "ms_puente": ...}`.
