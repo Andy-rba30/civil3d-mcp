@@ -17,8 +17,22 @@ namespace Autodesk.Civil.ApplicationServices
         public CorridorCollection CorridorCollection => new CorridorCollection();
         public AssemblyCollection AssemblyCollection => new AssemblyCollection();
         public IntersectionCollection IntersectionCollection => new IntersectionCollection();
+        public Autodesk.Civil.Settings.SettingsRoot Settings => new Autodesk.Civil.Settings.SettingsRoot();
     }
     public static class CivilApplication { public static CivilDocument ActiveDocument => new CivilDocument(); }
+}
+
+namespace Autodesk.Civil
+{
+    public enum DrawingUnitType { Feet, Meters }
+}
+
+namespace Autodesk.Civil.Settings
+{
+    // Configuración del dibujo → Unidades y zona (extension_superficie)
+    public class SettingsUnitZone { public string CoordinateSystemCode { get; set; } public Autodesk.Civil.DrawingUnitType DrawingUnits { get; set; } }
+    public class SettingsDrawing { public SettingsUnitZone UnitZoneSettings => new SettingsUnitZone(); }
+    public class SettingsRoot { public SettingsDrawing DrawingSettings => new SettingsDrawing(); }
 }
 
 namespace Autodesk.Civil.DatabaseServices
@@ -57,11 +71,19 @@ namespace Autodesk.Civil.DatabaseServices
     }
 
     // ---- superficies
+    public class GeneralSurfaceProperties
+    {
+        public double MinimumCoordinateX => 0; public double MaximumCoordinateX => 0;
+        public double MinimumCoordinateY => 0; public double MaximumCoordinateY => 0;
+        public double MinimumElevation => 0; public double MaximumElevation => 0; public double MeanElevation => 0;
+        public uint NumberOfPoints => 0;
+    }
     public class Surface : Entity
     {
         public bool IsOutOfDate => false;
         public void Rebuild() { }
         public double FindElevationAtXY(double x, double y) => 0;
+        public GeneralSurfaceProperties GetGeneralProperties() => new GeneralSurfaceProperties();
     }
     public class DefinicionConCuenta : IEnumerable { public int Count => 0; public IEnumerator GetEnumerator() => new List<object>().GetEnumerator(); }
     public class SurfaceOperationAddBreakline { }

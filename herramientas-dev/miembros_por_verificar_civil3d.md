@@ -103,3 +103,18 @@ suites de `probar_servidor.py` en `TODO OK`).
 | método | `Corridor.CorridorSurfaces` → `CorridorSurface.SurfaceId` / `Name` comparados con el objetivo para rechazar la superficie del propio corredor (`ComprobarNoSuperficieDelCorredor`) | 2027 | `asignar_objetivo`, `asignar_objetivos` (elemento a `fallidos`), `asignar_objetivos_superficie`; `VALIDACION_13` paso 9b y fase 13 | ejecutado en Civil 3D 2027 (1.3.3, 28/09/2026, paso 9b: 'Interseccion 3' rechazada con `simular` y sin él, sin tocar el dibujo; en el lote va a `fallidos`; fase 13 OK) |
 | método | Pila `Restauraciones` en memoria (handles de los `TargetIds` anteriores, `TargetToOption`, `UseSameSideTarget`) y `deshacer_objetivos`: `Database.TryGetObjectId(Handle)` para volver a los objetos anteriores y `SetTargets` con ellos, comprobando antes que los handles actuales son los que dejó la escritura | 2027 | `deshacer_objetivos` (1.3.3); `VALIDACION_13` pasos 9 y 14, prueba 6 de `--dwg` y fase 13 | ejecutado en Civil 3D 2027 (1.3.3, 28/09/2026, `VALIDACION_13` pasos 9 y 14, prueba 6 de `--dwg` y fase 13 `TODO OK`): devuelve el lote y la escritura individual, detecta el cambio posterior (`fallidos` con "ya no está como lo dejó la escritura"), deshace por `id`, y la entrada consumida desaparece de `pendientes` |
 | propiedad | `Pendiente.MsEspera` / `MsEjecucion` medidos alrededor de `ExecuteInCommandContextAsync` (`ms_espera`, `ms_ejecucion` del envoltorio) | — | todas; paso 2 | ejecutado en Civil 3D 2027 (1.3.1, 28/09/2026: `ms_espera` y `ms_ejecucion` enteros y coherentes en todas las respuestas, por ejemplo 16 y 7 ms en `asignar_objetivo`; con Civil 3D ocupado la llamada se descarta antes de responder, así que la espera larga no se midió) |
+
+## 1.4.0 (`extension_superficie`, superficies a Revit): escrita sin compilar
+
+Herramienta de lectura `extension_superficie` (`Herramientas.Superficies.cs`, contexto `Aplicacion`, bloqueo de lectura)
+para georreferenciar un modelo de Revit antes de vincular el DWG por coordenadas compartidas (flujo en
+`PuenteMcp/INSTRUCCIONES_AGENTE.md`, sección 7; herramientas `get_project_coordinates`, `set_project_coordinates` y
+`link_file` con `placement` en el MCP de Revit, rama `feature/coordenadas-compartidas`). Escrita el 12/10/2026 sin
+Civil 3D: el código compila contra los sustitutos de `CompilarSinCivil`, los miembros nuevos entran como `por verificar`
+y se validan con `herramientas-dev/VALIDACION_14.md`.
+
+| Tipo | Miembro | Versión | Herramienta que lo usa | Estado |
+|---|---|---|---|---|
+| método | `Surface.GetGeneralProperties()` → `GeneralSurfaceProperties` | 2027 | `extension_superficie` | por verificar |
+| propiedad | `GeneralSurfaceProperties.MinimumCoordinateX`, `.MaximumCoordinateX`, `.MinimumCoordinateY`, `.MaximumCoordinateY`, `.MinimumElevation`, `.MaximumElevation`, `.NumberOfPoints` (uint; se lee con `Convert.ToInt64`) | 2027 | `extension_superficie` | por verificar (`VALIDACION_14` paso 2: comparar con Propiedades de superficie → Estadísticas) |
+| propiedad | `CivilDocument.Settings.DrawingSettings.UnitZoneSettings` (`Autodesk.Civil.Settings.SettingsUnitZone`): `.CoordinateSystemCode` (string; vacío sin sistema asignado), `.DrawingUnits` (`Autodesk.Civil.DrawingUnitType`, `Meters`/`Feet`) | 2027 | `extension_superficie` (`sistema_coordenadas`; con `Feet` convierte la diagonal a metros para los avisos) | por verificar (`VALIDACION_14` paso 2: comparar con Configuración del dibujo → Unidades y zona) |
