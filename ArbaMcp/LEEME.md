@@ -18,7 +18,7 @@ El servidor solo acepta peticiones con la cabecera `X-Arba-Token` (salvo `GET /p
 
 ## Seguridad de escritura
 
-Las herramientas que modifican el dibujo (`asignar_*`, `establecer_*`, `agregar_*`, `dividir_region`, `reconstruir_*`, `pegar_superficie`, `guardar_*`) comparten estas reglas (`Escritura.cs`):
+Las herramientas que modifican el dibujo (`asignar_*`, `establecer_*`, `agregar_*`, `crear_*`, `dividir_region`, `reconstruir_*`, `pegar_superficie`, `guardar_*`) comparten estas reglas (`Escritura.cs`):
 
 - **Antes de escribir** comprueban que no hay un comando activo (`CMDACTIVE`), que el dibujo no es de solo lectura y que el mismo archivo no está abierto dos veces; si algo falla, responden error sin tocar nada.
 - **Copias**: antes de cada escritura real copian el `.dwg` **de disco** a `<carpeta del dwg>\backups\<nombre>_<fecha>_<herramienta>.dwg` en un hilo aparte (se espera justo antes de tocar el dibujo; se reutiliza si el archivo no cambió) y conservan las últimas 20. La copia refleja el último guardado en disco, no el estado en memoria; la respuesta lo dice (`copia.nota`, `copia.refleja_guardado_de`). Un dibujo sin guardar usa `SaveAs` en `%LOCALAPPDATA%\ArbaMcp\backups`. Si la copia falla no se escribe. `guardar_copia` hace una copia a mano (SaveAs, estado en memoria) con el sufijo que indiques.
@@ -63,7 +63,7 @@ Copia el PNG de tu icono a `Recursos\ARBA_BTN_MCP.png` (32×32) y recompila. Ver
 
 - Generales: `ping`, `listar_alineamientos`, `listar_perfiles`, `listar_pvis`, `listar_superficies`, `abrir_dibujo`, `ejecutar_comando` (último recurso; espera a que el comando termine, con tiempo límite y `undo` opcional), `leer_historial`, `leer_log`, `aprobar_resultado` (1.6.0; anota en el log que el usuario aprobó una llamada, no toca el dibujo), `leer_variable`, `capturar_pantalla`.
 - Lectura por API .NET: `listar_corredores`, `listar_regiones`, `listar_objetivos`, `listar_ensamblajes`, `listar_intersecciones`, `listar_lineas_muestreo`, `estado_corredor`, `punto_a_pk`, `pk_a_punto`, `cota_superficie`, `extension_superficie` (extensión, centro y sistema de coordenadas, para georreferenciar Revit), `interseccion_ejes`.
-- Escritura por API .NET (todas con `simular`): `asignar_ensamblaje_region`, `asignar_objetivo`, `asignar_objetivos` (lote), `asignar_objetivos_superficie`, `deshacer_objetivos` (1.3.3), `dividir_region`, `establecer_rango_region`, `establecer_frecuencia`, `establecer_frecuencias` (lote), `agregar_estacion_region`, `reconstruir_corredor`, `agregar_superficie_corredor`, `agregar_codigo_superficie_corredor`, `agregar_contorno_superficie_corredor`, `agregar_linea_rotura_superficie`, `pegar_superficie`, `reconstruir_superficie`, `guardar_dibujo`, `guardar_copia`.
+- Escritura por API .NET (todas con `simular`): `asignar_ensamblaje_region`, `asignar_objetivo`, `asignar_objetivos` (lote), `asignar_objetivos_superficie`, `deshacer_objetivos` (1.3.3), `dividir_region`, `establecer_rango_region`, `establecer_frecuencia`, `establecer_frecuencias` (lote), `agregar_estacion_region`, `reconstruir_corredor`, `agregar_superficie_corredor`, `agregar_codigo_superficie_corredor`, `agregar_contorno_superficie_corredor`, `agregar_linea_rotura_superficie`, `pegar_superficie`, `reconstruir_superficie`, `crear_superficie_tin` (1.7.0; superficie TIN nueva desde un grupo de puntos o un archivo de puntos), `guardar_dibujo`, `guardar_copia`.
 - Exportación por comando (no hay API): `exportar_landxml`, `exportar_imx`.
 - Del **puente**, no del plugin (desde 1.5.0): `buscar_api` (busca recetas, glosario y catálogo de la API en el repositorio privado `memoria-firma`; funciona con Civil 3D cerrado; ver *Herramientas del puente* en `CONTRATO.md`).
 
@@ -78,9 +78,9 @@ HiloPrincipal.cs  Lleva cada herramienta al hilo principal de AutoCAD, en su con
 ESTABILIDAD.md    Qué fallaba en los hilos, qué cambió en 1.2.2 y cómo comprobar en tu equipo si el plugin causaba cierres o trazados en blanco
 Herramientas.cs   Registro, ayudantes y herramientas generales
 Herramientas.Corredores.cs   Corredores, regiones, objetivos, ensamblajes, intersecciones, líneas de muestreo, lotes
-Herramientas.Superficies.cs  Geometría de ejes, superficies, líneas de rotura, pegado y exportación
+Herramientas.Superficies.cs  Geometría de ejes, superficies, líneas de rotura, pegado, creación de superficies TIN (1.7.0) y exportación
 Herramientas.Seguridad.cs    leer_log, aprobar_resultado, guardar_dibujo, guardar_copia
-Escritura.cs      Reglas de seguridad de escritura: comprobaciones, copia de disco en hilo aparte, mcp_log.jsonl, simular, antes/después
+Escritura.cs      Reglas de seguridad de escritura: comprobaciones, copia de disco en hilo aparte, mcp_log.jsonl, simular, antes/después; desde 1.7.0, CrearObjeto (camino común para crear objetos nuevos)
 Restauraciones.cs Pila en memoria, por dibujo, de lo que había antes de cada escritura de objetivos (la usa deshacer_objetivos)
 Bundle/           PackageContents.xml para la carga automática
 instalar.ps1      Compila e instala las dos DLL
