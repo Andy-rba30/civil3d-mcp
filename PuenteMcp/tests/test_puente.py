@@ -173,4 +173,35 @@ def test_construir_app_expone_mcp_y_sse(puente):
     rutas = sorted(getattr(r, "path", "") for r in app.routes)
     assert "/mcp" in rutas and "/sse" in rutas
     assert puente.PUERTO_PUENTE == 8001
-    assert puente.__version__ == "1.5.0"
+    assert puente.__version__ == "1.6.0"
+
+
+# ---------------------------------------------------------------------------------------------- id_log (1.6.0)
+def test_id_log_llega_al_agente_en_objetos_listas_y_errores(servidor, puente):
+    servidor.herramienta("listar_superficies")
+    servidor.herramienta("listar_regiones", [P_CORREDOR])
+    servidor.herramienta("aprobar_resultado", [{"name": "id_log", "type": "string", "required": True}, {"name": "aprobado", "type": "boolean", "required": True}])
+    servidor.respuestas["listar_superficies"] = {"ok": True, "tool": "listar_superficies", "id_log": "20261031-143501-a3f9c2", "ms": 4, "result": {"superficies": []}}
+    servidor.respuestas["listar_regiones"] = {"ok": True, "tool": "listar_regiones", "id_log": "20261031-143502-b4c5d6", "ms": 4, "result": [{"nombre": "R1"}]}
+    servidor.respuestas["aprobar_resultado"] = {"ok": False, "error": "ArgumentException: No existe ninguna llamada con id_log 'x'. Usa leer_log para ver los id de las últimas llamadas.", "id_log": "20261031-143503-c7d8e9"}
+    ejecutar(puente.sincronizar_herramientas())
+    objeto = json.loads(ejecutar(puente.mcp.call_tool("listar_superficies", {"args": {}})).content[0].text)
+    assert objeto["id_log"] == "20261031-143501-a3f9c2" and objeto["superficies"] == [] and objeto["ms"] == 4
+    lista = json.loads(ejecutar(puente.mcp.call_tool("listar_regiones", {"args": {"corredor": "C1"}})).content[0].text)
+    assert lista["id_log"] == "20261031-143502-b4c5d6" and lista["result"] == [{"nombre": "R1"}]
+    error = json.loads(ejecutar(puente.mcp.call_tool("aprobar_resultado", {"args": {"id_log": "x", "aprobado": True}})).content[0].text)
+    assert error["ok"] is False and error["id_log"] == "20261031-143503-c7d8e9" and "leer_log" in error["error"]
+    # un plugin anterior a 1.6.0 (sin id_log) sigue funcionando igual que antes
+    servidor.respuestas["listar_superficies"] = {"ok": True, "tool": "listar_superficies", "ms": 4, "result": {"superficies": []}}
+    assert "id_log" not in json.loads(ejecutar(puente.mcp.call_tool("listar_superficies", {"args": {}})).content[0].text)
+    assert puente.con_tiempos({"error": "x"}, 5) == {"ok": False, "error": "x", "ms_puente": 5}
+
+
+def test_el_pedido_viaja_en_args_sin_cambios(servidor, puente):
+    servidor.herramienta("listar_superficies", [{"name": "pedido", "type": "string", "description": "Pedido original del usuario"}])
+    servidor.respuestas["listar_superficies"] = {"ok": True, "id_log": "id-1", "result": {"superficies": []}}
+    ejecutar(puente.sincronizar_herramientas())
+    modelo = puente.mcp._tool_manager.get_tool("listar_superficies").parameters["$defs"]["listar_superficies_Model"]["properties"]
+    assert {"type": "string"} in modelo["pedido"]["anyOf"]
+    ejecutar(puente.mcp.call_tool("listar_superficies", {"args": {"pedido": "lista las superficies"}}))
+    assert servidor.llamadas[-1]["args"] == {"pedido": "lista las superficies"}

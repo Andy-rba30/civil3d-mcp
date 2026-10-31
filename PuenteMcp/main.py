@@ -20,7 +20,7 @@ from pydantic import create_model, Field
 
 import buscar_api as memoria_firma  # herramienta local del puente (1.5.0): busca en memoria-firma sin Civil 3D
 
-__version__ = "1.5.0"
+__version__ = "1.6.0"
 
 CARPETA = os.path.dirname(os.path.abspath(__file__))
 
@@ -137,6 +137,9 @@ def _mensaje_timeout(timeout_s: int) -> str:
 
 
 CLAVES_TIEMPO = ("ms", "ms_espera", "ms_ejecucion")
+# Desde 1.6.0 el plugin devuelve en cada respuesta (también en los errores) el id de la línea que la llamada dejó en
+# mcp_log.jsonl; el puente lo pasa al agente tal cual para que pueda citarlo en aprobar_resultado.
+CLAVE_ID_LOG = "id_log"
 
 
 async def _ejecutar(tool_name: str, args: dict, timeout_s: int = TIMEOUT_ESCRITURA, retry=True) -> dict:
@@ -163,9 +166,15 @@ async def _ejecutar(tool_name: str, args: dict, timeout_s: int = TIMEOUT_ESCRITU
 
         data = response.json()
         if not data.get("ok"):
-            return {"error": f"Error de Civil 3D: {data.get('error')}"}
+            salida = {"error": f"Error de Civil 3D: {data.get('error')}"}
+            if data.get(CLAVE_ID_LOG):
+                salida[CLAVE_ID_LOG] = data[CLAVE_ID_LOG]
+            return salida
         tiempos = {k: data[k] for k in CLAVES_TIEMPO if k in data}
-        return {"resultado": data.get("result", data), "tiempos": tiempos}
+        salida = {"resultado": data.get("result", data), "tiempos": tiempos}
+        if data.get(CLAVE_ID_LOG):
+            salida[CLAVE_ID_LOG] = data[CLAVE_ID_LOG]
+        return salida
     except httpx.ConnectError:
         return {"error": MENSAJE_SIN_CONEXION}
     except httpx.TimeoutException:
@@ -184,12 +193,18 @@ async def _c3d_execute(tool_name: str, args: dict, timeout_s: int = TIMEOUT_ESCR
 
 def con_tiempos(respuesta: dict, ms_puente: int):
     """Lo que ve el agente: el resultado de Civil 3D más ms (Civil 3D), ms_espera, ms_ejecucion y ms_puente (total
-    visto desde Python). Si el resultado es un objeto, los tiempos van como claves suyas (sin pisar las que ya tenga);
-    si es una lista o un valor, se envuelve en {"result": ..., ...}. Un error lleva ok=false, error y ms_puente."""
+    visto desde Python) y, desde 1.6.0, id_log (la línea de mcp_log.jsonl de esta llamada). Si el resultado es un
+    objeto, van como claves suyas (sin pisar las que ya tenga); si es una lista o un valor, se envuelve en
+    {"result": ..., ...}. Un error lleva ok=false, error, ms_puente y, si el plugin lo dio, id_log."""
     if "error" in respuesta:
-        return {"ok": False, "error": respuesta["error"], "ms_puente": ms_puente}
+        salida = {"ok": False, "error": respuesta["error"], "ms_puente": ms_puente}
+        if respuesta.get(CLAVE_ID_LOG):
+            salida[CLAVE_ID_LOG] = respuesta[CLAVE_ID_LOG]
+        return salida
     resultado = respuesta["resultado"]
     tiempos = dict(respuesta.get("tiempos") or {})
+    if respuesta.get(CLAVE_ID_LOG):
+        tiempos[CLAVE_ID_LOG] = respuesta[CLAVE_ID_LOG]
     tiempos["ms_puente"] = ms_puente
     if isinstance(resultado, dict):
         salida = dict(resultado)
