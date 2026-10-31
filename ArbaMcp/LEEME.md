@@ -65,6 +65,7 @@ Copia el PNG de tu icono a `Recursos\ARBA_BTN_MCP.png` (32×32) y recompila. Ver
 - Lectura por API .NET: `listar_corredores`, `listar_regiones`, `listar_objetivos`, `listar_ensamblajes`, `listar_intersecciones`, `listar_lineas_muestreo`, `estado_corredor`, `punto_a_pk`, `pk_a_punto`, `cota_superficie`, `extension_superficie` (extensión, centro y sistema de coordenadas, para georreferenciar Revit), `interseccion_ejes`.
 - Escritura por API .NET (todas con `simular`): `asignar_ensamblaje_region`, `asignar_objetivo`, `asignar_objetivos` (lote), `asignar_objetivos_superficie`, `deshacer_objetivos` (1.3.3), `dividir_region`, `establecer_rango_region`, `establecer_frecuencia`, `establecer_frecuencias` (lote), `agregar_estacion_region`, `reconstruir_corredor`, `agregar_superficie_corredor`, `agregar_codigo_superficie_corredor`, `agregar_contorno_superficie_corredor`, `agregar_linea_rotura_superficie`, `pegar_superficie`, `reconstruir_superficie`, `guardar_dibujo`, `guardar_copia`.
 - Exportación por comando (no hay API): `exportar_landxml`, `exportar_imx`.
+- Del **puente**, no del plugin (desde 1.5.0): `buscar_api` (busca recetas, glosario y catálogo de la API en el repositorio privado `memoria-firma`; funciona con Civil 3D cerrado; ver *Herramientas del puente* en `CONTRATO.md`).
 
 El contrato completo, con parámetros, respuestas y ejemplos `curl`, está en `CONTRATO.md`. Otros plugins pueden registrar sus propias herramientas (ver el final de ese archivo).
 
