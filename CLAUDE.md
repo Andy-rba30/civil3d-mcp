@@ -110,6 +110,7 @@ corren antes de dar una tarea por terminada:
 dotnet test ArbaMcp.Pruebas                        # núcleo del plugin, xUnit
 cd PuenteMcp; uv lock --check; uv run --frozen pytest -q; cd ..   # puente, pytest contra un servidor falso
 dotnet build herramientas-dev\CompilarSinCivil     # el plugin contra sustitutos (errores de nombre son fallo)
+cd herramientas-dev\Evaluador; uv lock --check; uv run --frozen pytest -q; cd ..\..   # evaluador automático, pytest con un banco de ejemplo
 ```
 
 Si una prueba deja de pasar por un cambio pedido, se explica el motivo y se propone la corrección; **nunca se borra,
