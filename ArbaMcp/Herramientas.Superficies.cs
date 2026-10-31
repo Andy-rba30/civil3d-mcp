@@ -162,48 +162,33 @@ namespace ArbaMcp
             string ruta = Path.GetFullPath(Requerido(a, "ruta"));
             string comando = Str(a, "comando", comandoPorDefecto).Trim();
             int timeoutMs = (int)(Math.Max(1, Num(a, "timeout_s", 300)) * 1000);
-            var reloj = System.Diagnostics.Stopwatch.StartNew();
-            string error = null;
-            Escritura.Contexto ctx = null;
-            try
-            {
-                ctx = (Escritura.Contexto)await HiloPrincipal.Ejecutar(() => Escritura.Preparar(herramienta, a, conCopia: false), ContextoEjecucion.Aplicacion, herramienta);
-                if (ctx.Simular)
-                    return new { simulado = true, herramienta, accion = "Enviar el comando " + comando + " y responder con la ruta " + ruta + " en la línea de comandos (FILEDIA=0 durante la orden)", ruta };
+            // La línea de mcp_log.jsonl (resultado, tiempo, id_log) la escribe Herramientas.EjecutarAsyncRegistrando (1.6.0)
+            var ctx = (Escritura.Contexto)await HiloPrincipal.Ejecutar(() => Escritura.Preparar(herramienta, a, conCopia: false), ContextoEjecucion.Aplicacion, herramienta);
+            if (ctx.Simular)
+                return new { simulado = true, herramienta, accion = "Enviar el comando " + comando + " y responder con la ruta " + ruta + " en la línea de comandos (FILEDIA=0 durante la orden)", ruta };
 
-                Directory.CreateDirectory(Path.GetDirectoryName(ruta));
-                var inicio = DateTime.Now.AddSeconds(-2);
-                object filediaAnterior = await HiloPrincipal.Ejecutar(() =>
-                {
-                    object v = AcApp.GetSystemVariable("FILEDIA");
-                    AcApp.SetSystemVariable("FILEDIA", (short)0);
-                    return v;
-                }, ContextoEjecucion.Aplicacion, herramienta);
-                object estado;
-                try { estado = await EjecutarComando("_." + comando.TrimStart('_', '.') + "\n" + ruta, timeoutMs, false); }
-                // Se restaura cuando Civil 3D vuelva a estar libre, es decir, cuando el comando de exportación haya terminado
-                finally { _ = HiloPrincipal.Ejecutar(() => { try { AcApp.SetSystemVariable("FILEDIA", filediaAnterior); } catch { } return true; }, ContextoEjecucion.Aplicacion, herramienta + " (restaurar FILEDIA)"); }
-
-                bool existe = File.Exists(ruta) && File.GetLastWriteTime(ruta) >= inicio;
-                return new
-                {
-                    estado,
-                    ruta,
-                    existe,
-                    bytes = existe ? new FileInfo(ruta).Length : 0,
-                    nota = existe ? null : "El archivo no apareció. Este comando abre cuadros de diálogo que el usuario debe completar en Civil 3D; usa capturar_pantalla para ver el diálogo. Es la excepción documentada en CONTRATO.md (sin API .NET de exportación)."
-                };
-            }
-            catch (Exception ex) { error = ex.Message; throw; }
-            finally
+            Directory.CreateDirectory(Path.GetDirectoryName(ruta));
+            var inicio = DateTime.Now.AddSeconds(-2);
+            object filediaAnterior = await HiloPrincipal.Ejecutar(() =>
             {
-                // Estamos en el hilo del servidor: el registro (lee la ruta del dibujo) se hace en el hilo principal
-                var doc = ctx?.Doc;
-                bool ok = error == null;
-                long ms = reloj.ElapsedMilliseconds;
-                string mensajeError = error;
-                _ = HiloPrincipal.EjecutarInmediato(() => Escritura.RegistrarLog(doc, herramienta, a, ok, ms, mensajeError));
-            }
+                object v = AcApp.GetSystemVariable("FILEDIA");
+                AcApp.SetSystemVariable("FILEDIA", (short)0);
+                return v;
+            }, ContextoEjecucion.Aplicacion, herramienta);
+            object estado;
+            try { estado = await EjecutarComando("_." + comando.TrimStart('_', '.') + "\n" + ruta, timeoutMs, false); }
+            // Se restaura cuando Civil 3D vuelva a estar libre, es decir, cuando el comando de exportación haya terminado
+            finally { _ = HiloPrincipal.Ejecutar(() => { try { AcApp.SetSystemVariable("FILEDIA", filediaAnterior); } catch { } return true; }, ContextoEjecucion.Aplicacion, herramienta + " (restaurar FILEDIA)"); }
+
+            bool existe = File.Exists(ruta) && File.GetLastWriteTime(ruta) >= inicio;
+            return new
+            {
+                estado,
+                ruta,
+                existe,
+                bytes = existe ? new FileInfo(ruta).Length : 0,
+                nota = existe ? null : "El archivo no apareció. Este comando abre cuadros de diálogo que el usuario debe completar en Civil 3D; usa capturar_pantalla para ver el diálogo. Es la excepción documentada en CONTRATO.md (sin API .NET de exportación)."
+            };
         }
 
         // ------------------------------------------------------------------ registro

@@ -96,6 +96,9 @@ namespace ArbaMcp.Nucleo
 
         /// <summary>{"ok":false,"error":"..."}</summary>
         public static string Error(string mensaje) => Json.Serializar(new { ok = false, error = mensaje });
+
+        /// <summary>Error de una llamada ya registrada (desde 1.6.0): lleva el id_log de su línea de mcp_log.jsonl.</summary>
+        public static string Error(string mensaje, string idLog) => Json.Serializar(new { ok = false, error = mensaje, id_log = idLog });
     }
 
     /// <summary>

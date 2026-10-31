@@ -43,15 +43,65 @@ namespace ArbaMcp
     {
         private static readonly List<Herramienta> Lista = new List<Herramienta>();
 
-        /// <summary>Registra (o sustituye por nombre) una herramienta. Valida el nombre y los tipos de sus parámetros.</summary>
+        /// <summary>
+        /// Registra (o sustituye por nombre) una herramienta. Valida el nombre y los tipos de sus parámetros y le añade
+        /// el parámetro general 'pedido' (desde 1.6.0) si no lo declara: así lo aceptan todas sin repetirlo en cada una.
+        /// </summary>
         public static void Registrar(Herramienta h)
         {
+            Catalogo.AsegurarPedido(h);
             Catalogo.Validar(h);
             lock (Lista)
             {
                 Lista.RemoveAll(x => x.Nombre == h.Nombre);
                 Lista.Add(h);
             }
+        }
+
+        // ------------------------------------------------------------------ punto común de ejecución (desde 1.6.0)
+        /// <summary>
+        /// Ejecuta una herramienta síncrona en el hilo principal (lo llama el servidor dentro del trabajo encolado) y deja
+        /// su línea en mcp_log.jsonl: id (el servidor lo devuelve como 'id_log'), hora, herramienta, pedido, args, ok, ms,
+        /// error y versión. Vale para lecturas y escrituras; 'pedido' solo se guarda, no cambia nada. El registro nunca
+        /// rompe la herramienta: si el archivo no se puede escribir, queda anotado en el historial.
+        /// </summary>
+        internal static object EjecutarRegistrando(Herramienta h, JsonElement args, string idLog)
+        {
+            var reloj = System.Diagnostics.Stopwatch.StartNew();
+            string error = null;
+            try { return h.Ejecutar(args); }
+            catch (Exception ex) { error = Raiz(ex).Message; throw; }
+            finally { Escritura.RegistrarLog(DocActivoONulo(), idLog, h.Nombre, args, error == null, reloj.ElapsedMilliseconds, error); }
+        }
+
+        /// <summary>
+        /// Igual que EjecutarRegistrando para las herramientas asíncronas (ejecutar_comando): la línea del log se escribe
+        /// al terminar, por la cola Inmediato del hilo principal, porque leer la ruta del dibujo toca la API de AutoCAD.
+        /// </summary>
+        internal static async Task<object> EjecutarAsyncRegistrando(Herramienta h, JsonElement args, string idLog)
+        {
+            var reloj = System.Diagnostics.Stopwatch.StartNew();
+            string error = null;
+            try { return await h.EjecutarAsync(args); }
+            catch (Exception ex) { error = Raiz(ex).Message; throw; }
+            finally
+            {
+                long ms = reloj.ElapsedMilliseconds;
+                try { await HiloPrincipal.EjecutarInmediato(() => Escritura.RegistrarLog(DocActivoONulo(), idLog, h.Nombre, args, error == null, ms, error)); }
+                catch (Exception ex) { Historial.Registrar("No se pudo registrar " + h.Nombre + " en mcp_log.jsonl: " + ex.Message); }
+            }
+        }
+
+        private static Exception Raiz(Exception ex)
+        {
+            while (ex.InnerException != null) ex = ex.InnerException;
+            return ex;
+        }
+
+        /// <summary>Dibujo activo o null (sin dibujo, el log va a %LOCALAPPDATA%\ArbaMcp). Solo desde el hilo principal.</summary>
+        private static Document DocActivoONulo()
+        {
+            try { return AcApp.DocumentManager.MdiActiveDocument; } catch { return null; }
         }
 
         public static Herramienta Buscar(string nombre)
