@@ -20,7 +20,7 @@ from pydantic import create_model, Field
 
 import buscar_api as memoria_firma  # herramienta local del puente (1.5.0): busca en memoria-firma sin Civil 3D
 
-__version__ = "1.8.0"
+__version__ = "1.9.0"
 
 CARPETA = os.path.dirname(os.path.abspath(__file__))
 
