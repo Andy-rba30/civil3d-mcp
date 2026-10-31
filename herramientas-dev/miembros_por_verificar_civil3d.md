@@ -162,3 +162,39 @@ por nombre confirmado (se recorre con `foreach` y se compara `PointFileFormat.Na
 | propiedad | `Styles.SurfaceStyle.ContourStyle` → `SurfaceContourStyle.MinorContourInterval`, `MajorContourInterval` (lectura) | 2027 | `crear_superficie_tin` (aviso de intervalos; **solo lectura**, nunca se asignan) | por verificar (confirmado en el catálogo) |
 | — | intervalos de curvas en la superficie | — | `crear_superficie_tin` | **no existe** en el catálogo de 2027: viven en el estilo; la herramienta devuelve aviso y `intervalos_curvas.aplicados = false` |
 
+
+## 1.8.0 (`crear_alineamiento_desde_polilinea`: eje desde polilínea de tangentes con una curva por PI): escrita sin compilar
+
+Escrita el 31/10/2026 sin Civil 3D. Todos los tipos, métodos y propiedades de esta sección se **confirmaron en el
+catálogo de la memoria técnica** (`buscar_api`, catálogo de Civil 3D 2027 extraído por metadatos) antes de usarlos:
+existen en la DLL con esa firma, pero nadie los ha ejecutado aún. Decide la validación `herramientas-dev/VALIDACION_18.md`.
+**El catálogo no registra los valores de los enumerados**: `CurveParamType.Radius`, `CurveType.Compound` y
+`SettingsObjectLayerType.Alignment` se resuelven en tiempo de ejecución por su nombre (`Herramientas.ValorEnum<T>`,
+`Enum.TryParse`), así el plugin compila aunque el nombre cambie y, si no existe, el error lista los valores reales.
+Vía de creación elegida: `Alignment.Create` con `PolylineOptions` **sin** curvas automáticas
+(`AddCurvesBetweenTangents=false`: con `true` el radio lo decide la configuración de comandos del dibujo, no la API, y
+el número de curvas creadas sería imprevisible) y después `AlignmentEntityCollection.AddFreeCurve` por PI con el radio
+exacto. La alternativa si `AddFreeCurve` fallara con el radio: la sobrecarga `AddFreeCurve(int, int, Point3d
+passThroughPoint)` con el punto medio de la curva (E = R·(sec(Δ/2) − 1) desde el PI sobre la bisectriz), confirmada en
+el catálogo y sin enumerados.
+
+| Tipo | Miembro | Versión | Herramienta que lo usa | Estado |
+|---|---|---|---|---|
+| método estático | `Alignment.Create(CivilDocument, PolylineOptions, string alignmentName, ObjectId siteId, ObjectId layerId, ObjectId styleId, ObjectId labelSetId)` | 2027 | `crear_alineamiento_desde_polilinea` (`Escritura.CrearObjeto`) | por verificar (confirmado en el catálogo; `siteId = ObjectId.Null` para un eje sin sitio y `labelSetId = ObjectId.Null` si el dibujo no tiene conjuntos: **por confirmar que los acepta**) |
+| struct | `PolylineOptions` con `PlineId`, `AddCurvesBetweenTangents`, `EraseExistingEntities` (lectura/escritura) | 2027 | `crear_alineamiento_desde_polilinea` (siempre `AddCurvesBetweenTangents=false`, `EraseExistingEntities=false`) | por verificar (confirmado en el catálogo) |
+| propiedad | `Alignment.Entities` (`AlignmentEntityCollection`): `Count`, `GetEntityByOrder(int)` | 2027 | `crear_alineamiento_desde_polilinea` (tangentes creadas desde la polilínea, en orden; curvas releídas) | por verificar (confirmado en el catálogo) |
+| método | `AlignmentEntityCollection.AddFreeCurve(int previousEntityId, int nextEntityId, double paramValue, CurveParamType paramType, bool isGreaterThan180, CurveType curveType)` | 2027 | `crear_alineamiento_desde_polilinea` (una curva libre por PI con `paramValue = radio`) | por verificar (confirmado en el catálogo; los valores `CurveParamType.Radius` y `CurveType.Compound` **no están en el catálogo**: se resuelven por nombre en tiempo de ejecución) |
+| propiedad | `AlignmentEntity.EntityId` (Int32), `AlignmentEntity.EntityType` | 2027 | `crear_alineamiento_desde_polilinea` (ids de las tangentes para `AddFreeCurve`; el tipo se decide con `is AlignmentLine` / `is AlignmentArc`, sin el enumerado) | por verificar (confirmado en el catálogo) |
+| clase | `AlignmentLine`, `AlignmentArc` (ambas derivan de `AlignmentCurve` → `AlignmentEntity`) | 2027 | `crear_alineamiento_desde_polilinea` | por verificar (confirmado en el catálogo) |
+| propiedad | `AlignmentCurve.StartStation`, `AlignmentCurve.EndStation` (lectura) | 2027 | `crear_alineamiento_desde_polilinea` (`progresiva_pc`, `progresiva_pt` y longitud de cada curva como `EndStation − StartStation`) | por verificar (confirmado en el catálogo; `AlignmentArc.Length` es solo escritura en el catálogo, por eso no se lee) |
+| propiedad | `AlignmentArc.Radius`, `AlignmentArc.Delta`, `AlignmentArc.PIStation`, `AlignmentArc.Clockwise` (lectura) | 2027 | `crear_alineamiento_desde_polilinea` (`curvas` leídas y verificación del radio ±0,01) | por verificar (confirmado en el catálogo; `Delta` se supone en **radianes**: si la validación devuelve grados, `deflexion_grados` de `curvas` saldrá multiplicada por 57,3 y hay que quitar la conversión) |
+| propiedad | `Alignment.Length`, `Alignment.StartingStation`, `Alignment.EndingStation` | 2027 | `crear_alineamiento_desde_polilinea` (relectura) | existe en la DLL (ya los usa `listar_alineamientos`); aquí sobre un eje recién creado |
+| propiedad | `Alignment.SiteName` (lectura), `Entity.StyleName` (lectura, por reflexión con `Api.Leer`), `Entity.Layer` | 2027 | `crear_alineamiento_desde_polilinea` (`sitio`, `estilo`, `capa` releídos) | por verificar (confirmado en el catálogo; `SiteName` vacío o excepción en un eje sin sitio → `sitio: null`) |
+| propiedad | `CivilDocument.Styles.AlignmentStyles` (`AlignmentStyleCollection`): `Contains(string)`, indexador por nombre, enumeración de `ObjectId` | 2027 | `crear_alineamiento_desde_polilinea` con `estilo` y estilo por defecto de reserva | por verificar (confirmado en el catálogo en `TreeNodeCollectionBase`, como `SurfaceStyles` en 1.7.0) |
+| propiedad | `CivilDocument.Styles.LabelSetStyles.AlignmentLabelSetStyles` (`AlignmentLabelSetStyleCollection`): `Contains(string)`, indexador, enumeración | 2027 | `crear_alineamiento_desde_polilinea` con `conjunto_etiquetas` | por verificar (confirmado en el catálogo) |
+| método | `CivilDocument.Settings.GetSettings<SettingsAlignment>()` → `StyleSettings.AlignmentStyleId.Value`, `AlignmentStyle.Value`, `AlignmentLabelSetId.Value`, `AlignmentLabelSet.Value` (`PropertyObjectId`/`PropertyString`) | 2027 | `crear_alineamiento_desde_polilinea` (estilo y conjunto de etiquetas **por defecto** del dibujo) | por verificar (confirmado en el catálogo; si falla, se usa el primer estilo del dibujo y se avisa) |
+| método | `CivilDocument.Settings.DrawingSettings.ObjectLayerSettings.GetObjectLayerSetting(SettingsObjectLayerType)` → `SettingsObjectLayer.LayerId`, `LayerName` | 2027 | `crear_alineamiento_desde_polilinea` (capa de objetos de las alineaciones) | por verificar (confirmado en el catálogo; el valor `SettingsObjectLayerType.Alignment` no está en el catálogo, se resuelve por nombre; si falla, capa actual con aviso) |
+| método | `CivilDocument.GetSiteIds()` → `Site.Name` | 2027 | `crear_alineamiento_desde_polilinea` con `sitio` | por verificar (confirmado en el catálogo) |
+| método / propiedad | `Polyline.NumberOfVertices`, `GetPoint2dAt(int)`, `GetBulgeAt(int)`, `Closed`, `Normal`, `Layer`; `Database.TryGetObjectId(Handle)`; `LayerTable.Has(string)` e indexador | AutoCAD 2027 | `crear_alineamiento_desde_polilinea` (lectura de la polilínea por handle o capa) | existe en la DLL (`NumberOfVertices`, `GetPoint2dAt` y `TryGetObjectId` ya se usaban); `GetBulgeAt`, `Normal`, `Closed` y `LayerTable.Has` confirmados en el catálogo, por verificar |
+| — | `CivilDocument.GetSitelessAlignmentIds()` | 2027 | — | confirmado en el catálogo pero **no se usa**: el nombre se comprueba con `GetAlignmentIds()` (todos los ejes, con y sin sitio), como `listar_alineamientos` |
+| — | `AlignmentType.Centerline` | 2027 | — | **no se usa**: la sobrecarga de `Create` con `PolylineOptions` no lleva tipo (el eje queda del tipo por defecto, eje central); el valor del enumerado no está en el catálogo |

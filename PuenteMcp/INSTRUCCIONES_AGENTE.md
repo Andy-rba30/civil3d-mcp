@@ -40,6 +40,7 @@ Después de cada escritura comprueba `esta_desactualizado` (corredor) o `esta_de
 - Las superficies de corredor se crean con `agregar_superficie_corredor` (código `Top` o `Datum`), se completan con `agregar_codigo_superficie_corredor` y se cierran con `agregar_contorno_superficie_corredor`; si el contorno automático no cierra, usa `exterior_poligono` con una polilínea cerrada.
 - La rasante final que se pega en una superficie compuesta se actualiza con `reconstruir_corredor` → `pegar_superficie` (o `reconstruir_superficie` si ya estaba pegada).
 - Superficie de terreno nueva → `crear_superficie_tin` (desde un grupo de puntos o un archivo de puntos; `simular=true` primero). Los intervalos de curvas de nivel viven en el **estilo** de superficie, no en la superficie: la herramienta no cambia estilos; si el usuario pide intervalos, elige con `estilo` uno del dibujo que ya los tenga y explícale lo que diga `avisos`.
+- Eje nuevo desde una polilínea → `crear_alineamiento_desde_polilinea` (`simular=true` primero: devuelve los PI y qué radios caben). La polilínea debe ser **2D, abierta y solo de tangentes** (sus vértices son los PI; sin arcos ni 3D): las curvas las pone la herramienta con `radio` y `radios_por_pi`; un radio que no cabe deja el PI sin curva y `avisos` dice el radio máximo.
 - `guardar_dibujo` guarda por API (QSAVE). Antes de una serie de cambios grandes, `guardar_copia` con un sufijo descriptivo.
 
 ## 4. Glosario español ↔ API de Civil 3D
