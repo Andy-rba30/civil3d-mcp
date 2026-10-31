@@ -133,3 +133,32 @@ por la cola `Inmediato` al terminar.
 |---|---|---|---|---|
 | — | ninguno nuevo | — | `aprobar_resultado`, `Herramientas.EjecutarRegistrando` | sin miembros nuevos; comportamiento (Deshacer, línea de las asíncronas) por verificar en `VALIDACION_16` |
 
+## 1.7.0 (`crear_superficie_tin`: superficie TIN desde grupo de puntos o archivo): escrita sin compilar
+
+Escrita el 31/10/2026 sin Civil 3D. Todos los miembros de esta sección se **confirmaron en el catálogo de la memoria
+técnica** (`buscar_api`, catálogo de Civil 3D 2027 extraído por metadatos) antes de usarlos: existen en la DLL con esa
+firma, pero nadie los ha ejecutado aún. Decide la validación `herramientas-dev/VALIDACION_17.md`. Hallazgo del catálogo:
+los **intervalos de curvas de nivel** no son propiedades de la superficie sino del estilo
+(`SurfaceStyle.ContourStyle.MinorContourInterval` / `MajorContourInterval`, lectura/escritura); como el plugin no
+modifica ni crea estilos, la herramienta solo los **lee** para el aviso. No está en el catálogo ninguna propiedad de
+`TinSurface`/`Surface` con intervalos de curvas, ni `PointFileFormatCollection` con un método `Contains` o indexador
+por nombre confirmado (se recorre con `foreach` y se compara `PointFileFormat.Name`).
+
+| Tipo | Miembro | Versión | Herramienta que lo usa | Estado |
+|---|---|---|---|---|
+| método estático | `TinSurface.Create(Database, string)` y `TinSurface.Create(string, ObjectId styleId)` | 2027 | `crear_superficie_tin` (`Escritura.CrearObjeto`) | por verificar (confirmado en el catálogo) |
+| propiedad | `TinSurface.PointFilesDefinition` (`SurfaceDefinitionPointFiles`) y método `AddPointFile(string, PointFileFormat)` | 2027 | `crear_superficie_tin` con `archivo` | por verificar (confirmado en el catálogo; la sobrecarga de 5 parámetros no se usa) |
+| método estático | `PointFileFormatCollection.GetPointFileFormats(Database)`; enumeración (`GetEnumerator`), `Count`, `Dispose` | 2027 | `crear_superficie_tin` con `archivo` (elección del formato) | por verificar (confirmado en el catálogo) |
+| propiedad | `PointFileFormat.Name`, `PointFileFormat.Delimiter` | 2027 | `crear_superficie_tin` (elección del formato por nombre y separador) | por verificar (confirmado en el catálogo; `Delimiter` se lee por reflexión, `Api.Leer`, y si viene vacío se decide por el nombre del formato) |
+| propiedad | `CivilDocument.PointGroups` (`PointGroupCollection`): enumeración de `ObjectId`, `Contains(string)`, indexador | 2027 | `crear_superficie_tin` con `grupo_puntos` | por verificar (confirmado en el catálogo; el plugin recorre la colección y compara `PointGroup.Name`) |
+| propiedad | `PointGroup.Name`, `PointGroup.PointsCount` (UInt32) | 2027 | `crear_superficie_tin` (comprobar que el grupo existe y tiene puntos; `puntos` previsto en `simular`) | por verificar (confirmado en el catálogo) |
+| propiedad | `TinSurface.PointGroupsDefinition` (`SurfaceDefinitionPointGroups`) y método `AddPointGroup(ObjectId)` | 2027 | `crear_superficie_tin` con `grupo_puntos` | por verificar (confirmado en el catálogo) |
+| método | `TinSurface.GetTinProperties()` → `TinSurfaceProperties.NumberOfTriangles` (Int32) | 2027 | `crear_superficie_tin` (`triangulos`) | por verificar (confirmado en el catálogo; si falla, `triangulos: null` y aviso) |
+| método | `Surface.GetGeneralProperties()` → `NumberOfPoints`, `Minimum/MaximumCoordinateX/Y`, `Minimum/MaximumElevation` | 2027 | `crear_superficie_tin` (`puntos`, `extension`) | existe en la DLL (ya lo usa `extension_superficie` desde 1.4.0; aquí sobre una superficie recién creada) |
+| método | `Surface.Rebuild()` | 2027 | `crear_superficie_tin` (tras añadir el origen) | ejecutado en Civil 3D 2027 (`reconstruir_superficie`); aquí sobre una superficie nueva |
+| propiedad | `CivilDocument.Styles.SurfaceStyles` (`SurfaceStyleCollection`): `Contains(string)`, indexador por nombre, enumeración de `ObjectId` | 2027 | `crear_superficie_tin` con `estilo` | por verificar (confirmado en el catálogo en `TreeNodeCollectionBase`, clase base de `StyleCollectionBase`) |
+| propiedad | `Styles.StyleBase.Name` (lectura) | 2027 | `crear_superficie_tin` (lista de estilos en el error) | por verificar (el catálogo solo registra el setter; se lee por reflexión con `Api.Leer`, con `DisplayName` como alternativa; si no se puede leer, la lista dice "ninguno legible") |
+| propiedad | `Entity.StyleName` (lectura), `Entity.StyleId` (lectura) de `Autodesk.Civil.DatabaseServices.Entity` | 2027 | `crear_superficie_tin` (`estilo` usado y lectura de los intervalos del estilo por defecto) | por verificar (confirmado en el catálogo como lectura/escritura; se leen por reflexión) |
+| propiedad | `Styles.SurfaceStyle.ContourStyle` → `SurfaceContourStyle.MinorContourInterval`, `MajorContourInterval` (lectura) | 2027 | `crear_superficie_tin` (aviso de intervalos; **solo lectura**, nunca se asignan) | por verificar (confirmado en el catálogo) |
+| — | intervalos de curvas en la superficie | — | `crear_superficie_tin` | **no existe** en el catálogo de 2027: viven en el estilo; la herramienta devuelve aviso y `intervalos_curvas.aplicados = false` |
+
