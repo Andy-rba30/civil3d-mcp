@@ -17,6 +17,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ArbaMcp.Nucleo\ArbaMcp.Nucleo.csproj" />
+    <!-- Extractor del catálogo de la API y la biblioteca falsa sobre la que se prueba (sin DLL de Autodesk). -->
+    <ProjectReference Include="..\herramientas-dev\ExtractorCatalogo\ExtractorCatalogo.csproj" />
+    <ProjectReference Include="..\herramientas-dev\ExtractorCatalogo.Ejemplo\ExtractorCatalogo.Ejemplo.csproj" />
   </ItemGroup>
 
 </Project>
