@@ -92,6 +92,8 @@ namespace Autodesk.Civil.Settings
 
 namespace Autodesk.Civil.DatabaseServices
 {
+    // 1.10.0 (crear_rasante): clase base de los estilos (Autodesk.Civil.DatabaseServices.DBObject.Name se lee; StyleBase.Name la oculta solo con escritura)
+    public class DBObject : Autodesk.AutoCAD.DatabaseServices.DBObject { public string Name { get; set; } public string Description { get; set; } }
     public class Entity : Autodesk.AutoCAD.DatabaseServices.Entity { public string Name { get; set; } public string Description { get; set; } public ObjectId StyleId { get; set; } public string StyleName { get; set; } }
 
     public class ColeccionIds : IEnumerable { public int Count => 0; public IEnumerator GetEnumerator() => new List<ObjectId>().GetEnumerator(); }
@@ -102,10 +104,61 @@ namespace Autodesk.Civil.DatabaseServices
     // ---- alineamientos y perfiles
     public enum ProfileType { EG, FG, Other }
     public enum ProfileEntityType { Tangent, Circular, Parabolic, Asymmetric, ParabolaSymmetric, ParabolaAsymmetric }
-    public class ProfileEntity { public double StartStation => 0; public double EndStation => 0; public ProfileEntityType EntityType => ProfileEntityType.Tangent; }
-    public class ProfileEntityCollection : IEnumerable { public int Count => 0; public IEnumerator GetEnumerator() => new List<ProfileEntity>().GetEnumerator(); }
-    public class ProfilePVI { public double RawStation { get; set; } public double Elevation { get; set; } public double Station { get; set; } }
-    public class ProfilePVICollection : IEnumerable { public int Count => 0; public IEnumerator GetEnumerator() => new List<ProfilePVI>().GetEnumerator(); }
+    // 1.10.0 (crear_rasante): el catálogo no registra los valores de este enumerado; el plugin no los nombra (solo ToString)
+    public enum VerticalCurveType { Crest, Sag }
+    public class ProfileEntity
+    {
+        public double StartStation => 0; public double EndStation => 0; public ProfileEntityType EntityType => ProfileEntityType.Tangent;
+        // 1.10.0 (crear_rasante): relectura de las entidades
+        public uint EntityId => 0; public uint EntityBefore => 0; public uint EntityAfter => 0;
+        public double Length { get; set; }
+        public double StartElevation => 0; public double EndElevation => 0;
+    }
+    // 1.10.0 (crear_rasante): tangentes y curvas verticales del perfil
+    public class ProfileTangent : ProfileEntity { public double Grade => 0; }
+    public class ProfileParabolaSymmetric : ProfileEntity
+    {
+        public double K { get; set; } public double Radius { get; set; } public double GradeIn => 0; public double GradeOut => 0; public double GradeChange => 0;
+        public double PVIStation => 0; public double PVIElevation => 0; public VerticalCurveType CurveType => VerticalCurveType.Crest;
+        public double HighLowPointStation => 0; public double HighLowPointElevation => 0; public double TangentOffsetAtPVI => 0;
+    }
+    public class ProfileCircular : ProfileEntity
+    {
+        public double K { get; set; } public double Radius { get; set; } public double GradeIn => 0; public double GradeOut => 0; public double GradeChange => 0;
+        public double PVIStation => 0; public double PVIElevation => 0; public VerticalCurveType CurveType => VerticalCurveType.Crest;
+        public double HighLowPointStation => 0; public double HighLowPointElevation => 0;
+    }
+    public class ProfileEntityCollection : IEnumerable
+    {
+        public int Count => 0;
+        public ProfileEntity this[int i] => new ProfileEntity();
+        public IEnumerator GetEnumerator() => new List<ProfileEntity>().GetEnumerator();
+        // 1.10.0 (crear_rasante): curvas libres apoyadas en un PVI
+        public ProfileParabolaSymmetric AddFreeSymmetricParabolaByPVIAndCurveLength(ProfilePVI pvi, double longitud) => new ProfileParabolaSymmetric();
+        public ProfileParabolaSymmetric AddFreeSymmetricParabolaByPVIAndK(ProfilePVI pvi, double k) => new ProfileParabolaSymmetric();
+        public ProfileCircular AddFreeCircularCurveByPVIAndLength(ProfilePVI pvi, double longitud) => new ProfileCircular();
+        public ProfileCircular AddFreeCircularCurveByPVIAndRadius(ProfilePVI pvi, double radio) => new ProfileCircular();
+        public ProfileEntity EntityAtId(uint id) => new ProfileEntity();
+    }
+    public class ProfilePVI
+    {
+        public double RawStation { get; set; } public double Elevation { get; set; } public double Station { get; set; }
+        // 1.10.0 (crear_rasante): pendientes y curva del PVI
+        public double GradeIn { get; set; } public double GradeOut { get; set; }
+        public ProfileEntityType PVIType => ProfileEntityType.Tangent;
+        public ProfileEntity VerticalCurve => new ProfileEntity();
+    }
+    public class ProfilePVICollection : IEnumerable
+    {
+        public int Count => 0;
+        public ProfilePVI this[int i] => new ProfilePVI();
+        public IEnumerator GetEnumerator() => new List<ProfilePVI>().GetEnumerator();
+        // 1.10.0 (crear_rasante): alta de PVI en un perfil de composición
+        public ProfilePVI AddPVI(double progresiva, double cota) => new ProfilePVI();
+        public ProfilePVI AddPVISymParabola(double progresiva, double cota, double longitud) => new ProfilePVI();
+        public ProfilePVI AddPVIArc(double progresiva, double cota, double radio) => new ProfilePVI();
+        public ProfilePVI GetPVIAt(double progresiva, double cota) => new ProfilePVI();
+    }
     public class Profile : Entity
     {
         public ProfileType ProfileType => ProfileType.FG;
@@ -117,6 +170,10 @@ namespace Autodesk.Civil.DatabaseServices
         // 1.9.0 (crear_perfil_terreno_y_vista)
         public double ElevationMin => 0; public double ElevationMax => 0;
         public static ObjectId CreateFromSurface(string nombre, ObjectId alineamiento, ObjectId superficie, ObjectId capa, ObjectId estilo, ObjectId etiquetas) => ObjectId.Null;
+        // 1.10.0 (crear_rasante): perfil de composición (FG) vacío al que se añaden PVI y curvas
+        public static ObjectId CreateByLayout(string nombre, ObjectId alineamiento, ObjectId capa, ObjectId estilo, ObjectId etiquetas) => ObjectId.Null;
+        public double GradeAt(double pk) => 0;
+        public double Length => 0;
     }
     // ---- 1.9.0 (crear_perfil_terreno_y_vista): vista de perfil y sus bandas
     public class ProfileViewBandItem { public ObjectId Profile1Id { get; set; } public ObjectId Profile2Id { get; set; } }
@@ -359,7 +416,8 @@ namespace Autodesk.Civil.DatabaseServices
 namespace Autodesk.Civil.DatabaseServices.Styles
 {
     // ---- 1.7.0 (crear_superficie_tin): estilos de superficie y sus intervalos de curvas
-    public class StyleBase : DBObject { public string Name { get; set; } }
+    // StyleBase hereda Name (lectura/escritura) de Autodesk.Civil.DatabaseServices.DBObject y la oculta con una propiedad solo de escritura (así está en la DLL; 1.10.0)
+    public class StyleBase : DBObject { public new string Name { set { } } }
     public class SurfaceContourStyle { public double MinorContourInterval { get; set; } public double MajorContourInterval { get; set; } }
     public class SurfaceStyle : StyleBase { public SurfaceContourStyle ContourStyle => new SurfaceContourStyle(); }
     public class SurfaceStyleCollection : IEnumerable<ObjectId>
