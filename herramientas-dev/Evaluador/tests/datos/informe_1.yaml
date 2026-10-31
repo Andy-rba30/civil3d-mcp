@@ -1,0 +1,24 @@
+informe_evaluacion: 1
+fecha: "2026-11-02 10:00"
+version_plugin: "1.6.0"
+version_puente: "1.6.0"
+dibujo_de_partida: "C:\\Proyectos\\prueba_copia.dwg"
+tareas:
+  - id: 1
+    resultado: OK
+    tiempo_s: 20
+    herramientas: [ping, listar_superficies]
+    respuesta_literal: '{"ok": true, "superficies": [{"nombre": "Terreno"}]}'
+    fallo: ""
+  - id: 2
+    resultado: FALLO
+    tiempo_s: 90
+    herramientas: [listar_corredores, listar_regiones, "cambiar_frecuencias(simular)"]
+    respuesta_literal: '{"ok": false, "error": "No existe el corredor"}'
+    fallo: "la herramienta no encontró el Corredor 1"
+  - id: 3
+    resultado: OK
+    tiempo_s: 40
+    herramientas: [reconstruir_corredor, estado_corredor]
+    respuesta_literal: '{"ok": true, "esta_desactualizado": false}'
+    fallo: ""

@@ -1,0 +1,26 @@
+# Banco de tareas DE EJEMPLO para las pruebas del evaluador. Datos genéricos; no son las tareas reales de la firma.
+version: 1
+fecha: 2026-10-30
+dibujo_base: Dibujo de prueba genérico C:\Proyectos\prueba.dwg
+
+tareas:
+  - id: 1
+    pedido: "Lista las superficies del dibujo"
+    archivo_de_partida: C:\Proyectos\prueba.dwg
+    resultado_esperado: "Aparece la superficie Terreno"
+    como_se_comprueba: "listar_superficies devuelve una superficie llamada Terreno"
+    tiempo_manual_min: 2
+
+  - id: 2
+    pedido: "Cambia la frecuencia del Corredor 1 a 10 m"
+    archivo_de_partida: resultado de la tarea 1
+    resultado_esperado: "Todas las regiones del Corredor 1 con frecuencia 10 m"
+    como_se_comprueba: "listar_regiones muestra frecuencias 10 en todas las regiones"
+    tiempo_manual_min: 5
+
+  - id: 3
+    pedido: "Reconstruye el Corredor 1 y dime si quedó al día"
+    archivo_de_partida: resultado de la tarea 2
+    resultado_esperado: "estado_corredor con esta_desactualizado=false"
+    como_se_comprueba: "estado_corredor devuelve esta_desactualizado=false"
+    tiempo_manual_min: 3

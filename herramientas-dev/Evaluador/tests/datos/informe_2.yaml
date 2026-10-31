@@ -1,0 +1,24 @@
+informe_evaluacion: 1
+fecha: "2026-11-09 11:30"
+version_plugin: "1.7.0"
+version_puente: "1.7.0"
+dibujo_de_partida: "C:\\Proyectos\\prueba_copia.dwg"
+tareas:
+  - id: 1
+    resultado: OK
+    tiempo_s: 15
+    herramientas: [ping, listar_superficies]
+    respuesta_literal: '{"ok": true, "superficies": [{"nombre": "Terreno"}]}'
+    fallo: ""
+  - id: 2
+    resultado: OK
+    tiempo_s: 60
+    herramientas: [listar_corredores, listar_regiones, "cambiar_frecuencias(simular)", cambiar_frecuencias]
+    respuesta_literal: '{"ok": true, "cambios": 2}'
+    fallo: ""
+  - id: 3
+    resultado: FALLO
+    tiempo_s: 70
+    herramientas: [reconstruir_corredor, estado_corredor]
+    respuesta_literal: '{"ok": true, "esta_desactualizado": true}'
+    fallo: "el corredor siguió desactualizado tras reconstruir"

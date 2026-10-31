@@ -5,6 +5,7 @@ name: Pruebas
 #  - pytest del puente (PuenteMcp/tests) contra un servidor falso que imita el contrato del plugin.
 #  - Compilación del plugin contra sustitutos (herramientas-dev/CompilarSinCivil): detecta errores de
 #    sintaxis y de nombres en el código propio; NO demuestra nada sobre la API real.
+#  - pytest del evaluador automático (herramientas-dev/Evaluador/tests) con un banco de tareas de ejemplo.
 # El plugin ArbaMcp no se compila aquí: ArbaMcp.csproj referencia acdbmgd.dll, acmgd.dll, AeccDbMgd.dll,
 # AecBaseMgd.dll y AdWindows.dll de una instalación local de Civil 3D 2027 (C3DPath), que no existe en
 # GitHub Actions y no se puede redistribuir. Lo que depende de esas DLL se valida a mano con
@@ -34,6 +35,22 @@ jobs:
     defaults:
       run:
         working-directory: PuenteMcp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - name: Comprobar que uv.lock coincide con pyproject.toml
+        run: uv lock --check
+      - name: Pruebas
+        run: uv run --frozen pytest -q
+
+  evaluador:
+    name: pytest del evaluador (herramientas-dev/Evaluador)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: herramientas-dev/Evaluador
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
