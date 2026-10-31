@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Extractor del catálogo de la API de AutoCAD y Civil 3D 2027. Lee las DLL de Autodesk SOLO como metadatos
+    (MetadataLoadContext: no las carga ni ejecuta nada de ellas) y guarda tipos, métodos, propiedades y
+    parámetros públicos en un archivo SQLite con índice de texto FTS5. No referencia ninguna DLL de Autodesk,
+    así que compila y se prueba en cualquier máquina (ArbaMcp.Pruebas lo ejercita con una biblioteca falsa).
+      Cómo se ejecuta y qué parámetros acepta: ver LEEME.md en esta carpeta.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>ExtractorCatalogo</AssemblyName>
+    <RootNamespace>ExtractorCatalogo</RootNamespace>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Reflection.MetadataLoadContext" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.14" />
+  </ItemGroup>
+
+</Project>
