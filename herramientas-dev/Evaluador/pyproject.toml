@@ -1,0 +1,14 @@
+[project]
+name = "evaluador-civil3d-mcp"
+version = "0.1.0"
+description = "Evaluador automático (línea base) del agente sobre Civil 3D: genera el prompt de evaluación y compara informes"
+requires-python = ">=3.11"
+dependencies = [
+    "pyyaml",
+]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
