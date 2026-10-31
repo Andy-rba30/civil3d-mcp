@@ -56,6 +56,67 @@ namespace ArbaMcp
 
         private static bool? Desactualizada(CivSurface su) => su.IsOutOfDate;
 
+        // ------------------------------------------------------------------ búsquedas para crear_superficie_tin (1.7.0)
+        /// <summary>Id de la superficie con ese nombre o ObjectId.Null si no existe (para comprobar que un nombre está libre).</summary>
+        private static ObjectId BuscarSuperficieONull(Transaction tr, string nombre)
+        {
+            foreach (ObjectId id in CivilApplication.ActiveDocument.GetSurfaceIds())
+                if (tr.GetObject(id, OpenMode.ForRead) is CivSurface su && string.Equals(su.Name, nombre, StringComparison.OrdinalIgnoreCase))
+                    return id;
+            return ObjectId.Null;
+        }
+
+        /// <summary>Grupo de puntos del dibujo por nombre (CivilDocument.PointGroups); error con la lista de grupos si no existe.</summary>
+        private static ObjectId BuscarGrupoPuntos(Transaction tr, string nombre)
+        {
+            var grupos = CivilApplication.ActiveDocument.PointGroups;
+            var nombres = new List<string>();
+            foreach (ObjectId id in grupos)
+            {
+                if (!(tr.GetObject(id, OpenMode.ForRead) is Civ.PointGroup pg)) continue;
+                if (string.Equals(pg.Name, nombre, StringComparison.OrdinalIgnoreCase)) return id;
+                nombres.Add(pg.Name);
+            }
+            throw new ArgumentException("No existe el grupo de puntos '" + nombre + "'. Grupos de puntos del dibujo: " + (nombres.Count == 0 ? "ninguno" : string.Join(", ", nombres))
+                + ". En Civil 3D se ven en Espacio de herramientas → Prospector → Grupos de puntos.");
+        }
+
+        /// <summary>Estilo de superficie del dibujo por nombre (Styles.SurfaceStyles); error con la lista de estilos si no existe.</summary>
+        private static ObjectId BuscarEstiloSuperficie(Transaction tr, string nombre)
+        {
+            var estilos = CivilApplication.ActiveDocument.Styles.SurfaceStyles;
+            if (estilos.Contains(nombre)) return estilos[nombre];
+            var nombres = new List<string>();
+            foreach (ObjectId id in estilos)
+            {
+                var st = tr.GetObject(id, OpenMode.ForRead);
+                string n = Api.Leer<string>(st, null, "Name", "DisplayName");
+                if (!string.IsNullOrEmpty(n)) nombres.Add(n);
+            }
+            throw new ArgumentException("No existe el estilo de superficie '" + nombre + "' en el dibujo. Estilos disponibles: " + (nombres.Count == 0 ? "ninguno legible" : string.Join(", ", nombres))
+                + ". En Civil 3D se ven en Espacio de herramientas → Configuración → Superficie → Estilos de superficie.");
+        }
+
+        /// <summary>Intervalos de curvas (menor, mayor) del estilo de superficie; null si no se pueden leer.</summary>
+        private static (double? menor, double? mayor) IntervalosDelEstilo(Transaction tr, ObjectId idEstilo)
+        {
+            try
+            {
+                if (idEstilo.IsNull || !(tr.GetObject(idEstilo, OpenMode.ForRead) is Civ.Styles.SurfaceStyle st)) return (null, null);
+                var cs = st.ContourStyle;
+                return (cs.MinorContourInterval, cs.MajorContourInterval);
+            }
+            catch (Exception ex) { Historial.Registrar("crear_superficie_tin: no se pudieron leer los intervalos del estilo: " + ex.Message); return (null, null); }
+        }
+
+        /// <summary>Extensión y número de puntos de una superficie (Surface.GetGeneralProperties), con los mismos nombres que extension_superficie.</summary>
+        private static Dictionary<string, object> ExtensionDe(CivSurface su, out long nPuntos)
+        {
+            var p = su.GetGeneralProperties();
+            nPuntos = Convert.ToInt64(p.NumberOfPoints);
+            return ExtensionPuntos.Diccionario(p.MinimumCoordinateX, p.MaximumCoordinateX, p.MinimumCoordinateY, p.MaximumCoordinateY, p.MinimumElevation, p.MaximumElevation);
+        }
+
         /// <summary>Líneas características del corredor (líneas base principales y desplazadas) como (código, puntos).</summary>
         private static List<(string codigo, Point3dCollection puntos)> LineasCaracteristicasCorredor(Civ.Corridor cor)
         {
@@ -545,6 +606,173 @@ namespace ArbaMcp
                         (tr, su) => { var reloj = System.Diagnostics.Stopwatch.StartNew(); su.Rebuild(); ms = reloj.ElapsedMilliseconds; },
                         "Reconstruir la superficie '" + nombre + "'",
                         () => new { ms });
+                })
+            });
+
+            Registrar(new Herramienta
+            {
+                Nombre = "crear_superficie_tin",
+                Descripcion = "Crea una superficie TIN nueva (TinSurface.Create) a partir de un grupo de puntos del dibujo (PointGroupsDefinition.AddPointGroup) o de un archivo de puntos de texto (PointFilesDefinition.AddPointFile con un formato de archivo de puntos del dibujo, por ejemplo 'PENZD (comma delimited)'), la reconstruye y devuelve puntos, triángulos y extensión. Indica exactamente uno: 'grupo_puntos' o 'archivo'. Si ya existe una superficie con ese nombre responde error sin tocar nada. Los intervalos de curvas de nivel viven en el estilo de superficie (no en la superficie): no se modifica ningún estilo; si se piden, la respuesta lo explica en 'avisos'.",
+                Parametros =
+                {
+                    P("nombre", "string", "Nombre de la superficie nueva (no debe existir)", true),
+                    P("grupo_puntos", "string", "Nombre de un grupo de puntos del dibujo (Prospector → Grupos de puntos). Excluyente con 'archivo'"),
+                    P("archivo", "string", "Ruta completa, en la PC de Civil 3D, de un archivo de puntos de texto (PENZD, ENZ...). Excluyente con 'grupo_puntos'"),
+                    P("formato_archivo", "string", "Nombre de un formato de archivo de puntos del dibujo, por ejemplo 'PENZD (comma delimited)'. Si falta, se elige uno por las columnas y el separador del archivo y se dice cuál"),
+                    P("estilo", "string", "Estilo de superficie del dibujo. Si falta, el estilo por defecto del dibujo"),
+                    P("intervalo_curvas_menor", "number", "Intervalo de curvas menores pedido (solo informativo: vive en el estilo, ver avisos)"),
+                    P("intervalo_curvas_mayor", "number", "Intervalo de curvas mayores pedido (solo informativo: vive en el estilo, ver avisos)"),
+                    P("simular", "boolean", "Con true devuelve lo que haría sin tocar nada (ni copia): antes/despues previstos con el número de puntos del archivo o del grupo")
+                },
+                Ejecutar = a => Escritura.Ejecutar("crear_superficie_tin", a, ctx =>
+                {
+                    string nombre = Requerido(a, "nombre");
+                    string grupo = Str(a, "grupo_puntos"), archivo = Str(a, "archivo"), formatoPedido = Str(a, "formato_archivo"), estilo = Str(a, "estilo");
+                    string origen = SuperficieTin.Origen(grupo, archivo);
+                    bool esArchivo = origen == SuperficieTin.OrigenArchivo;
+                    double? menor = Tiene(a, "intervalo_curvas_menor") ? Num(a, "intervalo_curvas_menor", 0) : (double?)null;
+                    double? mayor = Tiene(a, "intervalo_curvas_mayor") ? Num(a, "intervalo_curvas_mayor", 0) : (double?)null;
+                    SuperficieTin.ValidarIntervalos(menor, mayor);
+                    var db = ctx.Db;
+
+                    // El archivo se lee aquí (ArbaMcp.Nucleo, sin Civil 3D): líneas de puntos, separador y extensión prevista
+                    ResumenArchivoPuntos resumen = null;
+                    if (esArchivo)
+                    {
+                        archivo = Path.GetFullPath(archivo);
+                        resumen = ArchivoPuntos.Leer(archivo, formatoPedido);
+                        if (resumen.LineasPuntos == 0)
+                            throw new ArgumentException("El archivo '" + archivo + "' no tiene ninguna línea con coordenadas legibles (" + resumen.Lineas + " líneas, separador " + (resumen.SeparadorNombre ?? "no detectado") + "). Se esperan columnas como PENZD (punto, este, norte, cota, descripción) separadas por coma, punto y coma, tabulador o espacio.");
+                    }
+
+                    ObjectId idEstilo = ObjectId.Null, idGrupo = ObjectId.Null;
+                    long puntosGrupo = 0, puntos = 0;
+                    int triangulos = -1;
+                    string formatoUsado = null, motivoFormato = null, estiloUsado = null;
+                    Civ.PointFileFormatCollection formatos = null;
+                    Civ.PointFileFormat formato = null;
+                    Dictionary<string, object> extension = null;
+                    (double? menor, double? mayor) delEstilo = (null, null);
+                    string textoOrigen = esArchivo ? "el archivo '" + archivo + "'" : "el grupo de puntos '" + grupo + "'";
+
+                    try
+                    {
+                        return Escritura.CrearObjeto(ctx, new Escritura.Creacion
+                        {
+                            Accion = "Crear la superficie TIN '" + nombre + "' desde " + textoOrigen + (string.IsNullOrWhiteSpace(estilo) ? " con el estilo por defecto del dibujo" : " con el estilo '" + estilo + "'") + " y reconstruirla",
+                            Antes = tr =>
+                            {
+                                if (!BuscarSuperficieONull(tr, nombre).IsNull) throw new ArgumentException("Ya existe la superficie '" + nombre + "'. Usa listar_superficies.");
+                                if (!string.IsNullOrWhiteSpace(estilo)) { idEstilo = BuscarEstiloSuperficie(tr, estilo); estiloUsado = estilo; delEstilo = IntervalosDelEstilo(tr, idEstilo); }
+                                if (esArchivo)
+                                {
+                                    formatos = Civ.PointFileFormatCollection.GetPointFileFormats(db);
+                                    var disponibles = new List<FormatoPuntos>();
+                                    var porNombre = new Dictionary<string, Civ.PointFileFormat>(StringComparer.OrdinalIgnoreCase);
+                                    foreach (Civ.PointFileFormat f in formatos)
+                                    {
+                                        disponibles.Add(new FormatoPuntos { Nombre = f.Name, Delimitador = Api.Leer<string>(f, null, "Delimiter") });
+                                        if (!string.IsNullOrEmpty(f.Name)) porNombre[f.Name.Trim()] = f;
+                                    }
+                                    var elegido = SuperficieTin.ElegirFormato(disponibles, formatoPedido, resumen.Separador, resumen.Columnas, out motivoFormato);
+                                    if (elegido == null) throw new ArgumentException(SuperficieTin.MensajeSinFormato(disponibles, resumen.Separador, resumen.Columnas));
+                                    formato = porNombre[elegido.Nombre.Trim()];
+                                    formatoUsado = elegido.Nombre;
+                                    if (string.IsNullOrWhiteSpace(formatoPedido)) ctx.Avisos.Add("Formato de archivo de puntos '" + formatoUsado + "' " + motivoFormato + "; pasa 'formato_archivo' si el archivo usa otro orden de columnas.");
+                                }
+                                else
+                                {
+                                    idGrupo = BuscarGrupoPuntos(tr, grupo);
+                                    var pg = (Civ.PointGroup)tr.GetObject(idGrupo, OpenMode.ForRead);
+                                    puntosGrupo = Convert.ToInt64(pg.PointsCount);
+                                    if (puntosGrupo == 0) throw new ArgumentException("El grupo de puntos '" + pg.Name + "' no tiene puntos; una superficie sin puntos no se puede construir. Revisa el grupo en Espacio de herramientas → Prospector → Grupos de puntos.");
+                                }
+                                return new Dictionary<string, object> { ["superficie"] = nombre, ["existe"] = false, ["puntos"] = 0L };
+                            },
+                            Prevision = tr =>
+                            {
+                                var p = new Dictionary<string, object>
+                                {
+                                    ["existe"] = true,
+                                    ["puntos"] = esArchivo ? (long)resumen.LineasPuntos : puntosGrupo,
+                                    ["origen"] = origen,
+                                    ["estilo"] = estiloUsado ?? "(estilo por defecto del dibujo)"
+                                };
+                                if (esArchivo) { p["formato_archivo"] = formatoUsado; if (resumen.Extension != null) p["extension"] = resumen.Extension.ComoDiccionario(); }
+                                string aviso = SuperficieTin.AvisoIntervalos(menor, mayor, estiloUsado ?? "por defecto", delEstilo.menor, delEstilo.mayor);
+                                if (aviso != null) ctx.Avisos.Add(aviso);
+                                return p;
+                            },
+                            Esperado = new Dictionary<string, object> { ["existe"] = true },
+                            Crear = tr =>
+                            {
+                                var id = idEstilo.IsNull ? Civ.TinSurface.Create(db, nombre) : Civ.TinSurface.Create(nombre, idEstilo);
+                                var tin = (Civ.TinSurface)tr.GetObject(id, OpenMode.ForWrite);
+                                if (esArchivo) tin.PointFilesDefinition.AddPointFile(archivo, formato);
+                                else tin.PointGroupsDefinition.AddPointGroup(idGrupo);
+                                tin.Rebuild();
+                                return id;
+                            },
+                            Despues = (tr, id) =>
+                            {
+                                var su = (CivSurface)tr.GetObject(id, OpenMode.ForRead);
+                                extension = ExtensionDe(su, out puntos);
+                                try { triangulos = ((Civ.TinSurface)su).GetTinProperties().NumberOfTriangles; }
+                                catch (Exception ex) { ctx.Avisos.Add("No se pudo leer el número de triángulos (TinSurface.GetTinProperties): " + ex.Message); }
+                                estiloUsado = Api.Leer<string>(su, estiloUsado, "StyleName") ?? estiloUsado;
+                                if (idEstilo.IsNull)
+                                {
+                                    // Estilo por defecto: ahora sí se sabe cuál es, y se leen sus intervalos para el aviso
+                                    var idSt = Api.Leer<ObjectId>(su, ObjectId.Null, "StyleId");
+                                    delEstilo = IntervalosDelEstilo(tr, idSt);
+                                    string aviso = SuperficieTin.AvisoIntervalos(menor, mayor, estiloUsado ?? "por defecto", delEstilo.menor, delEstilo.mayor);
+                                    ctx.Avisos.RemoveAll(x => x.StartsWith("Intervalos de curvas pedidos"));
+                                    if (aviso != null) ctx.Avisos.Add(aviso);
+                                }
+                                var d = new Dictionary<string, object>
+                                {
+                                    ["superficie"] = su.Name,
+                                    ["existe"] = true,
+                                    ["puntos"] = puntos,
+                                    ["triangulos"] = triangulos < 0 ? (object)null : triangulos,
+                                    ["origen"] = origen,
+                                    ["estilo"] = estiloUsado,
+                                    ["esta_desactualizada"] = Desactualizada(su),
+                                    ["extension"] = extension
+                                };
+                                if (esArchivo) d["formato_archivo"] = formatoUsado;
+                                return d;
+                            },
+                            Verificar = d =>
+                            {
+                                if (puntos <= 0)
+                                    throw new InvalidOperationException("La superficie '" + nombre + "' se creó pero quedó sin puntos (0) tras añadir " + textoOrigen + " y reconstruir; no se reintenta. Revisa el formato del archivo o el grupo de puntos y deshaz con Ctrl+Z si no la quieres. despues=" + Nucleo.Json.Serializar(d));
+                            },
+                            Extra = () => new
+                            {
+                                nombre,
+                                origen,
+                                grupo_puntos = esArchivo ? null : grupo,
+                                archivo = esArchivo ? archivo : null,
+                                formato_archivo = formatoUsado,
+                                formato_elegido_automaticamente = esArchivo && string.IsNullOrWhiteSpace(formatoPedido),
+                                estilo = estiloUsado ?? "(estilo por defecto del dibujo)",
+                                puntos,
+                                triangulos = triangulos < 0 ? (object)null : triangulos,
+                                extension,
+                                intervalos_curvas = new
+                                {
+                                    pedido_menor = menor, pedido_mayor = mayor,
+                                    aplicados = false,
+                                    donde_viven = "SurfaceStyle.ContourStyle (estilo de superficie)",
+                                    estilo_menor = delEstilo.menor.HasValue ? N(delEstilo.menor.Value) : null,
+                                    estilo_mayor = delEstilo.mayor.HasValue ? N(delEstilo.mayor.Value) : null
+                                },
+                                archivo_resumen = resumen?.ComoDiccionario()
+                            }
+                        });
+                    }
+                    finally { try { formatos?.Dispose(); } catch { } }
                 })
             });
 

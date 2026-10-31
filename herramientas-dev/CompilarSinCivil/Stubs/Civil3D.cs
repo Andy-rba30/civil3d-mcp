@@ -18,6 +18,9 @@ namespace Autodesk.Civil.ApplicationServices
         public AssemblyCollection AssemblyCollection => new AssemblyCollection();
         public IntersectionCollection IntersectionCollection => new IntersectionCollection();
         public Autodesk.Civil.Settings.SettingsRoot Settings => new Autodesk.Civil.Settings.SettingsRoot();
+        // 1.7.0 (crear_superficie_tin): grupos de puntos y estilos del dibujo
+        public PointGroupCollection PointGroups => new PointGroupCollection();
+        public Autodesk.Civil.DatabaseServices.Styles.StylesRoot Styles => new Autodesk.Civil.DatabaseServices.Styles.StylesRoot();
     }
     public static class CivilApplication { public static CivilDocument ActiveDocument => new CivilDocument(); }
 }
@@ -37,7 +40,7 @@ namespace Autodesk.Civil.Settings
 
 namespace Autodesk.Civil.DatabaseServices
 {
-    public class Entity : Autodesk.AutoCAD.DatabaseServices.Entity { public string Name { get; set; } public string Description { get; set; } }
+    public class Entity : Autodesk.AutoCAD.DatabaseServices.Entity { public string Name { get; set; } public string Description { get; set; } public ObjectId StyleId { get; set; } public string StyleName { get; set; } }
 
     public class ColeccionIds : IEnumerable { public int Count => 0; public IEnumerator GetEnumerator() => new List<ObjectId>().GetEnumerator(); }
     public class CorridorCollection : ColeccionIds { }
@@ -100,6 +103,44 @@ namespace Autodesk.Civil.DatabaseServices
         public SurfaceDefinitionBoundaries BoundariesDefinition => new SurfaceDefinitionBoundaries();
         public SurfaceOperationCollection Operations => new SurfaceOperationCollection();
         public SurfaceOperationPasteSurface PasteSurface(ObjectId id) => new SurfaceOperationPasteSurface();
+        // 1.7.0 (crear_superficie_tin)
+        public static ObjectId Create(Database db, string nombre) => ObjectId.Null;
+        public static ObjectId Create(string nombre, ObjectId idEstilo) => ObjectId.Null;
+        public SurfaceDefinitionPointFiles PointFilesDefinition => new SurfaceDefinitionPointFiles();
+        public SurfaceDefinitionPointGroups PointGroupsDefinition => new SurfaceDefinitionPointGroups();
+        public TinSurfaceProperties GetTinProperties() => new TinSurfaceProperties();
+    }
+    // ---- 1.7.0 (crear_superficie_tin): archivos de puntos, grupos de puntos y propiedades TIN
+    public class TinSurfaceProperties { public int NumberOfTriangles => 0; }
+    public class SurfaceOperationAddPointFile { }
+    public class SurfaceOperationAddPointGroup { }
+    public class PointFileFormat : IDisposable
+    {
+        public string Name => ""; public string Delimiter => ""; public string CommentTag => ""; public string FileExtension => "";
+        public void Dispose() { }
+    }
+    public class PointFileFormatCollection : IEnumerable<PointFileFormat>, IDisposable
+    {
+        public static PointFileFormatCollection GetPointFileFormats(Database db) => new PointFileFormatCollection();
+        public int Count => 0;
+        public PointFileFormat this[int i] => new PointFileFormat();
+        public PointFileFormat this[string nombre] => new PointFileFormat();
+        public IEnumerator<PointFileFormat> GetEnumerator() => new List<PointFileFormat>().GetEnumerator();
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+        public void Dispose() { }
+    }
+    public class SurfaceDefinitionPointFiles : DefinicionConCuenta { public SurfaceOperationAddPointFile AddPointFile(string ruta, PointFileFormat formato) => new SurfaceOperationAddPointFile(); }
+    public class SurfaceDefinitionPointGroups : DefinicionConCuenta { public SurfaceOperationAddPointGroup AddPointGroup(ObjectId idGrupo) => new SurfaceOperationAddPointGroup(); }
+    public class PointGroup : DBObject { public string Name { get; set; } public uint PointsCount => 0; }
+    public class PointGroupCollection : IEnumerable<ObjectId>
+    {
+        public int Count => 0;
+        public ObjectId this[int i] => ObjectId.Null;
+        public ObjectId this[string nombre] => ObjectId.Null;
+        public bool Contains(string nombre) => false;
+        public bool Contains(ObjectId id) => false;
+        public IEnumerator<ObjectId> GetEnumerator() => new List<ObjectId>().GetEnumerator();
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
     public class GridSurface : Surface { public SurfaceDefinitionBoundaries BoundariesDefinition => new SurfaceDefinitionBoundaries(); }
     public class TinVolumeSurface : Surface { }
@@ -212,4 +253,23 @@ namespace Autodesk.Civil.DatabaseServices
         public SectionSourceCollection GetSectionSources() => new SectionSourceCollection();
     }
     public class FeatureLine : Entity { public Point3dCollection GetPoints(object tipo) => new Point3dCollection(); }
+}
+
+namespace Autodesk.Civil.DatabaseServices.Styles
+{
+    // ---- 1.7.0 (crear_superficie_tin): estilos de superficie y sus intervalos de curvas
+    public class StyleBase : DBObject { public string Name { get; set; } }
+    public class SurfaceContourStyle { public double MinorContourInterval { get; set; } public double MajorContourInterval { get; set; } }
+    public class SurfaceStyle : StyleBase { public SurfaceContourStyle ContourStyle => new SurfaceContourStyle(); }
+    public class SurfaceStyleCollection : IEnumerable<ObjectId>
+    {
+        public int Count => 0;
+        public ObjectId this[int i] => ObjectId.Null;
+        public ObjectId this[string nombre] => ObjectId.Null;
+        public bool Contains(string nombre) => false;
+        public bool Contains(ObjectId id) => false;
+        public IEnumerator<ObjectId> GetEnumerator() => new List<ObjectId>().GetEnumerator();
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+    public class StylesRoot { public SurfaceStyleCollection SurfaceStyles => new SurfaceStyleCollection(); }
 }

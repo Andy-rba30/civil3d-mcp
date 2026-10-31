@@ -30,6 +30,9 @@ namespace ArbaMcp
     ///     la 1.3.2, pasos 9 y 9b). Por eso las escrituras de objetivos guardan lo anterior en Restauraciones y
     ///     deshacer_objetivos lo reaplica (1.3.3).
     ///  6. Parámetro 'simular': devuelve lo que haría sin tocar nada.
+    ///  7. Desde 1.7.0, CrearObjeto es el camino común para crear objetos nuevos (superficies, y después alineamientos
+    ///     y perfiles) con las mismas reglas: Antes falla si ya existe, copia terminada antes de crear, una transacción,
+    ///     relectura y verificación. CambiarCorredor, CambiarSuperficie y LoteCorredor siguen igual para los existentes.
     /// Todo corre en el hilo principal de AutoCAD, en el contexto de comando del dibujo activo (lo llama el cuerpo de
     /// cada herramienta). La lógica que no toca AutoCAD (comparación, respuestas, copia de disco, poda, línea de log)
     /// está en ArbaMcp.Nucleo y se prueba sin Civil 3D.
@@ -231,6 +234,65 @@ namespace ArbaMcp
                 // No dejar el hilo de la copia suelto ni su información a medias (si falló, el error ya está en la respuesta)
                 if (ctx?.CopiaPendiente != null) { try { ctx.EsperarCopia(); } catch { } }
             }
+        }
+
+        // ------------------------------------------------------------------ creación de objetos nuevos (desde 1.7.0)
+        /// <summary>
+        /// Pasos de la creación de un objeto nuevo del dibujo (superficie TIN, alineamiento, perfil...). Lo ejecuta
+        /// CrearObjeto con las mismas reglas que CambiarCorredor y CambiarSuperficie: simulación en solo lectura, copia
+        /// terminada antes de crear, una sola transacción de escritura (una entrada de Deshacer), relectura y verificación.
+        /// </summary>
+        public sealed class Creacion
+        {
+            /// <summary>Texto de la acción para la respuesta ("Crear la superficie TIN 'Terreno' desde ...").</summary>
+            public string Accion;
+            /// <summary>Estado actual (por ejemplo existe=false). Debe lanzar si el objeto ya existe o falta algo (no se toca nada).</summary>
+            public Func<Transaction, Dictionary<string, object>> Antes;
+            /// <summary>Estado previsto después de crear; es el 'despues' de la simulación.</summary>
+            public Func<Transaction, Dictionary<string, object>> Prevision;
+            /// <summary>Campos que 'despues' debe cumplir exactamente en la escritura real (por ejemplo existe=true). Opcional.</summary>
+            public Dictionary<string, object> Esperado;
+            /// <summary>Crea el objeto (la copia ya está terminada) y devuelve su ObjectId.</summary>
+            public Func<Transaction, ObjectId> Crear;
+            /// <summary>Relee el objeto creado en una transacción nueva y devuelve su estado real.</summary>
+            public Func<Transaction, ObjectId, Dictionary<string, object>> Despues;
+            /// <summary>Comprobación adicional sobre 'despues' (por ejemplo puntos &gt; 0); lanza si no cumple. Opcional.</summary>
+            public Action<Dictionary<string, object>> Verificar;
+            /// <summary>Datos extra de la respuesta (campo 'datos'). Opcional.</summary>
+            public Func<object> Extra;
+        }
+
+        /// <summary>
+        /// Camino común para crear un objeto nuevo. Simulación: bloqueo de lectura (sin entrada de Deshacer), devuelve
+        /// Antes y Prevision sin tocar nada. Escritura real: Antes (que falla si ya existe), espera la copia, Crear en una
+        /// transacción, relee con Despues, aplica Verificar y Esperado; si el dibujo no refleja lo pedido, error sin
+        /// reintentar. Lo usa crear_superficie_tin (1.7.0) y vale para las herramientas de creación siguientes.
+        /// </summary>
+        public static object CrearObjeto(Contexto ctx, Creacion c)
+        {
+            var doc = ctx.Doc;
+            Dictionary<string, object> antes, prevision;
+            ObjectId id;
+            using (ctx.Simular ? doc.LockDocument(DocumentLockMode.Read, null, null, false) : doc.LockDocument())   // simulación: solo lectura, sin entrada de Deshacer
+            using (var tr = doc.Database.TransactionManager.StartTransaction())
+            {
+                antes = c.Antes(tr);
+                prevision = c.Prevision(tr);
+                if (ctx.Simular) { tr.Commit(); return Simulacion(ctx, antes, prevision, c.Accion); }
+                ctx.EsperarCopia();   // nunca se escribe sin copia terminada
+                id = c.Crear(tr);
+                if (id.IsNull) throw new InvalidOperationException("La API no devolvió el objeto creado (" + c.Accion + "). No se reintenta.");
+                tr.Commit();
+            }
+            Dictionary<string, object> despues;
+            using (doc.LockDocument())
+            using (var tr = doc.Database.TransactionManager.StartTransaction())
+            {
+                despues = c.Despues(tr, id);
+                tr.Commit();
+            }
+            c.Verificar?.Invoke(despues);
+            return Resultado(ctx, antes, despues, c.Esperado ?? new Dictionary<string, object>(), c.Accion, c.Extra?.Invoke());
         }
 
         // ------------------------------------------------------------------ 4 y 6: antes/después, simulación (ArbaMcp.Nucleo.Verificacion)
