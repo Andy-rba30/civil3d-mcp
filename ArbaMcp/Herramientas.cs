@@ -409,6 +409,7 @@ namespace ArbaMcp
             RegistrarCorredores();
             RegistrarSuperficies();
             RegistrarAlineamientos();   // 1.8.0: crear_alineamiento_desde_polilinea (Herramientas.Alineamientos.cs)
+            RegistrarPerfiles();        // 1.9.0: crear_perfil_terreno_y_vista (Herramientas.Perfiles.cs)
         }
 
         // ------------------------------------------------------------------ herramientas genéricas adicionales
