@@ -153,6 +153,51 @@ aprendizajes de una validación) viven en `memoria-firma/recetas/` y el agente l
 Nota a 24/10/2026: ni la carpeta `memoria-firma/` ni la herramienta `buscar_api` existen todavía en este repositorio.
 Crearlas es una tarea propia (regla 8); hasta entonces, las recetas no se añaden a `INSTRUCCIONES_AGENTE.md`.
 
+## 11. Trabajo en GitHub
+
+El código se escribe en **Claude Code web** (la nube), un contenedor Linux que **no** tiene Civil 3D, ni las DLL de
+Autodesk, ni acceso a la PC del dueño ni al MCP. En la PC, un **agente instalador** descarga las ramas, compila con
+las DLL reales, instala el plugin y prueba las herramientas en Civil 3D usando solo el MCP `civil3d`. El código
+**solo se arregla en la nube**; el agente instalador no edita código.
+
+- **a) Nunca se trabaja directo en `main`.** Cada tarea va en una rama propia con nombre
+  `tarea/[numero]-[nombre-corto]` (por ejemplo `tarea/0.5-github`), con commits pequeños y mensajes en español,
+  `push` de la rama y un **Pull Request en borrador**. Si no se puede abrir el PR desde la sesión, se dice y el
+  dueño lo abre con el botón **Create PR**.
+- **b) En la nube solo se corre lo que no necesita Civil 3D**: las tres pruebas de la regla 6. Si algo no se puede
+  correr aquí, se dice; **no se da por bueno**.
+- **c) Nunca se afirma que algo funciona en Civil 3D.** Eso lo confirma el dueño con el informe del agente
+  instalador.
+- **d) No se inventan miembros de la API de Civil 3D.** Se confirman en el catálogo de `memoria-firma` (cuando esté
+  en la sesión) y lo que no se pueda confirmar entra en `herramientas-dev/miembros_por_verificar_civil3d.md` como
+  `por verificar`.
+- **e) Cada PR lleva dos secciones**: **"Para el agente instalador"** (rama, qué compilar, qué instalar, qué
+  variables de entorno poner, qué reiniciar) y **"Para Jose"** (qué abrir en Civil 3D, qué pedirle al agente que
+  pruebe con el MCP, qué debería salir y qué archivo `VALIDACION_*.md` usar). La plantilla completa está en
+  `herramientas-dev/PLANTILLA_PR.md`.
+- **f) Cuando el dueño pegue el informe del agente instalador con errores**, se corrige en la **misma rama**, sin
+  cambiar nada más.
+- **g) El PR pasa a "listo" solo cuando el dueño diga que la verificación en Civil 3D pasó.** El **Merge** lo hace
+  él en GitHub.
+- **h) Commits, nombres de rama y descripciones de PR también son públicos** (regla 7): nada de datos de clientes,
+  ni rutas de la PC con nombres de proyectos, ni contenido de `memoria-firma`.
+- **i) `memoria-firma` es un repositorio privado aparte.** Si la tarea lo necesita y no está en la sesión, se dice
+  antes de empezar.
+
+**El ciclo de cada tarea:**
+
+1. El dueño abre una sesión nueva en claude.ai/code con los repositorios que indica el prompt y en modo **Plan**.
+2. Pega el prompt, lee el plan y responde "aprobado" o lo corrige.
+3. Claude Code web trabaja en la rama `tarea/...`, corre las pruebas y la sube; si no abrió el PR, el dueño pulsa
+   **Create PR** (borrador).
+4. El agente instalador recibe el **Prompt L.1** con el nombre de la rama.
+5. El agente instalador recibe el **Prompt P** y prueba con el MCP siguiendo "Para Jose".
+6. Si falla, el dueño pega el informe en la **misma** sesión web: "Falló esto: [informe]. Corrígelo en la misma rama
+   sin cambiar nada más", y se vuelve al paso 4.
+7. Si pasa, el dueño escribe "Verificación OK", pulsa **Merge pull request** y corre L.1 con `main`.
+
+Los prompts que no tocan Civil 3D (solo documentación, scripts de la nube o el puente) se saltan los pasos 4 y 5.
+
 ## Hechos ya validados en Civil 3D 2027 (no hay que volver a descubrirlos)
 
 - Cada escritura en contexto `Documento` es una entrada `Executefunction` del menú Deshacer; las lecturas y las
