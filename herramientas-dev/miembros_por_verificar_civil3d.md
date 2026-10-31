@@ -118,3 +118,18 @@ y se validan con `herramientas-dev/VALIDACION_14.md`. Validada el 12/10/2026 (`i
 | método | `Surface.GetGeneralProperties()` → `GeneralSurfaceProperties` | 2027 | `extension_superficie` | ejecutado en Civil 3D 2027 (1.4.0, 12/10/2026, `VALIDACION_14` paso 2 sobre `260716VC_SUP_HARTRE`, 23 355 puntos, 46 ms; informe `informes/informe_validacion_14_20261012.md`) |
 | propiedad | `GeneralSurfaceProperties.MinimumCoordinateX`, `.MaximumCoordinateX`, `.MinimumCoordinateY`, `.MaximumCoordinateY`, `.MinimumElevation`, `.MaximumElevation`, `.NumberOfPoints` (uint; se lee con `Convert.ToInt64`) | 2027 | `extension_superficie` | ejecutado en Civil 3D 2027 (1.4.0, 12/10/2026, paso 2: mínimos, máximos y número de puntos iguales a Propiedades de superficie → Estadísticas) |
 | propiedad | `CivilDocument.Settings.DrawingSettings.UnitZoneSettings` (`Autodesk.Civil.Settings.SettingsUnitZone`): `.CoordinateSystemCode` (string; vacío sin sistema asignado), `.DrawingUnits` (`Autodesk.Civil.DrawingUnitType`, `Meters`/`Feet`) | 2027 | `extension_superficie` (`sistema_coordenadas`; con `Feet` convierte la diagonal a metros para los avisos) | ejecutado en Civil 3D 2027 (1.4.0, 12/10/2026, paso 2: `UTM84-18S` y `Meters`, iguales a Configuración del dibujo → Unidades y zona) |
+
+## 1.6.0 (registro como dataset: `pedido`, `id_log`, `aprobar_resultado`): escrita sin compilar
+
+Escrita el 31/10/2026 sin Civil 3D. **No usa ningún miembro nuevo de la API de AutoCAD ni de Civil 3D**: el punto
+común de registro (`Herramientas.EjecutarRegistrando`) y `aprobar_resultado` (`Herramientas.Seguridad.cs`, contexto
+`Inmediato`, como `leer_log`) solo usan `DocumentManager.MdiActiveDocument` y `Database.Filename`, ya en la tabla de
+partida, y archivos de disco. Lo que sí hay que confirmar en Civil 3D (`herramientas-dev/VALIDACION_16.md`): que
+una lectura registrada en contexto `Aplicacion` y una llamada `Inmediato` siguen **sin dejar entrada en Deshacer**
+(el registro es solo escritura de archivo), y que `ejecutar_comando` y las exportaciones (asíncronas) dejan su línea
+por la cola `Inmediato` al terminar.
+
+| Tipo | Miembro | Versión | Herramienta que lo usa | Estado |
+|---|---|---|---|---|
+| — | ninguno nuevo | — | `aprobar_resultado`, `Herramientas.EjecutarRegistrando` | sin miembros nuevos; comportamiento (Deshacer, línea de las asíncronas) por verificar en `VALIDACION_16` |
+

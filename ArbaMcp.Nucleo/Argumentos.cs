@@ -55,6 +55,19 @@ namespace ArbaMcp.Nucleo
         /// <summary>'simular': true, 1, "1", "si", "sí", "true" o "yes"; cualquier otra cosa (o ausente) es false.</summary>
         public static bool LeerSimular(JsonElement a) => Bool(a, "simular", false);
 
+        /// <summary>Nombre del parámetro general 'pedido' (desde 1.6.0): el pedido original del usuario en lenguaje natural.</summary>
+        public const string NombrePedido = "pedido";
+
+        /// <summary>
+        /// 'pedido' (desde 1.6.0): el texto tal cual, sin espacios sobrantes; null si falta, es nulo o está en blanco.
+        /// Lo aceptan todas las herramientas y solo se guarda en mcp_log.jsonl: no cambia lo que hace la herramienta.
+        /// </summary>
+        public static string LeerPedido(JsonElement a)
+        {
+            string s = Str(a, NombrePedido);
+            return string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+        }
+
         /// <summary>Lista de textos: "a; b;c" → [a, b, c] (vacíos fuera); también acepta un arreglo JSON de textos.</summary>
         public static List<string> Lista(JsonElement a, string n)
         {

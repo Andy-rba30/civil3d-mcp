@@ -16,12 +16,54 @@ namespace ArbaMcp
             {
                 Nombre = "leer_log",
                 Contexto = ContextoEjecucion.Inmediato,
-                Descripcion = "Devuelve las últimas líneas de mcp_log.jsonl (una por llamada de escritura: hora, herramienta, args, ok, ms, error) de la carpeta del dibujo activo.",
+                Descripcion = "Devuelve las últimas líneas de mcp_log.jsonl de la carpeta del dibujo activo: una por cada llamada de herramienta (tipo 'llamada': id, hora, herramienta, pedido, args, ok, ms, error, version) y una por cada aprobación (tipo 'aprobacion': id, hora, id_log, aprobado, comentario).",
                 Parametros = { P("ultimas_n", "number", "Cantidad de líneas (por defecto 50)") },
                 Ejecutar = a =>
                 {
                     var doc = AcApp.DocumentManager.MdiActiveDocument;
                     return new { ruta = Escritura.RutaLog(doc), lineas = Escritura.LeerLog(doc, (int)Num(a, "ultimas_n", 50)) };
+                }
+            });
+
+            Registrar(new Herramienta
+            {
+                Nombre = "aprobar_resultado",
+                Contexto = ContextoEjecucion.Inmediato,   // como leer_log: solo lee y escribe mcp_log.jsonl, no toca el dibujo ni deja entrada en Deshacer
+                Descripcion = "Anota en mcp_log.jsonl que el usuario confirmó (o rechazó) el resultado de una llamada anterior, identificada por el id_log que devolvió. Añade una línea de tipo 'aprobacion' (hora, id_log, aprobado, comentario); no toca el dibujo, no hace copia de seguridad ni deja entrada en Deshacer. exportar_dataset (puente) solo exporta las llamadas aprobadas.",
+                Parametros =
+                {
+                    P("id_log", "string", "El id_log que devolvió la llamada que se aprueba (también aparece como 'id' en leer_log)", true),
+                    P("aprobado", "boolean", "true si el usuario confirmó que el resultado fue correcto; false si lo rechazó", true),
+                    P("comentario", "string", "Palabras del usuario sobre el resultado (opcional)")
+                },
+                Ejecutar = a =>
+                {
+                    string idLog = Requerido(a, "id_log").Trim();
+                    if (!Tiene(a, "aprobado")) throw new ArgumentException("Falta el parámetro obligatorio 'aprobado' (true o false).");
+                    bool aprobado = Bool(a, "aprobado", false);
+                    string comentario = Str(a, "comentario");
+                    var doc = AcApp.DocumentManager.MdiActiveDocument;
+                    string ruta = Escritura.RutaLog(doc);
+
+                    var llamada = Aprobaciones.BuscarLlamada(Escritura.LeerLineasLog(doc), idLog);
+                    if (llamada == null) throw new ArgumentException(Aprobaciones.MensajeNoExiste(idLog, ruta));
+
+                    var hora = DateTime.Now;
+                    string id = RegistroEscritura.NuevoId(hora);
+                    Escritura.AnexarLinea(doc, Aprobaciones.LineaAprobacion(id, hora, idLog, aprobado, comentario));
+                    Historial.Registrar(Aprobaciones.LineaHistorial(idLog, llamada.Herramienta, aprobado, comentario));
+                    return new
+                    {
+                        id,
+                        id_log = idLog,
+                        aprobado,
+                        comentario = string.IsNullOrWhiteSpace(comentario) ? null : comentario.Trim(),
+                        herramienta = llamada.Herramienta,
+                        hora_llamada = llamada.Hora,
+                        pedido = llamada.Pedido,
+                        llamada_ok = llamada.Ok,
+                        ruta
+                    };
                 }
             });
 

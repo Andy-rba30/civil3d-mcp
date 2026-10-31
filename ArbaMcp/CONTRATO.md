@@ -23,7 +23,7 @@ ejecuta en el contexto que la herramienta declara en `Herramienta.Contexto`:
 |---|---|---|---|
 | `Documento` (por defecto) | Contexto de comando del dibujo activo (`DocumentManager.ExecuteInCommandContextAsync`): la herramienta corre como un comando más, con el documento bloqueado y los gráficos actualizados al terminar. AutoCAD la anota como **una entrada `Executefunction` del menú Deshacer** (validado el 28/09/2026) | Sí | Todas las de escritura del dibujo, y `listar_lineas_muestreo` (abre el grupo para escritura con `fuentes=true`) |
 | `Aplicacion` | Contexto de aplicación en el hilo principal. Las lecturas y las simulaciones bloquean el dibujo **en modo lectura** (`DocumentLockMode.Read`): un bloqueo de escritura fuera de un comando deja un `Grupo de comandos` en el menú Deshacer aunque no cambie nada (validado el 28/09/2026 con la 1.3.0); el de lectura no lo deja (validado el 28/09/2026 con la 1.3.1: ni las lecturas ni las simulaciones dejan entrada) | Sí | Desde 1.3.0, todas las de solo lectura (`listar_*`, `estado_corredor`, `punto_a_pk`, `pk_a_punto`, `cota_superficie`, `extension_superficie`, `interseccion_ejes`); desde 1.3.1, también cualquier herramienta de escritura llamada con `simular=true`; `abrir_dibujo`, el envío de `ejecutar_comando` y de las exportaciones |
-| `Inmediato` | Contexto de aplicación, sin esperar y por delante de los demás trabajos | No | `ping`, `leer_historial`, `leer_log`, `leer_variable`, `capturar_pantalla`, los ESC de `ejecutar_comando` |
+| `Inmediato` | Contexto de aplicación, sin esperar y por delante de los demás trabajos | No | `ping`, `leer_historial`, `leer_log`, `aprobar_resultado` (1.6.0), `leer_variable`, `capturar_pantalla`, los ESC de `ejecutar_comando` |
 
 "Libre" significa `CMDACTIVE = 0` y ventana principal habilitada (sin cuadro de diálogo modal). Los trabajos
 `Documento` y `Aplicacion` se ejecutan de uno en uno; mientras uno espera, el historial anota
@@ -82,13 +82,42 @@ Toda herramienta de escritura pasa por `Escritura.Ejecutar` (`Escritura.cs`), qu
 
 1. **Comprobaciones previas**: responde error, sin tocar nada, si `CMDACTIVE > 0` (hay un comando activo), si el dibujo está en solo lectura o si el mismo archivo está abierto más de una vez en Civil 3D.
 2. **Copia de seguridad antes de cada escritura real (desde 1.3.0, como en Revit)**: si el dibujo está guardado en disco, se copia el `.dwg` **de disco** con `File.Copy` en un hilo aparte, iniciado al entrar en la herramienta y esperado justo antes de tocar el dibujo, a `<carpeta del dwg>\backups\<nombre>_<yyyyMMdd_HHmmss>_<herramienta>.dwg`. Si el `.dwg` no cambió de fecha ni de tamaño desde la copia anterior (y esa copia sigue en disco) se reutiliza sin copiar. **La copia refleja el último guardado en disco, no el estado en memoria** (la respuesta lo dice en `copia.nota`; para conservar el estado actual, `guardar_dibujo` o `guardar_copia` antes). Un dibujo sin guardar en disco sigue usando `SaveAs(ruta, false, DwgVersion.Current, SecurityParameters)` en `%LOCALAPPDATA%\ArbaMcp\backups` y la respuesta lo indica (`copia.metodo: "SaveAs"`). Se conservan las últimas 20 copias de cada dibujo. **Nunca se escribe sin copia terminada**: si la copia falla, la herramienta responde error sin tocar el dibujo. `guardar_copia` no cambia (SaveAs a mano con el sufijo que indiques).
-3. **Registro por llamada**: cada escritura añade una línea a `<carpeta del dwg>\mcp_log.jsonl` con `{"hora","herramienta","args","ok","ms","error"}` y otra al historial (`leer_historial`). `leer_log` devuelve las últimas líneas ya interpretadas. Un lote es una sola línea.
+3. **Registro por llamada**: cada escritura añade una línea a `<carpeta del dwg>\mcp_log.jsonl` y otra al historial (`leer_historial`). `leer_log` devuelve las últimas líneas ya interpretadas. Un lote es una sola línea. **Desde 1.6.0 se registra toda llamada, también las lecturas**, con `id`, `pedido` y `version` (ver *Registro de llamadas* más abajo).
 4. **Verificación antes/después**: tras escribir, la herramienta vuelve a leer el objeto y responde `{"simulado":false,"cambios":[...],"antes":{...},"despues":{...},"copia":{...},"datos":...,"avisos":...}` con los campos que cambiaron. `copia` es un objeto: `ruta`, `metodo` (`copia_de_disco` | `SaveAs`), `reutilizada`, `ms` (lo que tardó la copia; 0 si se reutilizó), `espera_ms` (lo que la escritura esperó a que terminara), `refleja_guardado_de` (fecha del último guardado del `.dwg`; `null` con SaveAs), `bytes`, `estado` y `nota`. Si el dibujo no refleja el cambio pedido, responde `ok=false` con la explicación (y el estado leído) y **no reintenta**.
 5. **Nada se borra ni se recrea**: ninguna herramienta elimina regiones, líneas base, ensamblajes ni superficies, ni usa `Erase()`.
 6. **`simular`** (boolean, por defecto `false`): con `true` responde `{"simulado":true,"accion":"...","antes":{...},"despues":{...}}` con lo que haría, sin tocar el dibujo (tampoco hace copia; sí registra la llamada en el log).
 7. **Una entrada de Deshacer por herramienta, y deshacer propio para los objetivos**: cada escritura (también un lote) corre como un pseudocomando y AutoCAD la anota como una sola entrada `Executefunction` del menú Deshacer, con todas sus transacciones (validado en Civil 3D 2027 el 28/09/2026; no hacen falta marcas de deshacer). Las lecturas y las simulaciones no dejan entrada (contexto `Aplicacion` con bloqueo de lectura, validado con la 1.3.1). `_.UNDO 1` revierte las frecuencias, pero **Civil 3D no deshace los cambios de objetivos**: ni tras `SetTargets` ni tras cambiarlos en Propiedades de corredor, `_.UNDO 1` y Ctrl+Z retiran la entrada del menú y el objetivo sigue en el valor nuevo (validado con la 1.3.2, pasos 9 y 9b, con un cambio hecho desde el propio cuadro de Civil 3D). Por eso, desde 1.3.3, cada escritura de objetivos (`asignar_objetivo`, `asignar_objetivos`, `asignar_objetivos_superficie`) guarda en memoria lo que había antes y devuelve un bloque `restaurar` (`herramienta: deshacer_objetivos`, `args.id`, `antes` por objetivo); **`deshacer_objetivos`** reaplica ese estado tras comprobar que cada objetivo sigue como lo dejó la escritura (si no, va a `fallidos` salvo `forzar=true`). Validado en Civil 3D 2027 el 28/09/2026 (`VALIDACION_13` 1.3.3, pasos 9, 9b y 14; las dos suites de `probar_servidor.py` en `TODO OK`). La pila (50 entradas por dibujo, `Restauraciones.cs`) vive hasta cerrar Civil 3D; si se perdió, `antes` sirve para reasignar a mano.
 
 El historial del plugin (`leer_historial`) también se escribe en `%LOCALAPPDATA%\ArbaMcp\historial.log` (rota a 5 MB en `historial.1.log`).
+
+## Registro de llamadas, `pedido`, `id_log` y aprobaciones (desde la versión 1.6.0)
+
+El registro sirve como **dataset**: cada llamada queda escrita con el pedido del usuario que la motivó, y el usuario
+puede aprobar el resultado; el script `exportar_dataset` del puente (ver *Herramientas del puente*) convierte las
+llamadas aprobadas en pares `pedido → herramientas` anonimizados.
+
+- **`pedido`** (string, opcional): **todas** las herramientas del plugin lo aceptan (se añade al registrarlas, en
+  `Herramientas.Registrar`, y `GET /tools` lo publica en cada una como último parámetro). Es el pedido original del
+  usuario en lenguaje natural, con sus palabras. **No cambia lo que hace la herramienta**: solo se guarda en la línea
+  del log y, recortado, en el historial.
+- **Una línea por llamada**: toda llamada (lectura, escritura, simulación, exportación, también `ping` y `leer_log`)
+  añade una línea de tipo `llamada` a `<carpeta del dwg>\mcp_log.jsonl` (sin dibujo abierto, en
+  `%LOCALAPPDATA%\ArbaMcp\mcp_log.jsonl`): `{"tipo":"llamada","id","hora","herramienta","pedido","args","ok","ms","error","version"}`.
+  La escribe el punto común `Herramientas.EjecutarRegistrando` en el hilo principal, al terminar la herramienta,
+  tenga éxito o falle. Si el archivo no se puede escribir, lo anota el historial y la herramienta responde igual.
+- **`id`**: identificador único de la línea, `AAAAMMDD-HHMMSS-xxxxxx` (fecha y hora más seis caracteres al azar),
+  generado por el servidor antes de encolar la herramienta.
+- **`id_log`**: toda respuesta de `POST /execute` lleva ese mismo `id` como campo `id_log` del sobre, tanto en éxito
+  (`{"ok":true,"tool":...,"id_log":"20261031-143501-a3f9c2","ms":...,"result":...}`) como en error
+  (`{"ok":false,"error":"...","id_log":"..."}`); el puente lo pasa al agente junto a los tiempos (`ms`, `ms_puente`).
+  La única respuesta sin `id_log` es "Herramienta desconocida" (no se registra nada). En un "Tiempo agotado" la
+  línea aparece cuando la herramienta termine, o nunca si se descartó sin ejecutarse.
+- **Aprobaciones**: `aprobar_resultado` añade una línea de tipo `aprobacion`:
+  `{"tipo":"aprobacion","id","hora","id_log","aprobado","comentario"}`, enlazada por `id_log` con la llamada. Es la
+  única herramienta que escribe en el log por sí misma; no toca el dibujo (contexto `Inmediato`, sin copia, sin
+  entrada en Deshacer). Si el `id_log` no está en el log responde error ("No existe ninguna llamada con id_log '...'.
+  Usa leer_log ..."). Su propia llamada deja además su línea `llamada`, como cualquier otra.
+- Las líneas anteriores a la 1.6.0 (sin `id` ni `tipo`) se siguen leyendo con `leer_log`, pero no se pueden aprobar.
 
 ## Herramientas generales
 
@@ -102,7 +131,8 @@ El historial del plugin (`leer_historial`) también se escribe en `%LOCALAPPDATA
 | `abrir_dibujo` | ruta* | abierto, `ya_estaba_abierto`. Si el archivo ya está abierto, activa esa pestaña en vez de abrirlo otra vez |
 | `ejecutar_comando` | comando*, timeout_s, undo | **Último recurso; usa primero las herramientas de API.** Espera a que el comando termine y devuelve `terminado`, `cancelado`, `fallido`, `el comando no se inició en N s (¿nombre incorrecto o Civil 3D ocupado?)` o `timeout con ESC`. Si hay un comando activo responde error sin enviar nada. **Solo con `undo=true`** la orden va entre `_.UNDO _BE` y `_.UNDO _E`; por defecto no se toca UNDO. Si se agota `timeout_s` (60 por defecto) envía dos ESC para cancelar |
 | `leer_historial` | ultimas_n | líneas con hora: comandos iniciados/terminados, llamadas MCP, mensajes, copias y escrituras |
-| `leer_log` | ultimas_n | `ruta` de `mcp_log.jsonl` y `lineas[]` (hora, herramienta, args, ok, ms, error) |
+| `leer_log` | ultimas_n | `ruta` de `mcp_log.jsonl` y `lineas[]`: desde 1.6.0 una por **cada** llamada (`tipo: llamada`: id, hora, herramienta, pedido, args, ok, ms, error, version) y una por aprobación (`tipo: aprobacion`: id, hora, id_log, aprobado, comentario) |
+| `aprobar_resultado` (1.6.0) | id_log*, aprobado* (boolean), comentario | Añade la línea `aprobacion` al log y la refleja en el historial. Devuelve `id` (de la línea nueva), `id_log`, `aprobado`, `comentario`, `herramienta`, `hora_llamada`, `pedido` y `llamada_ok` (de la llamada aprobada) y `ruta` del log. Error si el `id_log` no existe ("... Usa leer_log ..."). No toca el dibujo: contexto `Inmediato`, sin copia ni entrada en Deshacer |
 | `leer_variable` | nombre* | variable, valor, tipo |
 | `capturar_pantalla` | ruta | ruta del PNG, ancho, alto (ventana principal de Civil 3D, con diálogos) |
 
@@ -186,6 +216,11 @@ curl.exe -X POST $u @h -d '{"tool":"reconstruir_superficie","args":{"superficie"
 curl.exe -X POST $u @h -d '{"tool":"guardar_dibujo","args":{}}'
 curl.exe -X POST $u @h -d '{"tool":"guardar_dibujo","args":{"como":"C:\\Proyectos\\obra_v2.dwg"}}'
 curl.exe -X POST $u @h -d '{"tool":"guardar_copia","args":{"sufijo":"antes_de_objetivos"}}'
+# 1.6.0: 'pedido' en cualquier herramienta (solo se guarda en el log) y aprobación de una llamada por su id_log
+curl.exe -X POST $u @h -d '{"tool":"listar_superficies","args":{"pedido":"lista las superficies"}}'
+#   → {"ok":true,"tool":"listar_superficies","id_log":"20261031-143501-a3f9c2","ms":12,...,"result":[...]}
+curl.exe -X POST $u @h -d '{"tool":"aprobar_resultado","args":{"id_log":"20261031-143501-a3f9c2","aprobado":true,"comentario":"correcto"}}'
+#   → {"ok":true,"tool":"aprobar_resultado","id_log":"20261031-143620-b4c5d6","result":{"id":"20261031-143620-0f1e2d","id_log":"20261031-143501-a3f9c2","aprobado":true,"comentario":"correcto","herramienta":"listar_superficies","hora_llamada":"2026-10-31 14:35:01","pedido":"lista las superficies","llamada_ok":true,"ruta":"C:\\Proyectos\\mcp_log.jsonl"}}
 ```
 
 ## Exportación (excepción: por comando, no por API)
@@ -207,7 +242,8 @@ Si en tu instalación el comando de IMX tiene otro nombre, pásalo en `comando`.
 
 Viven en `PuenteMcp` (Python), no en el plugin: no pasan por `/execute`, no necesitan token ni Civil 3D abierto y
 no dejan rastro en `mcp_log.jsonl` ni en el historial del plugin (no tocan el dibujo). Sus argumentos van **directos**
-(no dentro de `args`) y devuelven **texto**, no JSON.
+(no dentro de `args`) y devuelven **texto**, no JSON. `exportar_dataset` (1.6.0) es solo un **script**, no una
+herramienta MCP: se corre desde PowerShell (ver más abajo).
 
 | Herramienta | Parámetros | Devuelve | Fuente |
 |---|---|---|---|
@@ -237,7 +273,42 @@ python -m buscar_api "TinSurface" --memoria C:\Proyectos\memoria-firma   # sin l
 ```
 
 Imprime el mismo texto que recibe el agente; código de salida 0 si pudo buscar (aunque no encuentre nada) y 2 si
-falta la memoria. Respuesta esperada (recortada) para `"rasante con PVI"` con el catálogo real:
+falta la memoria.
+
+### `exportar_dataset` (script del puente, desde 1.6.0)
+
+Convierte los `mcp_log.jsonl` en un dataset de pares `pedido → herramientas`. Solo toma las llamadas **aprobadas**
+(líneas `aprobacion` con `aprobado=true`, enlazadas por `id_log`; si una llamada tiene varias aprobaciones manda la
+última), agrupa las llamadas aprobadas consecutivas con el mismo `pedido` en un solo par (las que no tienen `pedido`
+van cada una en su par) y escribe `pares.jsonl`, una línea JSON por par:
+
+```json
+{"pedido":"lista las superficies","herramientas":[{"nombre":"listar_superficies","args":{}}],"resultado":{"ok":true,"resumen":"1 llamada correcta"},"fecha":"2026-10-31","version":"1.6.0"}
+```
+
+`herramientas` va en el orden del log y sin repetir `pedido` dentro de `args`; `resultado.ok` es false si alguna
+llamada del par falló y `resumen` lleva el primer error recortado; `fecha` es la de la primera llamada y `version` la
+del plugin que la registró. **Anonimiza** antes de escribir, en todos los textos del par: rutas de Windows, UNC y
+Linux → `<ruta>`; nombres de archivo `.dwg` → `<dibujo>`; cada nombre de la lista de prohibidos (sin distinguir
+mayúsculas) → `<proyecto>`.
+
+```powershell
+cd PuenteMcp
+uv run --frozen python exportar_dataset.py --logs C:\Proyectos\dibujos_prueba
+uv run --frozen python exportar_dataset.py --logs C:\Proyectos\dibujos_prueba\prueba\mcp_log.jsonl --salida C:\Proyectos\pares.jsonl --prohibidos C:\Proyectos\PROHIBIDOS.txt
+python -m exportar_dataset --logs C:\Proyectos\dibujos_prueba
+```
+
+`--logs` es un archivo `mcp_log.jsonl` o una carpeta (busca `mcp_log.jsonl` de forma recursiva). `--salida` por
+defecto es `%MEMORIA_FIRMA_DIR%\dataset\pares.jsonl` (se crea la carpeta; **se sobrescribe** el archivo) y
+`--prohibidos` por defecto `%MEMORIA_FIRMA_DIR%\casos\PROHIBIDOS.txt` si existe (una entrada por línea; `#` comenta).
+Sin `--salida` y sin la variable responde `Error: ...` y código 2; sin lista de prohibidos avisa y sigue (solo rutas y
+`.dwg`). Respuesta esperada:
+
+```
+exportar_dataset: 9 líneas de 1 archivo(s) mcp_log.jsonl, 3 llamadas aprobadas, 2 pares → C:\Proyectos\memoria-firma\dataset\pares.jsonl
+```
+ Respuesta esperada (recortada) para `"rasante con PVI"` con el catálogo real:
 
 ```
 buscar_api "rasante con PVI" → 0 recetas, 2 entradas del glosario, 8 del catálogo (límite 10). Memoria: C:\Proyectos\memoria-firma
@@ -303,7 +374,7 @@ Sin token responde 401 (salvo `GET /ping`); con cabecera `Origin`, 403; `POST` s
 | Qué | Dónde | Cómo | Necesita Civil 3D |
 |---|---|---|---|
 | Núcleo del plugin (autorización, argumentos, verificación, copias, cola, lotes, reflexión) | `ArbaMcp.Pruebas` (xUnit) | `dotnet test ArbaMcp.Pruebas` | No |
-| Puente (registro dinámico, timeouts, 401, JSON, `ms_puente`, `/ping`, retiradas; desde 1.5.0 `buscar_api` con un catálogo y un glosario de ejemplo, nunca los reales) | `PuenteMcp/tests` (pytest) | `cd PuenteMcp; uv run --frozen pytest -q` (o `.venv\Scripts\python -m pytest`) | No (servidor falso) |
+| Puente (registro dinámico, timeouts, 401, JSON, `ms_puente`, `/ping`, retiradas; desde 1.5.0 `buscar_api` con un catálogo y un glosario de ejemplo, nunca los reales; desde 1.6.0 `id_log` y `exportar_dataset` con registros de ejemplo con rutas y obras falsas) | `PuenteMcp/tests` (pytest) | `cd PuenteMcp; uv run --frozen pytest -q` (o `.venv\Scripts\python -m pytest`) | No (servidor falso) |
 | Compilación del plugin contra sustitutos de la API | `herramientas-dev/CompilarSinCivil` | `dotnet build herramientas-dev/CompilarSinCivil` | No (solo nombres y tipos) |
 | Humo en el programa real | `ArbaMcp/pruebas/probar_servidor.py` | sin argumentos (seguridad, `ejecutar_comando`, "Civil 3D ocupado"); `--dwg RUTA.dwg` (lectura, `simular`, copia nueva o reutilizada, `mcp_log.jsonl`, `deshacer_objetivos`; desde 1.3.2 la suite base sabe que `GET /ping` es público y que la copia puede reutilizarse; desde 1.3.3 la prueba 6 usa `deshacer_objetivos` y nunca una superficie de corredor); `--fase 13` (lo nuevo de 1.3.x: `/ping` sin token, 401 agrupados, `ms_espera`, `ms_puente`, lotes, `deshacer_objetivos` sobre el lote, `_.UNDO 1` sobre las frecuencias, `copia.reutilizada`, rechazo de la superficie del propio corredor); `--fase todo` | Sí |
 | Validación documentada | `herramientas-dev/VALIDACION_122.md`, `VALIDACION_13.md` | prompts para el agente local, con informe OK/FALLO | Sí |

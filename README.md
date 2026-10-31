@@ -10,7 +10,7 @@ Dos piezas, con la misma estructura que el conector de Revit:
 | [`PuenteMcp`](PuenteMcp/) | Puente MCP en Python. Lee las herramientas del plugin y las expone al agente por `streamable-http`. Con `tests/` (pytest). | 8001 |
 | [`herramientas-dev`](herramientas-dev/) | Prompts de validación para el agente local, tabla de miembros de la API por verificar, `InspectC3D` y `CompilarSinCivil`. | — |
 
-Versión actual: **1.5.0** (plugin, bundle y puente): añade `buscar_api`, una herramienta del **puente** (no del plugin) que busca en la memoria técnica privada `memoria-firma` (recetas, glosario español → API y catálogo de la API de Civil 3D 2027) y funciona con Civil 3D cerrado (validación en `herramientas-dev/VALIDACION_15.md`). La 1.4.0 añadió `extension_superficie` y el flujo de superficies a Revit por coordenadas compartidas (`PuenteMcp/INSTRUCCIONES_AGENTE.md`, sección 7).
+Versión actual: **1.6.0** (plugin, bundle y puente): el registro `mcp_log.jsonl` pasa a servir como **dataset**. Todas las herramientas aceptan el parámetro `pedido` (las palabras del usuario, solo se guardan), toda llamada queda registrada con un `id` que la respuesta devuelve como `id_log`, la herramienta nueva `aprobar_resultado` anota que el usuario dio por bueno un resultado y el script `exportar_dataset` del puente convierte las llamadas aprobadas en pares `pedido → herramientas` anonimizados (validación en `herramientas-dev/VALIDACION_16.md`). La 1.5.0 añadió `buscar_api`, una herramienta del **puente** (no del plugin) que busca en la memoria técnica privada `memoria-firma` (recetas, glosario español → API y catálogo de la API de Civil 3D 2027) y funciona con Civil 3D cerrado (`herramientas-dev/VALIDACION_15.md`); la 1.4.0, `extension_superficie` y el flujo de superficies a Revit por coordenadas compartidas (`PuenteMcp/INSTRUCCIONES_AGENTE.md`, sección 7).
 
 ## Instalar el plugin
 
@@ -55,6 +55,20 @@ responde un texto que empieza por `Error:` y dice qué falta y cómo ponerlo. Ne
 uv run --frozen python buscar_api.py "rasante con PVI" --limite 10
 python -m buscar_api "rasante con PVI"
 ```
+
+### `exportar_dataset`: el registro como dataset (desde 1.6.0)
+
+Cada llamada queda en `mcp_log.jsonl` con el `pedido` del usuario y un `id` (el `id_log` de la respuesta); cuando el
+usuario confirma un resultado, el agente llama a `aprobar_resultado`. El script `exportar_dataset` del puente toma
+solo las llamadas aprobadas, las agrupa por pedido y escribe `pares.jsonl` sin rutas, sin nombres de dibujos ni de
+obras (lista `casos\PROHIBIDOS.txt` de `memoria-firma`), por defecto en `%MEMORIA_FIRMA_DIR%\dataset\pares.jsonl`:
+
+```powershell
+cd PuenteMcp
+uv run --frozen python exportar_dataset.py --logs C:\Proyectos\dibujos_prueba
+```
+
+Detalle de campos, opciones y respuesta esperada en `ArbaMcp/CONTRATO.md` (*Herramientas del puente*).
 
 El puente lee el token de `%LOCALAPPDATA%\ArbaMcp\token`, que Civil 3D genera en cada arranque. Puede arrancar antes que Civil 3D: sondea `GET /ping` (sin token) y registra las herramientas en cuanto el plugin responde; si Civil 3D se reinicia, relee el token solo. Las respuestas al agente son JSON (`json.dumps`) con `ms` (Civil 3D), `ms_espera`, `ms_ejecucion` y `ms_puente`; el tiempo máximo depende de la herramienta (30 s lectura, 120 s escritura, 300 s reconstrucciones y exportaciones) y el archivo `PuenteMcp/INSTRUCCIONES_AGENTE.md` se entrega al agente como `instructions` del servidor MCP (precedencia API > comando, lotes, flujo obligatorio para corredores, reglas de dominio y glosario).
 

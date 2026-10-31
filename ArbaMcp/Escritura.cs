@@ -19,7 +19,9 @@ namespace ArbaMcp
     ///     un hilo aparte (se inicia al entrar y se espera justo antes de tocar el dibujo; se reutiliza si el .dwg no
     ///     cambió de fecha ni tamaño); si no está guardado, SaveAs en %LOCALAPPDATA%\ArbaMcp\backups. Se conservan 20
     ///     copias por dibujo. Nunca se escribe sin copia terminada: si falla, se responde error sin tocar nada.
-    ///  3. Registra cada llamada en Historial y en &lt;carpeta del dwg&gt;\mcp_log.jsonl.
+    ///  3. Registra cada llamada en Historial y en &lt;carpeta del dwg&gt;\mcp_log.jsonl. Desde la 1.6.0 el registro lo hace
+    ///     el punto común de todas las herramientas (Herramientas.EjecutarRegistrando), no este envoltorio, y cada línea
+    ///     lleva un 'id' (el 'id_log' de la respuesta) y el 'pedido' del usuario.
     ///  4. Compara el estado antes y después y falla si el dibujo no refleja el cambio pedido.
     ///  5. Deshacer: cada herramienta corre como un pseudocomando de ExecuteInCommandContextAsync y AutoCAD la anota
     ///     como UNA entrada "Executefunction" del menú Deshacer, con todas sus transacciones (validado en Civil 3D 2027
@@ -158,17 +160,34 @@ namespace ArbaMcp
         // ------------------------------------------------------------------ 3: registro por llamada
         public static string RutaLog(Document doc) => Path.Combine(CarpetaDatos(doc), "mcp_log.jsonl");
 
-        public static void RegistrarLog(Document doc, string herramienta, JsonElement args, bool ok, long ms, string error)
+        /// <summary>
+        /// Línea de una llamada (desde 1.6.0 con id, pedido y versión) en mcp_log.jsonl y su resumen en el historial.
+        /// Si el archivo no se puede escribir, lo anota en el historial y no falla: el registro nunca rompe la herramienta.
+        /// </summary>
+        public static void RegistrarLog(Document doc, string id, string herramienta, JsonElement args, bool ok, long ms, string error)
         {
-            string linea = RegistroEscritura.LineaLog(DateTime.Now, herramienta, args, ok, ms, error);
-            Historial.Registrar(RegistroEscritura.LineaHistorial(herramienta, ok, ms, error));
-            try
-            {
-                string ruta = RutaLog(doc);
-                Directory.CreateDirectory(Path.GetDirectoryName(ruta));
-                lock (Cerrojo) File.AppendAllText(ruta, linea + Environment.NewLine, Utf8SinBom);
-            }
+            string version = typeof(Escritura).Assembly.GetName().Version?.ToString(3);
+            string linea = RegistroEscritura.LineaLog(id, DateTime.Now, herramienta, args, ok, ms, error, version);
+            string pedido = args.ValueKind == JsonValueKind.Undefined ? null : Argumentos.LeerPedido(args);
+            Historial.Registrar(RegistroEscritura.LineaHistorial(id, herramienta, ok, ms, error, pedido));
+            try { AnexarLinea(doc, linea); }
             catch (Exception ex) { Historial.Registrar("No se pudo escribir mcp_log.jsonl: " + ex.Message); }
+        }
+
+        /// <summary>Añade una línea (ya en JSON) al final de mcp_log.jsonl del dibujo activo; lanza si no se puede escribir.</summary>
+        public static void AnexarLinea(Document doc, string linea)
+        {
+            string ruta = RutaLog(doc);
+            Directory.CreateDirectory(Path.GetDirectoryName(ruta));
+            lock (Cerrojo) File.AppendAllText(ruta, linea + Environment.NewLine, Utf8SinBom);
+        }
+
+        /// <summary>Todas las líneas de mcp_log.jsonl del dibujo activo, tal cual (vacío si el archivo no existe).</summary>
+        public static string[] LeerLineasLog(Document doc)
+        {
+            string ruta = RutaLog(doc);
+            if (!File.Exists(ruta)) return new string[0];
+            lock (Cerrojo) return File.ReadAllLines(ruta, Encoding.UTF8);
         }
 
         /// <summary>Últimas n líneas de mcp_log.jsonl del dibujo activo, ya interpretadas como JSON.</summary>
@@ -190,38 +209,27 @@ namespace ArbaMcp
 
         // ------------------------------------------------------------------ envoltorio de una herramienta de escritura
         /// <summary>
-        /// Ejecuta el cuerpo de una herramienta de escritura: prepara (comprobaciones e inicio de la copia), mide el
-        /// tiempo y registra el resultado o el error en el log. El cuerpo recibe el contexto, llama a ctx.EsperarCopia()
-        /// justo antes de tocar el dibujo (lo hacen CambiarCorredor, CambiarSuperficie y LoteCorredor) y devuelve el
-        /// objeto de respuesta.
+        /// Ejecuta el cuerpo de una herramienta de escritura: prepara (comprobaciones e inicio de la copia) y espera la
+        /// copia al terminar. El cuerpo recibe el contexto, llama a ctx.EsperarCopia() justo antes de tocar el dibujo
+        /// (lo hacen CambiarCorredor, CambiarSuperficie y LoteCorredor) y devuelve el objeto de respuesta. La línea de
+        /// mcp_log.jsonl (resultado o error, tiempo, id_log) la escribe Herramientas.EjecutarRegistrando, común a todas
+        /// las herramientas desde la 1.6.0.
         /// </summary>
         public static object Ejecutar(string herramienta, JsonElement args, Func<Contexto, object> cuerpo, bool conCopia = true)
         {
-            var reloj = Stopwatch.StartNew();
-            Document doc = null;
-            string error = null;
             Contexto ctx = null;
             try
             {
                 ctx = Preparar(herramienta, args, conCopia);
-                doc = ctx.Doc;
                 object respuesta = cuerpo(ctx);
                 // El cuerpo ya esperó antes de escribir; esto garantiza que la información de la copia está completa al responder
                 ctx.EsperarCopia();
                 return respuesta;
             }
-            catch (Exception ex)
-            {
-                var raiz = ex; while (raiz.InnerException != null) raiz = raiz.InnerException;
-                error = raiz.Message;
-                throw;
-            }
             finally
             {
                 // No dejar el hilo de la copia suelto ni su información a medias (si falló, el error ya está en la respuesta)
                 if (ctx?.CopiaPendiente != null) { try { ctx.EsperarCopia(); } catch { } }
-                if (doc == null) { try { doc = AcApp.DocumentManager.MdiActiveDocument; } catch { } }
-                RegistrarLog(doc, herramienta, args, error == null, reloj.ElapsedMilliseconds, error);
             }
         }
 

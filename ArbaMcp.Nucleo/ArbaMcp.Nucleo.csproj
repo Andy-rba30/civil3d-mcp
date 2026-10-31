@@ -11,7 +11,7 @@
     <OutputType>Library</OutputType>
     <AssemblyName>ArbaMcp.Nucleo</AssemblyName>
     <RootNamespace>ArbaMcp.Nucleo</RootNamespace>
-    <Version>1.5.0</Version>
+    <Version>1.6.0</Version>
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>

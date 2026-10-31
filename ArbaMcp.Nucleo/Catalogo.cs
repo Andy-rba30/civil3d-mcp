@@ -29,6 +29,24 @@ namespace ArbaMcp.Nucleo
 
         public static bool TipoValido(string tipo) => tipo != null && TiposParametro.Contains(tipo);
 
+        public const string DescripcionPedido = "Pedido original del usuario en lenguaje natural (opcional). Solo se guarda en mcp_log.jsonl junto a la llamada; no cambia lo que hace la herramienta.";
+
+        /// <summary>Parámetro general 'pedido' (desde 1.6.0), igual en todas las herramientas.</summary>
+        public static Parametro ParametroPedido() => new Parametro { name = Argumentos.NombrePedido, type = "string", description = DescripcionPedido, required = false };
+
+        /// <summary>
+        /// Añade el parámetro 'pedido' a la herramienta si no lo declara ya (así lo aceptan todas sin repetirlo en cada
+        /// una). Devuelve true si lo añadió.
+        /// </summary>
+        public static bool AsegurarPedido(DescripcionHerramienta h)
+        {
+            if (h == null) throw new ArgumentNullException(nameof(h));
+            if (h.Parametros == null) h.Parametros = new List<Parametro>();
+            if (h.Parametros.Any(p => p != null && p.name == Argumentos.NombrePedido)) return false;
+            h.Parametros.Add(ParametroPedido());
+            return true;
+        }
+
         /// <summary>Lanza ArgumentException si la herramienta no tiene nombre o algún parámetro tiene tipo desconocido o nombre vacío.</summary>
         public static void Validar(DescripcionHerramienta h)
         {

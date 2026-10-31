@@ -202,7 +202,10 @@ namespace ArbaMcp
             var herramienta = Herramientas.Buscar(nombre);
             if (herramienta == null) return Http.Error("Herramienta desconocida: '" + nombre + "'. Consulta GET /tools.");
 
-            Historial.Registrar("MCP → " + nombre);
+            // id de la línea que esta llamada dejará en mcp_log.jsonl (desde 1.6.0); se devuelve como id_log en toda
+            // respuesta, también en los errores, para que el agente pueda referirse a ella (aprobar_resultado).
+            string idLog = RegistroEscritura.NuevoId(DateTime.Now);
+            Historial.Registrar("MCP → " + nombre + " [" + idLog + "]");
             var reloj = System.Diagnostics.Stopwatch.StartNew();
             try
             {
@@ -210,7 +213,7 @@ namespace ArbaMcp
                 Pendiente pendiente = null;
                 if (herramienta.EjecutarAsync != null)
                 {
-                    tareaPrincipal = herramienta.EjecutarAsync(args);
+                    tareaPrincipal = Herramientas.EjecutarAsyncRegistrando(herramienta, args, idLog);
                 }
                 else
                 {
@@ -218,7 +221,7 @@ namespace ArbaMcp
                     // lecturas, y así no deja entrada en el menú Deshacer. La escritura real sigue en contexto de comando.
                     var contexto = herramienta.Contexto;
                     if (contexto == ContextoEjecucion.Documento && Argumentos.LeerSimular(args)) contexto = ContextoEjecucion.Aplicacion;
-                    pendiente = HiloPrincipal.Encolar(() => herramienta.Ejecutar(args), contexto, nombre);
+                    pendiente = HiloPrincipal.Encolar(() => Herramientas.EjecutarRegistrando(herramienta, args, idLog), contexto, nombre);
                     tareaPrincipal = pendiente.Tarea;
                 }
 
@@ -227,24 +230,24 @@ namespace ArbaMcp
                 {
                     string detalle = Pendiente.DescribirTiempoAgotado(pendiente);
                     Historial.Registrar("MCP ← " + nombre + " TIEMPO AGOTADO (" + timeoutS + " s): " + detalle);
-                    return Http.Error("Tiempo agotado (" + timeoutS + " s): " + detalle + " Civil 3D puede estar ocupado o con un cuadro de diálogo abierto.");
+                    return Http.Error("Tiempo agotado (" + timeoutS + " s): " + detalle + " Civil 3D puede estar ocupado o con un cuadro de diálogo abierto.", idLog);
                 }
                 object resultado = await tareaPrincipal;
                 Historial.Registrar("MCP ✓ " + nombre + " OK (" + reloj.ElapsedMilliseconds + " ms)");
                 // ms: total visto por el servidor; ms_espera: en cola hasta que Civil 3D quedó libre; ms_ejecucion: la herramienta
                 // en el hilo principal (null en las herramientas asíncronas, que gestionan su propia espera).
-                return JsonSerializer.Serialize(new { ok = true, tool = nombre, ms = reloj.ElapsedMilliseconds, ms_espera = pendiente?.MsEspera, ms_ejecucion = pendiente?.MsEjecucion, result = resultado }, Json);
+                return JsonSerializer.Serialize(new { ok = true, tool = nombre, id_log = idLog, ms = reloj.ElapsedMilliseconds, ms_espera = pendiente?.MsEspera, ms_ejecucion = pendiente?.MsEjecucion, result = resultado }, Json);
             }
             catch (OperationCanceledException)
             {
                 Historial.Registrar("MCP ← " + nombre + " CANCELADA: no llegó a ejecutarse");
-                return Http.Error("La herramienta no llegó a ejecutarse: Civil 3D descartó la petición (¿se cerró el dibujo o se descargó el plugin?). Consulta leer_historial.");
+                return Http.Error("La herramienta no llegó a ejecutarse: Civil 3D descartó la petición (¿se cerró el dibujo o se descargó el plugin?). Consulta leer_historial.", idLog);
             }
             catch (System.Exception ex)
             {
                 var raiz = ex; while (raiz.InnerException != null) raiz = raiz.InnerException;
                 Historial.Registrar("MCP ← " + nombre + " ERROR: " + raiz.Message + " " + raiz.StackTrace);
-                return Http.Error(raiz.GetType().Name + ": " + raiz.Message);
+                return Http.Error(raiz.GetType().Name + ": " + raiz.Message, idLog);
             }
         }
 
