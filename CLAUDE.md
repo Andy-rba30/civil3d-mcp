@@ -216,3 +216,23 @@ Los prompts que no tocan Civil 3D (solo documentación, scripts de la nube o el 
 - `CorridorSurface.AddPointCode` y `SubassemblyTargetInfo.SubassemblyId` no existen en 2027; `ProfilePVI.Station`
   está obsoleto (se usa `RawStation`). Los detalles y alternativas están en `miembros_por_verificar_civil3d.md`.
 - Nada de la API de AutoCAD se llama fuera del hilo principal; el servidor HTTP solo encola (`ESTABILIDAD.md`).
+- `_.UNDO 1` / Ctrl+Z **no elimina la superficie TIN** creada por API con `crear_superficie_tin`: la entrada de Deshacer
+  existe, pero la entidad `TinSurface` sigue en el dibujo (31/10/2026, informe 1.7.0, paso 10). Pendiente: comprobar si
+  pasa lo mismo con el eje y el perfil (los informes 1.8.0 y 1.9.0 omitieron ese paso, los objetos se conservaron para
+  la validación siguiente) y valorar un deshacer propio, como `deshacer_objetivos`.
+- `ejecutar_comando` recorta los espacios finales del texto (`Trim`), así que un comando interactivo que necesita un
+  espacio doble final para cerrar la entrada (por ejemplo `_.PLINE ...`) no termina; el agente lo resolvió con un
+  archivo `.scr` (31/10/2026, informe 1.8.0, paso 0). Pendiente: corregirlo en el plugin.
+- La lista de estilos que acompaña a los errores "No existe el estilo..." sale como "ninguno legible": el nombre de
+  `StyleBase` no se pudo leer por reflexión en esta instalación (31/10/2026, informe 1.7.0, paso 8; igual en 1.8.0 y
+  1.9.0). Pendiente: corrección.
+- El formato de archivo de puntos `PENZD (comma delimited)` existe en la instalación del dueño y `crear_superficie_tin`
+  lo elige solo (31/10/2026, informe 1.7.0, pasos 2 y 3).
+- `Alignment.Create` con `PolylineOptions` más una curva libre por PI con `AddFreeCurve` crea el eje con las curvas y
+  los radios pedidos (31/10/2026, informe 1.8.0, pasos 4 y 5), y la copia de seguridad se reutiliza entre escrituras
+  seguidas si el archivo no cambió.
+- `Profile.CreateFromSurface` y `ProfileView.Create` en una misma transacción dejan **una** entrada de Deshacer, y la
+  asignación del perfil a `Profile1Id`/`Profile2Id` de las bandas funciona (31/10/2026, informe 1.9.0, pasos 4 y 6). El
+  punto de inserción automático usa la extensión del dibujo entera, así que en dibujos con contenido lejano la vista
+  puede quedar muy a la derecha (informe 1.9.0, paso 2: x ≈ 6 × 10^5 con un eje en x ≈ 1000..1600). Pendiente: decidir
+  si conviene usar solo la extensión del eje.
