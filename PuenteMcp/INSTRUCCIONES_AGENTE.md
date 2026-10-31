@@ -41,6 +41,7 @@ Después de cada escritura comprueba `esta_desactualizado` (corredor) o `esta_de
 - La rasante final que se pega en una superficie compuesta se actualiza con `reconstruir_corredor` → `pegar_superficie` (o `reconstruir_superficie` si ya estaba pegada).
 - Superficie de terreno nueva → `crear_superficie_tin` (desde un grupo de puntos o un archivo de puntos; `simular=true` primero). Los intervalos de curvas de nivel viven en el **estilo** de superficie, no en la superficie: la herramienta no cambia estilos; si el usuario pide intervalos, elige con `estilo` uno del dibujo que ya los tenga y explícale lo que diga `avisos`.
 - Eje nuevo desde una polilínea → `crear_alineamiento_desde_polilinea` (`simular=true` primero: devuelve los PI y qué radios caben). La polilínea debe ser **2D, abierta y solo de tangentes** (sus vértices son los PI; sin arcos ni 3D): las curvas las pone la herramienta con `radio` y `radios_por_pi`; un radio que no cabe deja el PI sin curva y `avisos` dice el radio máximo.
+- Perfil de terreno y vista de perfil de un eje → `crear_perfil_terreno_y_vista` (`simular=true` primero: devuelve los nombres, el punto de inserción previsto y las progresivas). Crea los dos objetos en una sola entrada de Deshacer; sin `punto_insercion` coloca la vista a la derecha de lo dibujado y devuelve el punto usado; estilos y conjuntos por defecto del dibujo si no se pasan.
 - `guardar_dibujo` guarda por API (QSAVE). Antes de una serie de cambios grandes, `guardar_copia` con un sufijo descriptivo.
 
 ## 4. Glosario español ↔ API de Civil 3D

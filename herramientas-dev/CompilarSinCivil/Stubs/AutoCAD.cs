@@ -82,6 +82,8 @@ namespace Autodesk.AutoCAD.DatabaseServices
     public class Entity : DBObject
     {
         public string Layer { get; set; }
+        // 1.9.0 (crear_perfil_terreno_y_vista): extensión en planta para el punto de inserción automático
+        public Extents3d GeometricExtents => new Extents3d();
         public ObjectId LayerId { get; set; }
         public void IntersectWith(Entity otra, Intersect modo, Point3dCollection puntos, IntPtr a, IntPtr b) { }
         public void IntersectWith(Entity otra, Intersect modo, Plane plano, Point3dCollection puntos, IntPtr a, IntPtr b) { }
@@ -141,12 +143,17 @@ namespace Autodesk.AutoCAD.DatabaseServices
         public void Dispose() { }
     }
     public class TransactionManager { public Transaction StartTransaction() => new Transaction(); }
+    // 1.9.0 (crear_perfil_terreno_y_vista)
+    public struct Extents3d { public Point3d MinPoint => new Point3d(); public Point3d MaxPoint => new Point3d(); }
     public class Database
     {
         public string Filename => "";
         public ObjectId BlockTableId => ObjectId.Null;
         public ObjectId LayerTableId => ObjectId.Null;
         public ObjectId Clayer { get; set; }
+        // 1.9.0 (crear_perfil_terreno_y_vista): extensión del dibujo guardada en la base
+        public Point3d Extmin { get; set; }
+        public Point3d Extmax { get; set; }
         public SecurityParameters SecurityParameters => new SecurityParameters();
         public TransactionManager TransactionManager => new TransactionManager();
         public void SaveAs(string ruta, bool bBakAndRename, DwgVersion version, SecurityParameters sec) { }

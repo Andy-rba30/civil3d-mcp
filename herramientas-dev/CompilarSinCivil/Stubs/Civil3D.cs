@@ -41,7 +41,7 @@ namespace Autodesk.Civil.Settings
     // Configuración del dibujo → Unidades y zona (extension_superficie)
     public class SettingsUnitZone { public string CoordinateSystemCode { get; set; } public Autodesk.Civil.DrawingUnitType DrawingUnits { get; set; } }
     // 1.8.0 (crear_alineamiento_desde_polilinea): capa de objetos de las alineaciones y estilos por defecto
-    public enum SettingsObjectLayerType { Alignment, Surface, Corridor }
+    public enum SettingsObjectLayerType { Alignment, Surface, Corridor, Profile, ProfileView }
     public class SettingsObjectLayer { public ObjectId LayerId { get; set; } public string LayerName { get; set; } }
     public class SettingsObjectLayers { public SettingsObjectLayer GetObjectLayerSetting(SettingsObjectLayerType tipo) => new SettingsObjectLayer(); }
     public class SettingsDrawing
@@ -59,6 +59,29 @@ namespace Autodesk.Civil.Settings
             public Autodesk.Civil.PropertyString AlignmentLabelSet => new Autodesk.Civil.PropertyString();
         }
         public SettingsStyles StyleSettings => new SettingsStyles();
+    }
+    // 1.9.0 (crear_perfil_terreno_y_vista): estilos por defecto de perfiles y de vistas de perfil
+    public class SettingsProfile
+    {
+        public class SettingsStyles
+        {
+            public Autodesk.Civil.PropertyObjectId ProfileStyleId => new Autodesk.Civil.PropertyObjectId();
+            public Autodesk.Civil.PropertyString ProfileStyle => new Autodesk.Civil.PropertyString();
+            public Autodesk.Civil.PropertyObjectId ProfileLabelSetId => new Autodesk.Civil.PropertyObjectId();
+            public Autodesk.Civil.PropertyString ProfileLabelSet => new Autodesk.Civil.PropertyString();
+        }
+        public SettingsStyles StyleSettings => new SettingsStyles();
+    }
+    public class SettingsProfileView
+    {
+        public class SettingsStyles
+        {
+            public Autodesk.Civil.PropertyObjectId ProfileViewStyleId => new Autodesk.Civil.PropertyObjectId();
+            public Autodesk.Civil.PropertyString ProfileViewStyle => new Autodesk.Civil.PropertyString();
+            public Autodesk.Civil.PropertyObjectId ProfileViewBandStyleId => new Autodesk.Civil.PropertyObjectId();
+            public Autodesk.Civil.PropertyString ProfileViewBandStyle => new Autodesk.Civil.PropertyString();
+        }
+        public SettingsStyles Styles => new SettingsStyles();
     }
     public class SettingsRoot
     {
@@ -91,11 +114,40 @@ namespace Autodesk.Civil.DatabaseServices
         public ProfileEntityCollection Entities => new ProfileEntityCollection();
         public ObjectId AlignmentId => ObjectId.Null;
         public double ElevationAt(double pk) => 0;
+        // 1.9.0 (crear_perfil_terreno_y_vista)
+        public double ElevationMin => 0; public double ElevationMax => 0;
+        public static ObjectId CreateFromSurface(string nombre, ObjectId alineamiento, ObjectId superficie, ObjectId capa, ObjectId estilo, ObjectId etiquetas) => ObjectId.Null;
+    }
+    // ---- 1.9.0 (crear_perfil_terreno_y_vista): vista de perfil y sus bandas
+    public class ProfileViewBandItem { public ObjectId Profile1Id { get; set; } public ObjectId Profile2Id { get; set; } }
+    public class ProfileViewBandItemCollection : IEnumerable<ProfileViewBandItem>
+    {
+        public int Count => 0;
+        public ProfileViewBandItem this[int i] => new ProfileViewBandItem();
+        public IEnumerator<ProfileViewBandItem> GetEnumerator() => new List<ProfileViewBandItem>().GetEnumerator();
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+    public class ProfileViewBandSet
+    {
+        public ProfileViewBandItemCollection GetBottomBandItems() => new ProfileViewBandItemCollection();
+        public ProfileViewBandItemCollection GetTopBandItems() => new ProfileViewBandItemCollection();
+        public void SetBottomBandItems(ProfileViewBandItemCollection items) { }
+        public void SetTopBandItems(ProfileViewBandItemCollection items) { }
+    }
+    public class ProfileView : Entity
+    {
+        public static ObjectId Create(ObjectId alineamiento, Point3d insercion, string nombre, ObjectId conjuntoBandas, ObjectId estilo) => ObjectId.Null;
+        public Point3d Location { get; set; }
+        public double StationStart { get; set; } public double StationEnd { get; set; }
+        public double ElevationMin { get; set; } public double ElevationMax { get; set; }
+        public string AlignmentName => "";
+        public ProfileViewBandSet Bands => new ProfileViewBandSet();
     }
     public class Alignment : Entity
     {
         public double StartingStation => 0; public double EndingStation => 0; public double Length => 0;
         public ObjectIdCollection GetProfileIds() => new ObjectIdCollection();
+        public ObjectIdCollection GetProfileViewIds() => new ObjectIdCollection();   // 1.9.0
         public ObjectIdCollection GetSampleLineGroupIds() => new ObjectIdCollection();
         public void StationOffset(double x, double y, ref double pk, ref double desplazamiento) { }
         public void PointLocation(double pk, double desplazamiento, ref double x, ref double y) { }
@@ -323,11 +375,24 @@ namespace Autodesk.Civil.DatabaseServices.Styles
     // ---- 1.8.0 (crear_alineamiento_desde_polilinea): estilos y conjuntos de etiquetas de alineamiento
     public class AlignmentStyleCollection : SurfaceStyleCollection { }
     public class AlignmentLabelSetStyleCollection : SurfaceStyleCollection { }
-    public class LabelSetStylesRoot { public AlignmentLabelSetStyleCollection AlignmentLabelSetStyles => new AlignmentLabelSetStyleCollection(); }
+    // ---- 1.9.0 (crear_perfil_terreno_y_vista): estilos de perfil, de vista de perfil, conjuntos de bandas y de etiquetas de perfil
+    public class ProfileStyleCollection : SurfaceStyleCollection { }
+    public class ProfileViewStyleCollection : SurfaceStyleCollection { }
+    public class ProfileViewBandSetStyleCollection : SurfaceStyleCollection { }
+    public class ProfileLabelSetStyleCollection : SurfaceStyleCollection { }
+    public class ProfileViewBandSetStyle : StyleBase { }
+    public class LabelSetStylesRoot
+    {
+        public AlignmentLabelSetStyleCollection AlignmentLabelSetStyles => new AlignmentLabelSetStyleCollection();
+        public ProfileLabelSetStyleCollection ProfileLabelSetStyles => new ProfileLabelSetStyleCollection();
+    }
     public class StylesRoot
     {
         public SurfaceStyleCollection SurfaceStyles => new SurfaceStyleCollection();
         public AlignmentStyleCollection AlignmentStyles => new AlignmentStyleCollection();
         public LabelSetStylesRoot LabelSetStyles => new LabelSetStylesRoot();
+        public ProfileStyleCollection ProfileStyles => new ProfileStyleCollection();
+        public ProfileViewStyleCollection ProfileViewStyles => new ProfileViewStyleCollection();
+        public ProfileViewBandSetStyleCollection ProfileViewBandSetStyles => new ProfileViewBandSetStyleCollection();
     }
 }
