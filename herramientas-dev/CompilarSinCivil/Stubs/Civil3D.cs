@@ -21,6 +21,9 @@ namespace Autodesk.Civil.ApplicationServices
         // 1.7.0 (crear_superficie_tin): grupos de puntos y estilos del dibujo
         public PointGroupCollection PointGroups => new PointGroupCollection();
         public Autodesk.Civil.DatabaseServices.Styles.StylesRoot Styles => new Autodesk.Civil.DatabaseServices.Styles.StylesRoot();
+        // 1.8.0 (crear_alineamiento_desde_polilinea): sitios
+        public ObjectIdCollection GetSiteIds() => new ObjectIdCollection();
+        public ObjectIdCollection GetSitelessAlignmentIds() => new ObjectIdCollection();
     }
     public static class CivilApplication { public static CivilDocument ActiveDocument => new CivilDocument(); }
 }
@@ -28,14 +31,40 @@ namespace Autodesk.Civil.ApplicationServices
 namespace Autodesk.Civil
 {
     public enum DrawingUnitType { Feet, Meters }
+    // 1.8.0: valores de la configuración (PropertyObjectId.Value, PropertyString.Value)
+    public class PropertyObjectId { public ObjectId Value { get; set; } }
+    public class PropertyString { public string Value { get; set; } }
 }
 
 namespace Autodesk.Civil.Settings
 {
     // Configuración del dibujo → Unidades y zona (extension_superficie)
     public class SettingsUnitZone { public string CoordinateSystemCode { get; set; } public Autodesk.Civil.DrawingUnitType DrawingUnits { get; set; } }
-    public class SettingsDrawing { public SettingsUnitZone UnitZoneSettings => new SettingsUnitZone(); }
-    public class SettingsRoot { public SettingsDrawing DrawingSettings => new SettingsDrawing(); }
+    // 1.8.0 (crear_alineamiento_desde_polilinea): capa de objetos de las alineaciones y estilos por defecto
+    public enum SettingsObjectLayerType { Alignment, Surface, Corridor }
+    public class SettingsObjectLayer { public ObjectId LayerId { get; set; } public string LayerName { get; set; } }
+    public class SettingsObjectLayers { public SettingsObjectLayer GetObjectLayerSetting(SettingsObjectLayerType tipo) => new SettingsObjectLayer(); }
+    public class SettingsDrawing
+    {
+        public SettingsUnitZone UnitZoneSettings => new SettingsUnitZone();
+        public SettingsObjectLayers ObjectLayerSettings => new SettingsObjectLayers();
+    }
+    public class SettingsAlignment
+    {
+        public class SettingsStyles
+        {
+            public Autodesk.Civil.PropertyObjectId AlignmentStyleId => new Autodesk.Civil.PropertyObjectId();
+            public Autodesk.Civil.PropertyString AlignmentStyle => new Autodesk.Civil.PropertyString();
+            public Autodesk.Civil.PropertyObjectId AlignmentLabelSetId => new Autodesk.Civil.PropertyObjectId();
+            public Autodesk.Civil.PropertyString AlignmentLabelSet => new Autodesk.Civil.PropertyString();
+        }
+        public SettingsStyles StyleSettings => new SettingsStyles();
+    }
+    public class SettingsRoot
+    {
+        public SettingsDrawing DrawingSettings => new SettingsDrawing();
+        public T GetSettings<T>() where T : class, new() => new T();
+    }
 }
 
 namespace Autodesk.Civil.DatabaseServices
@@ -71,7 +100,27 @@ namespace Autodesk.Civil.DatabaseServices
         public void StationOffset(double x, double y, ref double pk, ref double desplazamiento) { }
         public void PointLocation(double pk, double desplazamiento, ref double x, ref double y) { }
         public void PointLocation(double pk, double desplazamiento, double tol, ref double x, ref double y, ref double rumbo) { }
+        // 1.8.0 (crear_alineamiento_desde_polilinea)
+        public static ObjectId Create(Autodesk.Civil.ApplicationServices.CivilDocument doc, PolylineOptions opciones, string nombre, ObjectId sitio, ObjectId capa, ObjectId estilo, ObjectId etiquetas) => ObjectId.Null;
+        public AlignmentEntityCollection Entities => new AlignmentEntityCollection();
+        public string SiteName => "";
     }
+    // ---- 1.8.0 (crear_alineamiento_desde_polilinea): polilínea de origen, entidades del eje y sitios
+    public struct PolylineOptions { public ObjectId PlineId { get; set; } public bool AddCurvesBetweenTangents { get; set; } public bool EraseExistingEntities { get; set; } }
+    public enum AlignmentEntityType { Line, Arc, Spiral }
+    public enum CurveParamType { Radius, Length }
+    public enum CurveType { Compound, Reverse }
+    public class AlignmentEntity { public int EntityId => 0; public AlignmentEntityType EntityType => AlignmentEntityType.Line; }
+    public class AlignmentCurve : AlignmentEntity { public double StartStation => 0; public double EndStation => 0; public double Length { get; set; } }
+    public class AlignmentLine : AlignmentCurve { }
+    public class AlignmentArc : AlignmentCurve { public double Radius { get; set; } public double Delta { get; set; } public double PIStation => 0; public bool Clockwise => false; }
+    public class AlignmentEntityCollection
+    {
+        public int Count => 0;
+        public AlignmentEntity GetEntityByOrder(int i) => new AlignmentEntity();
+        public AlignmentArc AddFreeCurve(int anterior, int siguiente, double valor, CurveParamType tipoParametro, bool mayorDe180, CurveType tipoCurva) => new AlignmentArc();
+    }
+    public class Site : Entity { }
 
     // ---- superficies
     public class GeneralSurfaceProperties
@@ -271,5 +320,14 @@ namespace Autodesk.Civil.DatabaseServices.Styles
         public IEnumerator<ObjectId> GetEnumerator() => new List<ObjectId>().GetEnumerator();
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
-    public class StylesRoot { public SurfaceStyleCollection SurfaceStyles => new SurfaceStyleCollection(); }
+    // ---- 1.8.0 (crear_alineamiento_desde_polilinea): estilos y conjuntos de etiquetas de alineamiento
+    public class AlignmentStyleCollection : SurfaceStyleCollection { }
+    public class AlignmentLabelSetStyleCollection : SurfaceStyleCollection { }
+    public class LabelSetStylesRoot { public AlignmentLabelSetStyleCollection AlignmentLabelSetStyles => new AlignmentLabelSetStyleCollection(); }
+    public class StylesRoot
+    {
+        public SurfaceStyleCollection SurfaceStyles => new SurfaceStyleCollection();
+        public AlignmentStyleCollection AlignmentStyles => new AlignmentStyleCollection();
+        public LabelSetStylesRoot LabelSetStyles => new LabelSetStylesRoot();
+    }
 }

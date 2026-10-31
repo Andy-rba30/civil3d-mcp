@@ -408,6 +408,7 @@ namespace ArbaMcp
             RegistrarSeguridad();
             RegistrarCorredores();
             RegistrarSuperficies();
+            RegistrarAlineamientos();   // 1.8.0: crear_alineamiento_desde_polilinea (Herramientas.Alineamientos.cs)
         }
 
         // ------------------------------------------------------------------ herramientas genéricas adicionales

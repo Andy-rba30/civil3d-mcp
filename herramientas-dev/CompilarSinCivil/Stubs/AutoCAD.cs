@@ -38,7 +38,7 @@ namespace Autodesk.AutoCAD.Geometry
         public void Add(Point3d p) { }
         public IEnumerator GetEnumerator() => new List<Point3d>().GetEnumerator();
     }
-    public struct Vector3d { }
+    public struct Vector3d { public double X => 0; public double Y => 0; public double Z => 1; }
 }
 
 namespace Autodesk.AutoCAD.DatabaseServices
@@ -104,6 +104,9 @@ namespace Autodesk.AutoCAD.DatabaseServices
         public Point2d GetPoint2dAt(int i) => new Point2d();
         public Point3d GetPoint3dAt(int i) => new Point3d();
         public double Length => 0;
+        // 1.8.0 (crear_alineamiento_desde_polilinea): arcos (bulge) y plano de la polilínea
+        public double GetBulgeAt(int i) => 0;
+        public Vector3d Normal { get; set; }
     }
     public class Polyline2d : Curve { }
     public class Polyline3d : Curve
