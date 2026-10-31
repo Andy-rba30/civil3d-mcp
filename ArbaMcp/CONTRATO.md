@@ -70,7 +70,11 @@ habla HTTP directamente puede enviar el valor ya estructurado. El puente debe le
 cada herramienta de forma dinámica, de modo que al añadir herramientas en C# no haya que tocar Python. El puente pasa
 `timeout_s` según la herramienta: 30 s en lectura, 120 s en escritura y 300 s en `reconstruir_corredor`,
 `reconstruir_superficie`, `exportar_landxml` y `exportar_imx`. Si un cliente llama a un nombre retirado, el puente
-responde con la sustituta (tabla `HERRAMIENTAS_RETIRADAS` de `main.py`; vacía en 1.3.0).
+responde con la sustituta (tabla `HERRAMIENTAS_RETIRADAS` de `main.py`; vacía en 1.3.0). Desde 1.5.0 el puente
+registra además **herramientas locales** propias (`HERRAMIENTAS_LOCALES` de `main.py`, hoy solo `buscar_api`) que no
+vienen de `GET /tools`, están disponibles aunque el plugin no responda y nunca se quitan al sincronizar; si el
+plugin publicara una herramienta con el mismo nombre, el puente la ignora y avisa en consola (ver *Herramientas del
+puente*).
 
 ## Seguridad de escritura (desde la versión 1.2.0)
 
@@ -199,6 +203,57 @@ informativos para que el agente le indique qué marcar. Ambas registran la llama
 
 Si en tu instalación el comando de IMX tiene otro nombre, pásalo en `comando`.
 
+## Herramientas del puente (desde 1.5.0)
+
+Viven en `PuenteMcp` (Python), no en el plugin: no pasan por `/execute`, no necesitan token ni Civil 3D abierto y
+no dejan rastro en `mcp_log.jsonl` ni en el historial del plugin (no tocan el dibujo). Sus argumentos van **directos**
+(no dentro de `args`) y devuelven **texto**, no JSON.
+
+| Herramienta | Parámetros | Devuelve | Fuente |
+|---|---|---|---|
+| `buscar_api` | consulta* (texto libre, en español o con nombres de la API), limite (1 a 100, por defecto 10) | Texto compacto: cabecera con cuántas recetas, entradas del glosario y filas del catálogo; "Consulta ampliada con el glosario: ..."; **RECETAS** (archivo, título y primeras líneas), **GLOSARIO** (término, por qué coincidió, paso, sinónimos, cada concepto con `[confirmado]` o `[por confirmar]` y la nota) y **CATÁLOGO** (clase o enum con su base; método con `→ tipo de retorno`, `[estático]`, `firma:` y `parámetros:`; propiedad con tipo y lectura/escritura; `descripción:` si la hay y `OBSOLETO: mensaje` si aplica). Sin resultados: una línea "Sin resultados ..." con sugerencias. Falta algo: un texto que empieza por `Error:` y dice qué falta y cómo ponerlo | `PuenteMcp/buscar_api.py`; lee `MEMORIA_FIRMA_DIR` |
+
+`*` = obligatorio. `limite` cuenta el total de resultados con prioridad recetas > glosario > catálogo; dentro del
+catálogo van primero los nombres exactos que trae la consulta (`ProfilePVI`, `ProfilePVI Station`), luego los
+conceptos del glosario y después lo que encuentra el índice de texto FTS5 (`busqueda`) con la consulta ampliada.
+
+**Variable `MEMORIA_FIRMA_DIR`**: carpeta del repositorio privado `memoria-firma`. Dentro se esperan
+`catalogo\catalogo_c3d2027.sqlite` (obligatorio; lo genera `herramientas-dev/ExtractorCatalogo`),
+`catalogo\glosario.yaml` (la fuente de verdad del glosario; si no existe se usa la tabla `glosario` del catálogo
+cuando tiene filas) y `recetas\*.md` (si la carpeta no existe, la búsqueda sigue sin recetas). Se pone como variable
+de usuario de Windows y se reinicia el puente:
+
+```powershell
+[Environment]::SetEnvironmentVariable('MEMORIA_FIRMA_DIR','C:\Proyectos\memoria-firma','User')
+```
+
+**Uso como comando** (en vez de `curl`: no hay ruta HTTP, es el mismo código que ejecuta la herramienta MCP), desde
+`PuenteMcp`:
+
+```powershell
+uv run --frozen python buscar_api.py "rasante con PVI" --limite 10
+python -m buscar_api "rasante con PVI"
+python -m buscar_api "TinSurface" --memoria C:\Proyectos\memoria-firma   # sin la variable de entorno
+```
+
+Imprime el mismo texto que recibe el agente; código de salida 0 si pudo buscar (aunque no encuentre nada) y 2 si
+falta la memoria. Respuesta esperada (recortada) para `"rasante con PVI"` con el catálogo real:
+
+```
+buscar_api "rasante con PVI" → 0 recetas, 2 entradas del glosario, 8 del catálogo (límite 10). Memoria: C:\Proyectos\memoria-firma
+Consulta ampliada con el glosario: Profile, CreateByLayout, ProfileType, FG, CreateStaticFGFromProfile, ProfilePVI, RawStation, Station, Elevation, PVIs
+
+GLOSARIO (2, de glosario.yaml):
+- rasante (coincide por "rasante", paso 5; sinónimos: perfil de diseño, subrasante, ...)
+    Autodesk.Civil.DatabaseServices.Profile.CreateByLayout [confirmado]
+    ...
+CATÁLOGO (8; primero los nombres exactos de la consulta, luego los conceptos del glosario y después el índice de texto):
+- método Autodesk.Civil.DatabaseServices.Profile.CreateByLayout → ObjectId [estático]
+    firma: CreateByLayout(System.String profileName, Autodesk.Civil.ApplicationServices.CivilDocument document, ...)
+    parámetros: profileName: String, document: CivilDocument, alignmentName: String, ...
+- clase Autodesk.Civil.DatabaseServices.ProfilePVI (base: CivilWrapper<AeccDbVAlignment>)
+```
+
 ## Miembros de la API en Civil 3D 2027 (.NET 10) y Reflexión
 
 En la versión 1.2.1, todos los miembros verificados contra `AeccDbMgd.dll` y `acdbmgd.dll` de Civil 3D 2027 se llaman
@@ -248,7 +303,7 @@ Sin token responde 401 (salvo `GET /ping`); con cabecera `Origin`, 403; `POST` s
 | Qué | Dónde | Cómo | Necesita Civil 3D |
 |---|---|---|---|
 | Núcleo del plugin (autorización, argumentos, verificación, copias, cola, lotes, reflexión) | `ArbaMcp.Pruebas` (xUnit) | `dotnet test ArbaMcp.Pruebas` | No |
-| Puente (registro dinámico, timeouts, 401, JSON, `ms_puente`, `/ping`, retiradas) | `PuenteMcp/tests` (pytest) | `cd PuenteMcp; uv run --frozen pytest -q` (o `.venv\Scripts\python -m pytest`) | No (servidor falso) |
+| Puente (registro dinámico, timeouts, 401, JSON, `ms_puente`, `/ping`, retiradas; desde 1.5.0 `buscar_api` con un catálogo y un glosario de ejemplo, nunca los reales) | `PuenteMcp/tests` (pytest) | `cd PuenteMcp; uv run --frozen pytest -q` (o `.venv\Scripts\python -m pytest`) | No (servidor falso) |
 | Compilación del plugin contra sustitutos de la API | `herramientas-dev/CompilarSinCivil` | `dotnet build herramientas-dev/CompilarSinCivil` | No (solo nombres y tipos) |
 | Humo en el programa real | `ArbaMcp/pruebas/probar_servidor.py` | sin argumentos (seguridad, `ejecutar_comando`, "Civil 3D ocupado"); `--dwg RUTA.dwg` (lectura, `simular`, copia nueva o reutilizada, `mcp_log.jsonl`, `deshacer_objetivos`; desde 1.3.2 la suite base sabe que `GET /ping` es público y que la copia puede reutilizarse; desde 1.3.3 la prueba 6 usa `deshacer_objetivos` y nunca una superficie de corredor); `--fase 13` (lo nuevo de 1.3.x: `/ping` sin token, 401 agrupados, `ms_espera`, `ms_puente`, lotes, `deshacer_objetivos` sobre el lote, `_.UNDO 1` sobre las frecuencias, `copia.reutilizada`, rechazo de la superficie del propio corredor); `--fase todo` | Sí |
 | Validación documentada | `herramientas-dev/VALIDACION_122.md`, `VALIDACION_13.md` | prompts para el agente local, con informe OK/FALLO | Sí |

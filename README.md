@@ -10,7 +10,7 @@ Dos piezas, con la misma estructura que el conector de Revit:
 | [`PuenteMcp`](PuenteMcp/) | Puente MCP en Python. Lee las herramientas del plugin y las expone al agente por `streamable-http`. Con `tests/` (pytest). | 8001 |
 | [`herramientas-dev`](herramientas-dev/) | Prompts de validación para el agente local, tabla de miembros de la API por verificar, `InspectC3D` y `CompilarSinCivil`. | — |
 
-Versión actual: **1.4.0** (plugin, bundle y puente): añade `extension_superficie` y el flujo de superficies a Revit por coordenadas compartidas (`PuenteMcp/INSTRUCCIONES_AGENTE.md`, sección 7; validación en `herramientas-dev/VALIDACION_14.md`).
+Versión actual: **1.5.0** (plugin, bundle y puente): añade `buscar_api`, una herramienta del **puente** (no del plugin) que busca en la memoria técnica privada `memoria-firma` (recetas, glosario español → API y catálogo de la API de Civil 3D 2027) y funciona con Civil 3D cerrado (validación en `herramientas-dev/VALIDACION_15.md`). La 1.4.0 añadió `extension_superficie` y el flujo de superficies a Revit por coordenadas compartidas (`PuenteMcp/INSTRUCCIONES_AGENTE.md`, sección 7).
 
 ## Instalar el plugin
 
@@ -34,6 +34,27 @@ python -m venv .venv
 O con `uv` (mismo `pyproject.toml` y `uv.lock` que usa la integración continua): `cd PuenteMcp; uv sync; uv run python main.py`.
 
 Escucha en `http://127.0.0.1:8001/mcp`. En la configuración MCP del agente, la entrada `civil3d` apunta a esa URL.
+
+### `buscar_api`: la memoria técnica desde el puente (desde 1.5.0)
+
+El puente tiene una herramienta propia, `buscar_api(consulta, limite=10)`, que no necesita Civil 3D: busca en el
+repositorio privado `memoria-firma` (primero `recetas/*.md`, luego `catalogo/glosario.yaml` y después el catálogo
+`catalogo/catalogo_c3d2027.sqlite`) y devuelve un texto corto con las recetas, los términos del glosario (con su
+estado `confirmado` o `por confirmar`) y las clases, métodos (con firma y parámetros) y propiedades de la API. La
+carpeta se indica con la variable de entorno de usuario `MEMORIA_FIRMA_DIR`, en PowerShell:
+
+```powershell
+[Environment]::SetEnvironmentVariable('MEMORIA_FIRMA_DIR','C:\Proyectos\memoria-firma','User')
+```
+
+Después hay que reiniciar el puente (lee la variable al arrancar). Si falta la variable o un archivo, la herramienta
+responde un texto que empieza por `Error:` y dice qué falta y cómo ponerlo. Necesita la dependencia `pyyaml`
+(`uv sync`, o `pip install pyyaml` en el `.venv`). También se usa como comando, sin MCP, desde `PuenteMcp`:
+
+```powershell
+uv run --frozen python buscar_api.py "rasante con PVI" --limite 10
+python -m buscar_api "rasante con PVI"
+```
 
 El puente lee el token de `%LOCALAPPDATA%\ArbaMcp\token`, que Civil 3D genera en cada arranque. Puede arrancar antes que Civil 3D: sondea `GET /ping` (sin token) y registra las herramientas en cuanto el plugin responde; si Civil 3D se reinicia, relee el token solo. Las respuestas al agente son JSON (`json.dumps`) con `ms` (Civil 3D), `ms_espera`, `ms_ejecucion` y `ms_puente`; el tiempo máximo depende de la herramienta (30 s lectura, 120 s escritura, 300 s reconstrucciones y exportaciones) y el archivo `PuenteMcp/INSTRUCCIONES_AGENTE.md` se entrega al agente como `instructions` del servidor MCP (precedencia API > comando, lotes, flujo obligatorio para corredores, reglas de dominio y glosario).
 

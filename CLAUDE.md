@@ -16,7 +16,7 @@ si una tarea choca con alguna, se avisa antes de hacer nada. Está escrito en es
   - `herramientas-dev/`: prompts de validación (`VALIDACION_*.md`), informes (`informes/`), la tabla de miembros de la
     API (`miembros_por_verificar_civil3d.md`), `InspectC3D` (inspección de metadatos de las DLL) y `CompilarSinCivil`
     (compila el plugin contra sustitutos para cazar errores de nombres sin Civil 3D).
-- **Versión actual**: 1.4.0, con 44 herramientas. El plugin no se compila en la integración continua porque referencia
+- **Versión actual**: 1.5.0, con 44 herramientas del plugin más `buscar_api` en el puente. El plugin no se compila en la integración continua porque referencia
   las DLL de una instalación local de Civil 3D 2027 (`C3DPath` del `.csproj`); lo que depende de ellas se valida en el
   programa real y se anota en `herramientas-dev/miembros_por_verificar_civil3d.md`.
 - **Objetivo del proyecto**: automatizar el **flujo vial completo** (superficie, alineamiento, perfil, corredor,
@@ -150,8 +150,11 @@ glosario, mensajes típicos). Las **recetas** (procedimientos paso a paso para u
 aprendizajes de una validación) viven en `memoria-firma/recetas/` y el agente las encuentra con la herramienta
 `buscar_api`; **nunca se copian** en `INSTRUCCIONES_AGENTE.md`. Si una tarea produce una receta, va a esa carpeta.
 
-Nota a 24/10/2026: ni la carpeta `memoria-firma/` ni la herramienta `buscar_api` existen todavía en este repositorio.
-Crearlas es una tarea propia (regla 8); hasta entonces, las recetas no se añaden a `INSTRUCCIONES_AGENTE.md`.
+Nota (actualizada el 31/10/2026): `memoria-firma` existe como **repositorio privado aparte** (catálogo de la API en
+`catalogo/catalogo_c3d2027.sqlite`, glosario en `catalogo/glosario.yaml` y recetas en `recetas/`); en la PC se
+encuentra por la variable de entorno `MEMORIA_FIRMA_DIR`. La herramienta `buscar_api` existe desde la **1.5.0** en el
+puente (`PuenteMcp/buscar_api.py`) y busca en esas tres fuentes. Las recetas siguen sin copiarse en
+`INSTRUCCIONES_AGENTE.md`.
 
 ## 11. Trabajo en GitHub
 
@@ -168,9 +171,10 @@ las DLL reales, instala el plugin y prueba las herramientas en Civil 3D usando s
   correr aquí, se dice; **no se da por bueno**.
 - **c) Nunca se afirma que algo funciona en Civil 3D.** Eso lo confirma el dueño con el informe del agente
   instalador.
-- **d) No se inventan miembros de la API de Civil 3D.** Se confirman en el catálogo de `memoria-firma` (cuando esté
-  en la sesión) y lo que no se pueda confirmar entra en `herramientas-dev/miembros_por_verificar_civil3d.md` como
-  `por verificar`.
+- **d) No se inventan miembros de la API de Civil 3D.** Antes de usar un miembro de la API, búscalo con el comando de
+  `buscar_api` (`cd PuenteMcp; uv run --frozen python buscar_api.py "consulta"`, con `MEMORIA_FIRMA_DIR` apuntando a
+  `memoria-firma`). Se confirman en el catálogo de `memoria-firma` (cuando esté en la sesión) y lo que no se pueda
+  confirmar entra en `herramientas-dev/miembros_por_verificar_civil3d.md` como `por verificar`.
 - **e) Cada PR lleva dos secciones**: **"Para el agente instalador"** (rama, qué compilar, qué instalar, qué
   variables de entorno poner, qué reiniciar) y **"Para Jose"** (qué abrir en Civil 3D, qué pedirle al agente que
   pruebe con el MCP, qué debería salir y qué archivo `VALIDACION_*.md` usar). La plantilla completa está en
