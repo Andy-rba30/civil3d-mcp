@@ -228,8 +228,10 @@ namespace ArbaMcp
                         ["vista_perfil"] = vistaLeida
                     };
 
-                    return Escritura.CrearObjeto(ctx, new Escritura.Creacion
+                    Escritura.Creacion creacion = null;
+                    creacion = new Escritura.Creacion
                     {
+                        // El texto definitivo (con las curvas que caben) se completa en Antes, cuando ya hay plan
                         Accion = "Crear la rasante '" + nombre + "' (perfil de diseño FG) del alineamiento '" + nombreAl + "' con " + pvisPedidos.Count + " PVI",
                         Antes = tr =>
                         {
@@ -240,6 +242,7 @@ namespace ArbaMcp
                             if (!BuscarPerfilONull(tr, al, nombre).IsNull)
                                 throw new ArgumentException("Ya existe el perfil '" + nombre + "' en el alineamiento '" + al.Name + "'. Usa listar_perfiles o pasa otro 'nombre'.");
                             plan = Rasante.Planificar(pvisPedidos, inicioEje, finEje);   // orden, rango, pendientes, curvas que caben
+                            creacion.Accion = Rasante.Accion(nombre, al.Name, plan, tipoCurva);
                             idEstilo = string.IsNullOrWhiteSpace(estilo) ? EstiloPerfilPorDefecto(tr, ctx.Avisos, out estiloUsado) : BuscarEstiloPerfilRasante(tr, estilo.Trim());
                             idEtiquetas = string.IsNullOrWhiteSpace(conjunto) ? ConjuntoEtiquetasPerfilPorDefecto(tr, ctx.Avisos, out conjuntoUsado) : BuscarConjuntoEtiquetasRasante(tr, conjunto.Trim());
                             if (estiloUsado == null) estiloUsado = NombreDeEstilo(tr, idEstilo);
@@ -373,7 +376,8 @@ namespace ArbaMcp
                             progresiva_inicial_eje = N(inicioEje),
                             progresiva_final_eje = N(finEje)
                         }
-                    });
+                    };
+                    return Escritura.CrearObjeto(ctx, creacion);
                 })
             });
         }
