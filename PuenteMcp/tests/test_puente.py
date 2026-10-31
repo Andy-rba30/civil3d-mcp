@@ -13,7 +13,8 @@ P_TIMEOUT = {"name": "timeout_s", "type": "number", "description": "Segundos"}
 
 
 def nombres(puente):
-    return sorted(t.name for t in puente.mcp._tool_manager.list_tools())
+    """Herramientas que vienen del plugin: sin las locales del puente (buscar_api desde 1.5.0, siempre presente)."""
+    return sorted(t.name for t in puente.mcp._tool_manager.list_tools() if t.name not in puente.HERRAMIENTAS_LOCALES)
 
 
 # ---------------------------------------------------------------------------------------------- registro dinámico
@@ -172,4 +173,4 @@ def test_construir_app_expone_mcp_y_sse(puente):
     rutas = sorted(getattr(r, "path", "") for r in app.routes)
     assert "/mcp" in rutas and "/sse" in rutas
     assert puente.PUERTO_PUENTE == 8001
-    assert puente.__version__ == "1.4.0"
+    assert puente.__version__ == "1.5.0"

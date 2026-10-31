@@ -18,7 +18,9 @@ import uvicorn
 from mcp.server.mcpserver import MCPServer
 from pydantic import create_model, Field
 
-__version__ = "1.4.0"
+import buscar_api as memoria_firma  # herramienta local del puente (1.5.0): busca en memoria-firma sin Civil 3D
+
+__version__ = "1.5.0"
 
 CARPETA = os.path.dirname(os.path.abspath(__file__))
 
@@ -216,6 +218,26 @@ def type_to_python(t: str):
     return str
 
 
+# ---------------------------------------------------------------------------------------------- herramientas locales
+# Herramientas que viven en el puente y no en el plugin: se registran al arrancar, están disponibles aunque Civil 3D
+# esté cerrado y la sincronización con GET /tools nunca las quita (no están en known_tools).
+HERRAMIENTAS_LOCALES = {"buscar_api"}
+
+
+async def buscar_api(consulta: str, limite: int = memoria_firma.LIMITE_POR_DEFECTO) -> str:
+    """Busca en la memoria técnica de la firma (memoria-firma) antes de escribir código contra la API de Civil 3D:
+    primero las recetas (recetas/*.md), luego el glosario español → API (catalogo/glosario.yaml, con el estado
+    'confirmado' o 'por confirmar' de cada concepto) y después el catálogo de la API de Civil 3D 2027 (clases,
+    métodos con firma y parámetros, propiedades, obsoletos). La consulta se amplía con el glosario antes de buscar.
+    Funciona con Civil 3D cerrado. Los argumentos van directos (consulta, limite), no dentro de 'args'. Necesita la
+    variable de entorno MEMORIA_FIRMA_DIR; si falta algo, devuelve un texto que empieza por 'Error:' y dice cómo
+    arreglarlo. Devuelve texto, no JSON."""
+    return await anyio.to_thread.run_sync(memoria_firma.buscar, consulta, limite)
+
+
+mcp.add_tool(buscar_api)
+
+
 # ---------------------------------------------------------------------------------------------- registro dinámico
 known_tools = set()
 
@@ -284,6 +306,9 @@ async def sincronizar_herramientas() -> dict:
             resultado["quitadas"].append(tname)
     for info in herramientas:
         if info["name"] in known_tools:
+            continue
+        if info["name"] in HERRAMIENTAS_LOCALES:
+            print(f"Aviso: el plugin publica '{info['name']}', que ya existe como herramienta local del puente; se ignora la del plugin")
             continue
         mcp.add_tool(_crear_handler(info["name"], info.get("parameters", []), info.get("description", "")))
         known_tools.add(info["name"])
