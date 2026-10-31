@@ -23,3 +23,9 @@ captura_*.png
 TestResults/
 herramientas-dev/CompilarSinCivil/bin/
 herramientas-dev/CompilarSinCivil/obj/
+
+# Catálogos SQLite generados por herramientas-dev/ExtractorCatalogo (van a memoria-firma, nunca aquí)
+herramientas-dev/**/*.sqlite
+herramientas-dev/**/*.sqlite-journal
+herramientas-dev/**/*.sqlite-wal
+herramientas-dev/**/*.sqlite-shm
