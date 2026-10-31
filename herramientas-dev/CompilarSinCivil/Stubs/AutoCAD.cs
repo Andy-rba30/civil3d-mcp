@@ -74,10 +74,19 @@ namespace Autodesk.AutoCAD.DatabaseServices
     {
         public ObjectId ObjectId => ObjectId.Null;
         public Handle Handle => new Handle(0);
+        public ObjectId OwnerId => ObjectId.Null;   // 1.10.0 (crear_rasante): diccionario que contiene un estilo
         public bool IsWriteEnabled => false;
         public void UpgradeOpen() { }
         public void DowngradeOpen() { }
         public void Dispose() { }
+    }
+    // 1.10.0 (crear_rasante): diccionario de AutoCAD; la clave de un estilo es su nombre (DBDictionary.NameAt)
+    public class DBDictionary : DBObject
+    {
+        public bool Contains(ObjectId id) => false;
+        public bool Contains(string nombre) => false;
+        public string NameAt(ObjectId id) => "";
+        public ObjectId GetAt(string nombre) => ObjectId.Null;
     }
     public class Entity : DBObject
     {
