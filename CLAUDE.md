@@ -16,7 +16,7 @@ si una tarea choca con alguna, se avisa antes de hacer nada. Está escrito en es
   - `herramientas-dev/`: prompts de validación (`VALIDACION_*.md`), informes (`informes/`), la tabla de miembros de la
     API (`miembros_por_verificar_civil3d.md`), `InspectC3D` (inspección de metadatos de las DLL) y `CompilarSinCivil`
     (compila el plugin contra sustitutos para cazar errores de nombres sin Civil 3D).
-- **Versión actual**: 1.11.0, con 50 herramientas del plugin (todas con el parámetro `pedido`; `aprobar_resultado` desde 1.6.0; `crear_superficie_tin` desde 1.7.0; `crear_alineamiento_desde_polilinea` desde 1.8.0; `crear_perfil_terreno_y_vista` desde 1.9.0; `crear_rasante` desde 1.10.0; `crear_corredor` desde 1.11.0) más `buscar_api` y el script `exportar_dataset` en el puente. El plugin no se compila en la integración continua porque referencia
+- **Versión actual**: 1.12.0, con 51 herramientas del plugin (todas con el parámetro `pedido`; `aprobar_resultado` desde 1.6.0; `crear_superficie_tin` desde 1.7.0; `crear_alineamiento_desde_polilinea` desde 1.8.0; `crear_perfil_terreno_y_vista` desde 1.9.0; `crear_rasante` desde 1.10.0; `crear_corredor` desde 1.11.0; `crear_superficies_corredor` desde 1.12.0) más `buscar_api` y el script `exportar_dataset` en el puente. El plugin no se compila en la integración continua porque referencia
   las DLL de una instalación local de Civil 3D 2027 (`C3DPath` del `.csproj`); lo que depende de ellas se valida en el
   programa real y se anota en `herramientas-dev/miembros_por_verificar_civil3d.md`.
 - **Objetivo del proyecto**: automatizar el **flujo vial completo** (superficie, alineamiento, perfil, corredor,
@@ -27,7 +27,7 @@ si una tarea choca con alguna, se avisa antes de hacer nada. Está escrito en es
   `ArbaMcp/ESTABILIDAD.md`, `PuenteMcp/INSTRUCCIONES_AGENTE.md`, `herramientas-dev/miembros_por_verificar_civil3d.md`
   y el `VALIDACION_*.md` más reciente.
 - **Dónde está cada cosa en el plugin**: `Herramientas.cs` (registro, ayudantes, herramientas generales),
-  `Herramientas.Corredores.cs` (corredores, regiones, objetivos, lotes), `Herramientas.Corredores.Crear.cs` (creación de corredores, 1.11.0), `Herramientas.Superficies.cs` (geometría,
+  `Herramientas.Corredores.cs` (corredores, regiones, objetivos, lotes), `Herramientas.Corredores.Crear.cs` (creación de corredores, 1.11.0), `Herramientas.Corredores.Superficies.cs` (superficies Top y Datum de un corredor, 1.12.0), `Herramientas.Superficies.cs` (geometría,
   superficies, exportación), `Herramientas.Alineamientos.cs` (creación de alineamientos desde polilínea, 1.8.0), `Herramientas.Perfiles.cs` (perfil de terreno y vista de perfil, 1.9.0), `Herramientas.Seguridad.cs` (`leer_log`, `guardar_*`), `Escritura.cs` (reglas de
   escritura y, desde 1.7.0, `CrearObjeto` para las herramientas que crean objetos), `Restauraciones.cs` (deshacer propio de objetivos), `HiloPrincipal.cs` (hilo principal y contextos),
   `Servidor.cs` (HTTP), `Cinta.cs` (botón y comando).

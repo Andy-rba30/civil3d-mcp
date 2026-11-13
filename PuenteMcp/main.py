@@ -20,7 +20,7 @@ from pydantic import create_model, Field
 
 import buscar_api as memoria_firma  # herramienta local del puente (1.5.0): busca en memoria-firma sin Civil 3D
 
-__version__ = "1.11.0"
+__version__ = "1.12.0"
 
 CARPETA = os.path.dirname(os.path.abspath(__file__))
 
@@ -64,7 +64,7 @@ def ruta_token() -> str:
 TIMEOUT_LECTURA = 30
 TIMEOUT_ESCRITURA = 120
 TIMEOUT_LARGO = 300
-HERRAMIENTAS_LARGAS = {"reconstruir_corredor", "crear_corredor", "reconstruir_superficie", "exportar_landxml", "exportar_imx"}
+HERRAMIENTAS_LARGAS = {"reconstruir_corredor", "crear_corredor", "crear_superficies_corredor", "reconstruir_superficie", "exportar_landxml", "exportar_imx"}
 HERRAMIENTAS_ESCRITURA_SIN_SIMULAR = {"ejecutar_comando", "abrir_dibujo"}
 
 
