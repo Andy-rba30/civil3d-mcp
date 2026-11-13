@@ -32,7 +32,9 @@ namespace ArbaMcp
         /// escritura que oculta la de su clase base Autodesk.Civil.DatabaseServices.DBObject (lectura/escritura), y
         /// Type.GetProperty("Name") no sabe cuál elegir. Aquí se lee con enlace en tiempo de compilación al getter de la
         /// clase base y, si tampoco, con la clave del diccionario de AutoCAD que contiene el estilo (DBDictionary.NameAt
-        /// sobre OwnerId). Las dos rutas están confirmadas en el catálogo; cuál funciona lo dice la validación.
+        /// sobre OwnerId). Las dos rutas están confirmadas en el catálogo; DBObject.Name dio todos los nombres en Civil 3D
+        /// 2027 (informe 1.10.0, paso 4). Desde 1.10.1 lo usan también crear_superficie_tin, crear_alineamiento_desde_polilinea
+        /// y crear_perfil_terreno_y_vista (NombreEstilo y BuscarEstiloSuperficie).
         /// </summary>
         private static string NombreDeEstilo(Transaction tr, ObjectId id)
         {
@@ -47,14 +49,14 @@ namespace ArbaMcp
                     if (!string.IsNullOrWhiteSpace(n)) return n;
                 }
             }
-            catch (Exception ex) { Historial.Registrar(HerramientaCrearRasante + ": DBObject.Name del estilo " + id.Handle + " falló (" + ex.GetType().Name + "); se prueba con el diccionario."); }
+            catch (Exception ex) { Historial.Registrar("Nombre de estilo: DBObject.Name de " + id.Handle + " falló (" + ex.GetType().Name + "); se prueba con el diccionario."); }
             try
             {
                 ObjectId dueno = o.OwnerId;
                 if (!dueno.IsNull && tr.GetObject(dueno, OpenMode.ForRead) is DBDictionary dic && dic.Contains(id))
                     return dic.NameAt(id);
             }
-            catch (Exception ex) { Historial.Registrar(HerramientaCrearRasante + ": DBDictionary.NameAt del estilo " + id.Handle + " falló (" + ex.GetType().Name + ")."); }
+            catch (Exception ex) { Historial.Registrar("Nombre de estilo: DBDictionary.NameAt de " + id.Handle + " falló (" + ex.GetType().Name + ")."); }
             return null;
         }
 

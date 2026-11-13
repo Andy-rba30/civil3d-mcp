@@ -232,7 +232,7 @@ namespace ArbaMcp
                     return new
                     {
                         plugin = "ArbaMcp",
-                        version = typeof(Herramientas).Assembly.GetName().Version?.ToString(),
+                        version = Servidor.Version,   // tres números ("1.10.1"), como GET /ping (hasta 1.10.0 daba "1.10.0.0")
                         puerto = Servidor.Puerto,
                         dibujo = nombre,
                         hay_dibujo = doc != null,

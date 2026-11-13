@@ -111,13 +111,13 @@ namespace ArbaMcp
             return vertices;
         }
 
-        /// <summary>Nombre de un estilo o conjunto de etiquetas (StyleBase.Name se lee por reflexión, como en crear_superficie_tin).</summary>
-        private static string NombreEstilo(Transaction tr, ObjectId id)
-        {
-            if (id.IsNull) return null;
-            try { return Api.Leer<string>(tr.GetObject(id, OpenMode.ForRead), null, "Name", "DisplayName"); }
-            catch { return null; }
-        }
+        /// <summary>
+        /// Nombre de un estilo o conjunto de etiquetas. Desde 1.10.1 usa el ayudante de crear_rasante (NombreDeEstilo:
+        /// Autodesk.Civil.DatabaseServices.DBObject.Name y, si no, la clave del diccionario), validado en Civil 3D 2027 el
+        /// 13/11/2026; la reflexión por "Name" de 1.8.0 devolvía null y los errores decían "ninguno legible". Lo usan
+        /// crear_alineamiento_desde_polilinea y crear_perfil_terreno_y_vista (Herramientas.Perfiles.cs).
+        /// </summary>
+        private static string NombreEstilo(Transaction tr, ObjectId id) => NombreDeEstilo(tr, id);
 
         /// <summary>Busca por nombre en una colección de estilos (Contains e indexador primero; si no, recorriendo); error con la lista si no está.</summary>
         private static ObjectId BuscarEnEstilos(Transaction tr, IEnumerable coleccion, Func<string, bool> contiene, Func<string, ObjectId> porNombre, string nombre, string tipo, string dondeSeVen)
