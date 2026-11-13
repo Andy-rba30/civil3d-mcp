@@ -45,6 +45,7 @@ Después de cada escritura comprueba `esta_desactualizado` (corredor) o `esta_de
 - Rasante (perfil de diseño FG) → `crear_rasante` (`simular=true` primero: devuelve `tramos` con las pendientes, `curvas` con A, K y si cada curva cabe, y `avisos`). La lista `pvis` va **ordenada por progresiva**, con al menos 2 PVI dentro del eje; el primero y el último no llevan curva; `longitud_curva` es la longitud por defecto de los PVI intermedios que no traigan la suya. Una curva que no cabe queda como quiebre y `avisos` dice la longitud máxima; una pendiente mayor del 12 % solo avisa (no hay norma cargada).
 - Corredor nuevo → `crear_corredor`, después de la rasante y con un **ensamblaje que ya exista** en el dibujo (`listar_ensamblajes`; el plugin no crea ensamblajes: si no hay, pide al usuario que lo cree en Civil 3D). `simular=true` primero; luego `estado_corredor`. Pasa `superficie_objetivo` (el terreno) cuando haya más de una superficie; la herramienta pone esa superficie en todos los objetivos de superficie (taludes) y reconstruye. Para deshacer los objetivos usa `deshacer_objetivos` con `restaurar.args.id`; las superficies Top y Datum se añaden después con `crear_superficies_corredor`.
 - Líneas de muestreo y vistas de sección → `crear_secciones`, **después del corredor y de sus superficies** si las secciones deben mostrarlos (las fuentes se eligen al crear el grupo). `simular=true` primero: devuelve las progresivas, las fuentes previstas y el punto de la primera vista. Por defecto muestrea todas las superficies, los corredores del eje y sus superficies; para otra selección pasa `fuentes`. Comprueba en la respuesta `fuentes_muestreadas`, `numero_vistas` y los `avisos` (líneas sin secciones, vistas solapadas); revisa después con `listar_lineas_muestreo` (`fuentes=true`).
+- Volúmenes de corte y relleno → `calcular_volumenes`, **después de `crear_superficies_corredor`** (compara el terreno con la superficie Datum) y, si se quiere la tabla por progresivas, **después de `crear_secciones`** (la tabla sale de las secciones del terreno y del Datum del grupo). `simular=true` primero: dice qué terreno, Datum, factores y grupo usará. El **esponjamiento** va al corte (`factor_esponjamiento`, CutFactor) y la **compactación** al relleno (`factor_compactacion`, FillFactor), los dos como multiplicadores (1,25 se pasa `1.25`; un coeficiente menor que 1 se pasa como su inverso); **neto = corte − relleno** (positivo: sobra material; negativo: falta). Si hay varias superficies de terreno o varios corredores, pasa `terreno` o `corredor`. Muestra al usuario `datos.texto`, `corte`, `relleno`, `neto` y los `avisos`.
 - `guardar_dibujo` guarda por API (QSAVE). Antes de una serie de cambios grandes, `guardar_copia` con un sufijo descriptivo.
 
 ## 4. Glosario español ↔ API de Civil 3D
@@ -69,6 +70,8 @@ Después de cada escritura comprueba `esta_desactualizado` (corredor) o `esta_de
 | Eje / alineamiento | `Alignment` |
 | Rasante | Perfil de diseño (FG, `Profile` tipo `FG`) |
 | Terreno natural | Perfil de superficie (EG) / superficie TIN |
+| Superficie de volumen, corte, relleno, neto | `TinVolumeSurface` (Cut, Fill, Net volume) |
+| Esponjamiento / compactación | Cut factor / Fill factor |
 
 ## 5. Mensajes típicos de Civil 3D y su causa
 

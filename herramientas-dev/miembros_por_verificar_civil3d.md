@@ -430,3 +430,47 @@ secciones se crean dentro de la misma transacción al marcar las fuentes antes d
 | propiedad | `SettingsSectionView.Styles.SectionViewStyleId` (`PropertyObjectId.Value`) vía `CivilDocument.Settings.GetSettings<SettingsSectionView>()` | 2027 | `crear_secciones` (nombre del estilo por defecto en la respuesta; sin `estilo_vista` no se toca el estilo de las vistas) | confirmado en el catálogo (consulta de la orquestadora, 13/11/2026); por verificar |
 | propiedad | `SampleLineGroup.SectionViewGroups` → `SectionViewGroupCollection` (`Count`, enumerador de `SectionViewGroup`); `SampleLineGroup.IndividualSectionViewGroup`; `SectionViewGroup.Name`, `GetSectionViewIds()` | 2027 | `crear_secciones` (`datos.grupos_vistas`: dónde quedan las vistas de `SectionView.Create`) | confirmado en el catálogo (consulta de la orquestadora, 13/11/2026); por verificar |
 | propiedad | `Alignment.GetSampleLineGroupIds()`, `CivilDocument.GetSurfaceIds()`, `CivilDocument.CorridorCollection`, `Baseline.AlignmentId`, `Corridor.CorridorSurfaces` → `CorridorSurface.SurfaceId` | 2027 | `crear_secciones` (nombre libre del grupo; fuentes previstas en la simulación: superficies del dibujo y corredores con línea base en el eje) | ejecutado en Civil 3D 2027 (`listar_lineas_muestreo`, `listar_superficies`, `listar_corredores`, `crear_corredor`) |
+
+## 1.14.0 (`calcular_volumenes`: superficie de volumen TIN terreno-Datum con factores y tabla por progresivas): escrita sin compilar
+
+Escrita el 13/11/2026 sin Civil 3D y **sin el catálogo en la sesión de desarrollo**: los miembros nuevos de esta sección
+los confirmó en el catálogo de Civil 3D 2027 la **sesión orquestadora** el 13/11/2026, a petición de esta tarea
+(«confirmado en el catálogo (consulta de la orquestadora, 13/11/2026); por verificar en Civil 3D»); los que ya usaba el
+plugin se reutilizan con el estado que tenían. Decide la validación `herramientas-dev/VALIDACION_114.md`. **Vía
+elegida**: totales con una superficie de volumen TIN (`TinVolumeSurface.Create`, `CutFactor`, `FillFactor`,
+`Rebuild`, `GetVolumeProperties`) y tabla por progresivas **calculada por el plugin** leyendo las secciones que ya tiene
+el grupo de líneas de muestreo (`Section.SectionPoints`) con el método de las áreas medias (`ArbaMcp.Nucleo.Volumenes`);
+solo lectura, sin `ejecutar_comando`. **Dudas que decide la validación**: que `SectionPoint.Location` dé X =
+desplazamiento e Y = cota (el catálogo no lo dice: el plugin lo comprueba con los desplazamientos y cotas de la sección y
+con la cota del terreno en el eje frente a `FindElevationAtXY`; si no cuadra, `tabla_progresivas.numeros` sale `false`),
+el signo de `UnadjustedNetVolume` (`datos.convencion_neto_civil3d`), que `AdjustedCutVolume`/`AdjustedFillVolume` sean
+sin ajustar × factor (si no, aviso) y si `_.UNDO 1` quita la superficie de volumen (la TIN de la 1.7.0 no se quitaba).
+
+| Tipo | Miembro | Versión | Herramienta que lo usa | Estado |
+|---|---|---|---|---|
+| método estático | `TinVolumeSurface.Create(string surfaceName, ObjectId baseSurfaceId, ObjectId comparisonSurfaceId)` y `Create(string, ObjectId, ObjectId, ObjectId styleId)` → `ObjectId` | 2027 | `calcular_volumenes` (`Escritura.CrearObjeto`; la de cuatro argumentos solo si se pasa `estilo`) | confirmado en el catálogo (consulta de la orquestadora, 13/11/2026); por verificar en Civil 3D |
+| propiedad | `TinVolumeSurface.CutFactor`, `TinVolumeSurface.FillFactor` (double, lectura y escritura) | 2027 | `calcular_volumenes` (`factor_esponjamiento` → `CutFactor`, `factor_compactacion` → `FillFactor`; releídos en `despues.factor_corte`/`factor_relleno`) | confirmado en el catálogo (consulta de la orquestadora, 13/11/2026); por verificar en Civil 3D |
+| método | `Surface.Rebuild()` sobre una `TinVolumeSurface` recién creada (heredado de `Surface`) | 2027 | `calcular_volumenes` (tras poner los factores, en la transacción de creación) | `Rebuild()` ejecutado en Civil 3D 2027 sobre TIN (1.7.0); sobre volumen, confirmado en el catálogo que se hereda (consulta de la orquestadora, 13/11/2026); por verificar en Civil 3D |
+| método | `TinVolumeSurface.GetVolumeProperties()` → `VolumeSurfaceProperties` (solo lectura): `UnadjustedCutVolume`, `UnadjustedFillVolume`, `UnadjustedNetVolume`, `AdjustedCutVolume`, `AdjustedFillVolume`, `AdjustedNetVolume`, `CutFactor`, `FillFactor`, `BaseSurface` y `ComparisonSurface` (`ObjectId`) | 2027 | `calcular_volumenes` (`datos.civil3d`, `sin_ajustar`, `corte`/`relleno`/`neto`, comprobación de base y comparación) | confirmado en el catálogo (consulta de la orquestadora, 13/11/2026); por verificar en Civil 3D. Anota en el informe `datos.convencion_neto_civil3d` (signo del neto) y si salió el aviso de ajustado distinto de sin ajustar × factor |
+| método | `TinVolumeSurface.GetTinProperties()` → `TinSurfaceProperties.NumberOfTriangles` | 2027 | `calcular_volumenes` (`datos.triangulos`; aviso si es 0) | confirmado en el catálogo (consulta de la orquestadora, 13/11/2026); en `TinSurface` ejecutado (1.7.0); sobre volumen, por verificar |
+| propiedad | `Surface.GetGeneralProperties()`, `Entity.StyleName`, `Surface.IsOutOfDate` sobre la superficie de volumen y las de base y comparación | 2027 | `calcular_volumenes` (`datos.extension`, `estilo`, avisos de superficies desactualizadas) | ejecutados en Civil 3D 2027 sobre TIN (1.7.0, 1.2.2); sobre volumen, por verificar |
+| propiedad | `Section.SectionPoints` → `SectionPointCollection` (`Count`, `Item[int]` → `SectionPoint`); `SectionPoint.Location` (`Point3d`) | 2027 | `calcular_volumenes` (puntos de las secciones del terreno y del Datum de cada línea) | confirmado en el catálogo (consulta de la orquestadora, 13/11/2026); por verificar en Civil 3D. **Supuesto por verificar**: X = desplazamiento, Y = cota (el catálogo no lo dice); `SectionPoint.SegmentTo` existe y no se usa |
+| propiedad | `Section.LeftOffset`, `Section.RightOffset`, `Section.MaximumElevation`, `Section.MinmumElevation` (sic, con la errata del catálogo) | 2027 | `calcular_volumenes` (comprobación del supuesto de ejes: cada punto dentro de los desplazamientos y cotas de su sección, ±0,01) | confirmado en el catálogo (consulta de la orquestadora, 13/11/2026); por verificar en Civil 3D (si `LeftOffset` viene con signo o sin él: el plugin compara con el valor absoluto) |
+| propiedad | `Section.SourceId`, `Section.SourceName` (lo que devuelve `SampleLine.GetSectionIds()`), `SampleLine.Station`, `SampleLine.Name`, `SampleLineGroup.GetSampleLineIds()`, `Alignment.GetSampleLineGroupIds()`, `Baseline.AlignmentId` | 2027 | `calcular_volumenes` (qué sección es del terreno y cuál del Datum; grupo del eje del corredor) | con los estados de la sección 1.13.0 (`crear_secciones`); `Station`, `GetSampleLineIds` y `GetSampleLineGroupIds` ejecutados (`listar_lineas_muestreo`) |
+| método | `Alignment.PointLocation(pk, 0, ref x, ref y)` + `Surface.FindElevationAtXY(x, y)` | 2027 | `calcular_volumenes` (cota del terreno en el eje para comprobar la sección del terreno de la primera línea) | ejecutados en Civil 3D 2027 (1.2.2, `pk_a_punto` y `cota_superficie`) |
+| propiedad | `Corridor.CorridorSurfaces` → `CorridorSurface.Name`, `SurfaceId`, `LinkCodes()`; `CivilDocument.GetSurfaceIds()`, `CivilDocument.CorridorCollection`, `Corridor.IsOutOfDate`, `Corridor.Baselines` | 2027 | `calcular_volumenes` (elección del Datum por nombre o por el código `Datum`, nombres ocupados, aviso de corredor desactualizado) | con los estados de las secciones 1.12.0 y 1.13.0 |
+| propiedad | `StylesRoot.SurfaceStyles` (`Contains`, indexador) + `DBObject.Name` | 2027 | `calcular_volumenes` (`estilo`; error con la lista) | ejecutado en Civil 3D 2027 (1.10.1, `crear_superficie_tin`); con `TinVolumeSurface.Create` de cuatro argumentos, por verificar |
+| — | `Section.Station`, `Section.CorridorSurfaceId`, `LeftSwathWidth`, `RightSwathWidth`, `UpdateMode`, `SourceType`, `SampleLineId` | 2027 | — | **no se usan** (confirmados en el catálogo, consulta de la orquestadora, 13/11/2026). `CorridorSurfaceId` no se usa para reconocer la sección del Datum para no confundirla con la de un corredor; basta `SourceId`/`SourceName`. **No existe** `Section.GetElevationAt` |
+
+**Vía alternativa, no usada (propuesta para una 1.14.x): listas de materiales de la API.** Según el catálogo (consulta de
+la orquestadora, 13/11/2026) la API está completa: `SampleLineGroup.MaterialLists` → `QTOMaterialListCollection.Add(string)`
+→ `QTOMaterialList.Add(string)` → `QTOMaterial` (`QuantityType` de tipo `MaterialQuantityType`; `Add(ObjectId surfaceId)` →
+`QTOMaterialItem` con `Condition` de tipo `MaterialConditionType`; `SetFactor`/`GetFactor(MaterialFactorType)`); los
+criterios con `QTOCriteriaNameMapping` e `ImportCriteria`; y los resultados con
+`SampleLineGroup.GetTotalVolumeResultDataForMaterialList(Guid)` → `QuantityTakeoffResult.GetResultsAlongSampleLines()` /
+`GetResult(...)` → `QTOSectionalResult` y `QTOVolumeResult` (`Incremental`/`Cumulative` `Cut`/`Fill`/`UsableVolume`), más
+`GetQTOMappingNames()`, `GetMappingGuid(string)` y `GetMaterialGuid(Guid, string)`. **Los valores de los enumerados
+(`MaterialQuantityType`, `MaterialConditionType`, `MaterialFactorType`) no están en el catálogo.** La 1.14.0 no la usa
+porque crea objetos nuevos en el grupo (lista de materiales) con enumerados sin confirmar; la tabla por áreas medias del
+plugin es solo lectura y se prueba aquí. Si la validación 1.14.0 da la tabla con números, servirá de referencia para
+comparar con la de materiales cuando se haga.

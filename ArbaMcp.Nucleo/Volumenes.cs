@@ -61,7 +61,7 @@ namespace ArbaMcp.Nucleo
         /// <summary>"sobra", "falta" o "compensado" (según el neto ajustado).</summary>
         public string Balance;
         public string Texto;
-        /// <summary>Signo del neto de Civil 3D: "corte_menos_relleno", "relleno_menos_corte", "valor_absoluto", "indeterminada" u "otra"; null si no se leyó.</summary>
+        /// <summary>Signo del neto de Civil 3D: "corte_menos_relleno", "relleno_menos_corte", "indeterminada" u "otra"; null si no se leyó.</summary>
         public string ConvencionNetoCivil3d;
         public List<string> Avisos = new List<string>();
     }
@@ -361,7 +361,7 @@ namespace ArbaMcp.Nucleo
 
         /// <summary>
         /// Signo del neto que da Civil 3D comparado con corte y relleno: "corte_menos_relleno", "relleno_menos_corte",
-        /// "valor_absoluto" (|corte − relleno|, sin signo), "indeterminada" (corte y relleno iguales: no se distingue) u "otra".
+        /// "indeterminada" (corte y relleno iguales: no se distingue) u "otra" (no es ninguna de las dos diferencias).
         /// </summary>
         public static string ConvencionNeto(double corte, double relleno, double neto)
         {
