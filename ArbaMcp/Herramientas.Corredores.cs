@@ -482,7 +482,11 @@ namespace ArbaMcp
                 codigos_punto = Codigos(cs, "punto"),
                 codigos_lineas_caracteristicas = Codigos(cs, "linea_caracteristica"),
                 contornos = Contornos(cs),
-                esta_desactualizada = desact
+                esta_desactualizada = desact,
+                // Desde 1.12.0 (solo se añaden; se leen por reflexión y valen null si no se pueden leer)
+                codigos_enlace_rotura = CodigosRotura(cs),
+                correccion_voladizo = Voladizo(cs),
+                construir = Construir(cs)
             };
         }
 
