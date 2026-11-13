@@ -7,7 +7,7 @@ prompt.
 
 ---
 
-## 0. Avance (actualizado el 13/11/2026)
+## 0. Avance (actualizado el 13/11/2026, tras la 1.11.0)
 
 Leyenda: ✅ hecho y verificado · 🟡 hecho, falta comprobar algo · ⬜ pendiente · ❓ no se puede comprobar desde
 civil3d-mcp (vive en `memoria-firma` o en la PC).
@@ -26,8 +26,9 @@ civil3d-mcp (vive en `memoria-firma` o en la PC).
 | Etapa 2 | 2.2 `crear_alineamiento_desde_polilinea` | ✅ | 1.8.0, informe del 31/10/2026 |
 | Etapa 2 | 2.3 `crear_perfil_terreno_y_vista` | ✅ | 1.9.0, informe del 31/10/2026 |
 | Etapa 2 | 2.4 `crear_rasante` | ✅ | 1.10.0, informe del 13/11/2026 (PR #19) |
-| Etapa 2 | 5.2-D y 5.2-PC tras cada herramienta | 🟡 | Evaluación del 31/10/2026 con la 1.9.0: tareas 1 a 3 OK, 4 a 10 FALLO. **Falta la evaluación con la 1.10.0** (debería pasar la tarea 4, la rasante) |
-| Etapa 2 | **2.5 `crear_corredor` (con sus superficies)** | ⬜ **siguiente** | — |
+| Etapa 2 | 5.2-D y 5.2-PC tras cada herramienta | 🟡 | Evaluación del 31/10/2026 con la 1.9.0: tareas 1 a 3 OK, 4 a 10 FALLO. **Falta la evaluación con la 1.11.0** (deberían pasar la 4, la rasante, y la 5, el corredor) |
+| Etapa 2 | 2.5 `crear_corredor`, parte A (corredor, región, frecuencia, objetivos) | ✅ | 1.11.0, informe del 13/11/2026 (PR #23) |
+| Etapa 2 | **2.5 parte B: superficies de corredor «Top» y «Datum»** | ⬜ **siguiente** | — |
 | Etapa 2 | 2.6 `crear_secciones` | ⬜ | — |
 | Etapa 2 | 2.7 `calcular_volumenes` | ⬜ | — |
 | Etapa 2 | 2.8 Receta "flujo vial completo" | ⬜ | Hito de la Etapa 2: la tarea 10 (flujo completo) da OK |
@@ -35,17 +36,18 @@ civil3d-mcp (vive en `memoria-firma` o en la PC).
 | Etapa 4 | 4.1 Tablas DG-2018 · 4.2 `verificar_norma` · 4.3 Norma en el alineamiento | ⬜ | — |
 | Continuo | F · L.2 · 5.2 | ❓ | Viven en `memoria-firma` y en la PC |
 
-**Pendientes que no están en la hoja de ruta** (salieron de las validaciones; ver los hechos validados de `CLAUDE.md`
-y el informe 1.10.0). Conviene una corrección 1.10.1 antes de la 2.5:
+**Pendientes que no están en la hoja de ruta** (salieron de las validaciones; ver los hechos validados de `CLAUDE.md`).
+Resueltos en la 1.10.1 (validada el 13/11/2026, PR #22): `ejecutar_comando` conserva los espacios finales, un error
+de escritura ya no deja una entrada vacía en Deshacer, `ping` da tres cifras y los errores de estilo listan los nombres.
+Siguen abiertos:
 
-- `ejecutar_comando` recorta los espacios finales, así que un comando como `_.PLINE` no se puede cerrar (informes
-  1.8.0 y 1.10.0).
-- Un error de una herramienta de escritura (por ejemplo, el nombre repetido en `crear_rasante`) deja una entrada
-  `EXECUTEFUNCTION` vacía en Deshacer (informe 1.10.0, paso 8).
-- `ping` devuelve `1.10.0.0` en lugar de `1.10.0` (informe 1.10.0, paso 0).
 - Ctrl+Z no quita la superficie TIN (informe 1.7.0, paso 10); en cambio, sí quita las rasantes (informe 1.10.0).
 - El punto de inserción automático de la vista de perfil usa la extensión de todo el dibujo (informe 1.9.0, paso 2).
-- La tabla de miembros y los hechos validados de `CLAUDE.md` aún no recogen la validación 1.10.0 (solo documentación).
+- La tabla de miembros y los hechos validados de `CLAUDE.md` aún no recogen las validaciones 1.10.1 y 1.11.0 (solo
+  documentación).
+- El corredor se crea en la capa `0` (informe 1.11.0, pregunta 5): valorar usar la capa de la configuración de Civil 3D.
+- `buscar_api.py` en modo comando puede fallar en una consola Windows cp1252, como le pasaba a `exportar_dataset`
+  (propuesta del PR #23).
 
 ---
 
