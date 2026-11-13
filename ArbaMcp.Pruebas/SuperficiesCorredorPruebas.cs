@@ -212,5 +212,22 @@ namespace ArbaMcp.Pruebas
             Assert.Single(b);
             Assert.StartsWith("No se pudo leer el tipo del contorno 'Extensión del corredor'", b[0]);
         }
-    }
+    
+        // ---------------------------------------------------------------- contornos de estado_corredor (1.14.1)
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        [InlineData(null)]
+        public void ContornoTraeElCampoNuevoYConservaElObsoleto(bool? esExtension)
+        {
+            var c = SuperficiesCorredor.Contorno("Extensión del corredor", "OutsideBoundary", esExtension);
+            Assert.Equal("Extensión del corredor", c["nombre"]);
+            Assert.Equal("OutsideBoundary", c["tipo"]);
+            Assert.True(c.ContainsKey("es_extension_corredor"));
+            Assert.True(c.ContainsKey("usar_como_exterior"));        // obsoleto, pero un agente puede depender de él
+            Assert.Equal(esExtension, c["es_extension_corredor"]);
+            Assert.Equal(c["es_extension_corredor"], c["usar_como_exterior"]);
+            Assert.Equal(4, c.Count);
+        }
+}
 }
