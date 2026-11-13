@@ -14,9 +14,10 @@ Copia este texto tal cual en el agente que tiene conectado el MCP de Civil 3D. R
   - `Rasante 1` (perfil FG de `Eje 1`), `Ensamblaje 1` y `Corredor 1` (de 0 a 831.3274 cada 10 m, taludes a `Terreno`).
   - Las superficies de corredor **`Corredor 1 - Top`** y **`Corredor 1 - Datum`** (las creó la 1.12.0).
   Si falta algo de esto, **para** y anótalo: esta validación no lo crea.
-- El plugin **1.13.0** se instala en el paso 0 desde la rama `tarea/2.6-secciones` (que trae también la 1.12.0); el
+- El plugin **1.13.0** se instala en el paso 0 desde la rama `tarea/2.6-secciones` (que trae fusionada la 1.12.0, así
+  que es la misma instalación en la que se pasó `VALIDACION_112.md`); el
   bundle queda con `ArbaMcp.dll` y `ArbaMcp.Nucleo.dll`. Puente reiniciado con el `main.py` de 1.13.0 (`uv sync`
-  antes) y el cliente MCP reiniciado para que cargue la lista nueva de herramientas del plugin (más `buscar_api` del
+  antes) y el cliente MCP reiniciado para que cargue la lista de **52** herramientas del plugin (más `buscar_api` del
   puente). El puente le da a `crear_secciones` hasta **300 s** (si llamas por `curl`, pasa `"timeout_s":300`).
 - Reparto de papeles: el agente local **instala y verifica**; el código, la tabla de miembros y este prompt los mantiene
   la sesión de desarrollo a partir del informe. El agente no edita ningún archivo del repositorio salvo su informe en
@@ -70,8 +71,8 @@ Reglas:
 0. **Instalar.** Con Civil 3D cerrado, en PowerShell desde la raíz del repo en la rama `tarea/2.6-secciones`:
    `powershell -ExecutionPolicy Bypass -File .\ArbaMcp\instalar.ps1`. En `PuenteMcp`, `uv sync`. Reinicia el puente y el
    cliente MCP. Abre Civil 3D con la copia del DWG. `ping` con `args={"pedido":"comprueba que el plugin responde"}` →
-   `version` debe ser exactamente `1.13.0`. Pide la lista de herramientas: anota cuántas son del plugin (las 50 de la
-   1.11.0, las que añadió la 1.12.0 y `crear_secciones`) y comprueba que `crear_secciones` tiene los parámetros
+   `version` debe ser exactamente `1.13.0`. Pide la lista de herramientas: deben ser **52** del plugin (las 50 de la
+   1.11.0, `crear_superficies_corredor` de la 1.12.0 y `crear_secciones`) y `crear_secciones` debe tener los parámetros
    `alineamiento`, `intervalo`, `ancho_izquierdo`, `ancho_derecho`, `nombre`, `inicio`, `fin`, `fuentes`,
    `crear_vistas`, `filas_por_columna`, `estilo_vista`, `punto_insercion`, `simular` y `pedido`. Si no, para aquí.
 

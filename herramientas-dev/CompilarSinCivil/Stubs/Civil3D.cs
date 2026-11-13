@@ -374,6 +374,8 @@ namespace Autodesk.Civil.DatabaseServices
         public string[] BoundaryNames() => new string[0];
         public IEnumerator GetEnumerator() => new List<CorridorSurfaceBoundary>().GetEnumerator();
     }
+    // 1.12.0 (crear_superficies_corredor): el catálogo confirma el tipo pero no sus valores; el plugin los busca por nombre (Enum.GetNames)
+    public enum OverhangCorrectionType { None, TopLinks, BottomLinks }
     public class CorridorSurface
     {
         public string Name => ""; public ObjectId SurfaceId => ObjectId.Null;
@@ -381,6 +383,10 @@ namespace Autodesk.Civil.DatabaseServices
         public void AddLinkCode(string codigo, bool comoLineaRotura) { }
         public void AddFeatureLineCode(string codigo) { }
         public CorridorSurfaceBoundaryCollection Boundaries => new CorridorSurfaceBoundaryCollection();
+        // 1.12.0 (crear_superficies_corredor y estado_corredor): IsBuild e IsLinkCodeAsBreakLine se leen por reflexión
+        public OverhangCorrectionType OverhangCorrection { get; set; }
+        public bool IsBuild { get; set; }
+        public bool IsLinkCodeAsBreakLine(string codigo) => false;
     }
     public class CorridorSurfaceCollection : IEnumerable { public int Count => 0; public CorridorSurface Add(string nombre) => new CorridorSurface(); public IEnumerator GetEnumerator() => new List<CorridorSurface>().GetEnumerator(); }
     public class Corridor : Entity
@@ -389,6 +395,7 @@ namespace Autodesk.Civil.DatabaseServices
         public BaselineCollection Baselines => new BaselineCollection();
         public CorridorSurfaceCollection CorridorSurfaces => new CorridorSurfaceCollection();
         public void Rebuild() { }
+        public string[] GetLinkCodes() => new string[0];   // 1.12.0 (crear_superficies_corredor)
     }
 
     // ---- ensamblajes

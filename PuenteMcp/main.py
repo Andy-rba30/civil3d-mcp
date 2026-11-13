@@ -64,7 +64,7 @@ def ruta_token() -> str:
 TIMEOUT_LECTURA = 30
 TIMEOUT_ESCRITURA = 120
 TIMEOUT_LARGO = 300
-HERRAMIENTAS_LARGAS = {"reconstruir_corredor", "crear_corredor", "crear_secciones", "reconstruir_superficie", "exportar_landxml", "exportar_imx"}
+HERRAMIENTAS_LARGAS = {"reconstruir_corredor", "crear_corredor", "crear_superficies_corredor", "crear_secciones", "reconstruir_superficie", "exportar_landxml", "exportar_imx"}
 HERRAMIENTAS_ESCRITURA_SIN_SIMULAR = {"ejecutar_comando", "abrir_dibujo"}
 
 

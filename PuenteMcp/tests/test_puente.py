@@ -81,6 +81,7 @@ def test_sin_conexion_y_401_al_sincronizar(servidor, puente, monkeypatch):
     ("abrir_dibujo", [], {}, 120),
     ("reconstruir_corredor", [P_CORREDOR, P_SIMULAR], {}, 300),
     ("crear_corredor", [P_SIMULAR], {}, 300),   # 1.11.0: crea y reconstruye el corredor
+    ("crear_superficies_corredor", [P_CORREDOR, P_SIMULAR], {}, 300),   # 1.12.0: crea las superficies Top y Datum y reconstruye el corredor
     ("crear_secciones", [P_SIMULAR], {}, 300),   # 1.13.0: muestrea el terreno y el corredor y crea una vista por línea
     ("exportar_landxml", [P_TIMEOUT, P_SIMULAR], {}, 300),
     ("ejecutar_comando", [P_TIMEOUT], {"timeout_s": 200}, 210),
