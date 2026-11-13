@@ -220,7 +220,10 @@ def test_sin_lista_de_prohibidos_avisa(registros, monkeypatch, capsys):
 def test_se_puede_ejecutar_como_modulo(registros, tmp_path):
     import subprocess
     salida = tmp_path / "m.jsonl"
+    # El hijo escribe en UTF-8 aunque la consola sea cp1252 (Windows): si no, una ruta con tilde o la flecha "→" de la
+    # salida no se leen con encoding="utf-8" (informe del agente instalador sobre 4c8b6f0). Igual que test_buscar_api.
+    env = dict(os.environ, PYTHONIOENCODING="utf-8")
     r = subprocess.run([sys.executable, "-m", "exportar_dataset", "--logs", registros["log1"], "--salida", str(salida)],
-                       cwd=os.path.dirname(ed.__file__), capture_output=True, text=True, encoding="utf-8")
+                       cwd=os.path.dirname(ed.__file__), env=env, capture_output=True, text=True, encoding="utf-8")
     assert r.returncode == 0, r.stdout + r.stderr
     assert "6 pares" in r.stdout and salida.is_file()
