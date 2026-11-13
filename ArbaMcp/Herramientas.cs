@@ -447,6 +447,7 @@ namespace ArbaMcp
             RegistrarCrearCorredor();   // 1.11.0: crear_corredor (Herramientas.Corredores.Crear.cs)
             RegistrarSuperficiesCorredor();   // 1.12.0: crear_superficies_corredor (Herramientas.Corredores.Superficies.cs)
             RegistrarSecciones();       // 1.13.0: crear_secciones (Herramientas.Secciones.cs)
+            RegistrarVolumenes();       // 1.14.0: calcular_volumenes (Herramientas.Volumenes.cs)
         }
 
         // ------------------------------------------------------------------ herramientas genéricas adicionales

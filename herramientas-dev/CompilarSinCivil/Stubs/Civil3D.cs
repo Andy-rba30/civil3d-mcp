@@ -314,7 +314,23 @@ namespace Autodesk.Civil.DatabaseServices
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
     public class GridSurface : Surface { public SurfaceDefinitionBoundaries BoundariesDefinition => new SurfaceDefinitionBoundaries(); }
-    public class TinVolumeSurface : Surface { }
+    // ---- 1.14.0 (calcular_volumenes): superficie de volumen TIN (confirmado en el catálogo, consulta de la orquestadora, 13/11/2026)
+    public class TinVolumeSurface : Surface
+    {
+        public static ObjectId Create(string surfaceName, ObjectId baseSurfaceId, ObjectId comparisonSurfaceId) => ObjectId.Null;
+        public static ObjectId Create(string surfaceName, ObjectId baseSurfaceId, ObjectId comparisonSurfaceId, ObjectId styleId) => ObjectId.Null;
+        public double CutFactor { get; set; }
+        public double FillFactor { get; set; }
+        public VolumeSurfaceProperties GetVolumeProperties() => new VolumeSurfaceProperties();
+        public TinSurfaceProperties GetTinProperties() => new TinSurfaceProperties();
+    }
+    public class VolumeSurfaceProperties
+    {
+        public double UnadjustedCutVolume => 0; public double UnadjustedFillVolume => 0; public double UnadjustedNetVolume => 0;
+        public double AdjustedCutVolume => 0; public double AdjustedFillVolume => 0; public double AdjustedNetVolume => 0;
+        public double CutFactor => 0; public double FillFactor => 0;
+        public ObjectId BaseSurface => ObjectId.Null; public ObjectId ComparisonSurface => ObjectId.Null;
+    }
     public class GridVolumeSurface : Surface { }
 
     // ---- corredores
@@ -445,7 +461,17 @@ namespace Autodesk.Civil.DatabaseServices
         public ObjectIdCollection GetSectionIds() => new ObjectIdCollection();
         public ObjectIdCollection GetSectionViewIds() => new ObjectIdCollection();
     }
-    public class Section : Entity { public ObjectId SourceId => ObjectId.Null; public string SourceName => ""; public ObjectId SampleLineId => ObjectId.Null; }
+    public class Section : Entity
+    {
+        public ObjectId SourceId => ObjectId.Null; public string SourceName => ""; public ObjectId SampleLineId => ObjectId.Null;
+        // 1.14.0 (calcular_volumenes, tabla por progresivas): confirmado en el catálogo (consulta de la orquestadora, 13/11/2026)
+        public SectionPointCollection SectionPoints => new SectionPointCollection();
+        public double LeftOffset => 0; public double RightOffset => 0;
+        public double MaximumElevation => 0; public double MinmumElevation => 0;   // sic: "Minmum", con la errata del catálogo
+        public double Station => 0;
+    }
+    public class SectionPoint { public Point3d Location => new Point3d(0, 0, 0); public int SegmentTo => 0; }
+    public class SectionPointCollection { public int Count => 0; public SectionPoint this[int i] => new SectionPoint(); }
     public class Graph : Entity { public Point3d Location { get; set; } }
     public class SectionView : Graph
     {
