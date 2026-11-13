@@ -16,17 +16,17 @@ civil3d-mcp (vive en `memoria-firma` o en la PC).
 |---|---|---|---|
 | Puesta al día | L.0 | ✅ | El PDF dice "ya lo hiciste" |
 | Puesta al día | 0.5 Reglas de GitHub | ✅ | `CLAUDE.md` sección 11, `herramientas-dev/PLANTILLA_PR.md`, `.github/workflows/pruebas.yml` |
-| Puesta al día | 0.6 memoria-firma lista | ❓ | `CLAUDE.md` (nota del 31/10/2026) dice que `memoria-firma` existe como repositorio privado |
+| Puesta al día | 0.6 memoria-firma lista | ✅ | `memoria-firma` tiene `CLAUDE.md`, `sincronizar_memoria.ps1`, `catalogo/`, `recetas/`, `normas/`, `casos/`, `evaluacion/` y `dataset/` |
 | Etapa 1 | 1.1 Extractor del catálogo | ✅ | `herramientas-dev/ExtractorCatalogo/` |
 | Etapa 1 | 1.2 Glosario | ✅ | `buscar_api` busca en `catalogo/glosario.yaml` (`CLAUDE.md`, regla 10) |
 | Etapa 1 | 1.3 `buscar_api` | ✅ | Puente 1.5.0, `PuenteMcp/buscar_api.py`, informe 1.5.0 del 31/10/2026 |
-| Registro | 5.1 Registro como dataset | 🟡 | `pedido` y `aprobar_resultado` (1.6.0) y `PuenteMcp/exportar_dataset.py`. El hito (la primera tarea aprobada en `pares.jsonl`) está en `memoria-firma` ❓ |
-| Línea base | 5.2 Evaluador | 🟡 | `herramientas-dev/Evaluador/`. El hito (el primer informe con las 10 tareas) está en `memoria-firma/evaluacion/informes/` ❓ |
+| Registro | 5.1 Registro como dataset | ✅ | `pedido` y `aprobar_resultado` (1.6.0) y `PuenteMcp/exportar_dataset.py`; `memoria-firma/dataset/pares.jsonl` tiene 1 par aprobado |
+| Línea base | 5.2 Evaluador | ✅ | `herramientas-dev/Evaluador/`; línea base del 31/10/2026 con la 1.6.0: 10 de 10 en FALLO |
 | Etapa 2 | 2.1 `crear_superficie_tin` | ✅ | 1.7.0, informe del 31/10/2026 |
 | Etapa 2 | 2.2 `crear_alineamiento_desde_polilinea` | ✅ | 1.8.0, informe del 31/10/2026 |
 | Etapa 2 | 2.3 `crear_perfil_terreno_y_vista` | ✅ | 1.9.0, informe del 31/10/2026 |
 | Etapa 2 | 2.4 `crear_rasante` | ✅ | 1.10.0, informe del 13/11/2026 (PR #19) |
-| Etapa 2 | 5.2-D y 5.2-PC tras cada herramienta | ❓ | No consta en este repositorio si se repitieron tras la 1.7.0 a la 1.10.0 |
+| Etapa 2 | 5.2-D y 5.2-PC tras cada herramienta | 🟡 | Evaluación del 31/10/2026 con la 1.9.0: tareas 1 a 3 OK, 4 a 10 FALLO. **Falta la evaluación con la 1.10.0** (debería pasar la tarea 4, la rasante) |
 | Etapa 2 | **2.5 `crear_corredor` (con sus superficies)** | ⬜ **siguiente** | — |
 | Etapa 2 | 2.6 `crear_secciones` | ⬜ | — |
 | Etapa 2 | 2.7 `calcular_volumenes` | ⬜ | — |
