@@ -1,6 +1,6 @@
 # Hoja de Ruta con Prompts v1.3 (civil3d-mcp · Civil 3D 2027 · versión para GitHub)
 
-Transcripción en Markdown del PDF del dueño "Hoja de Ruta con Prompts civil3d-mcp v1.3 (GitHub)", de octubre de 2026.
+Transcripción en Markdown del PDF del dueño (el PDF está al lado: `HOJA_DE_RUTA_v1.3.pdf`) "Hoja de Ruta con Prompts civil3d-mcp v1.3 (GitHub)", de octubre de 2026.
 Reemplaza a la v1.1 y a la v1.2. Se guarda aquí para que las sesiones de Claude Code web, incluida una sesión
 orquestadora, sepan qué toca después. **La sección 0 no está en el PDF**: es el avance, y se actualiza al terminar cada
 prompt.
@@ -35,6 +35,10 @@ civil3d-mcp (vive en `memoria-firma` o en la PC).
 | Etapa 3 | 3.1 `ejecutar_codigo` · 3.2 Recetas · 3.3 Promoción (mensual) | ⬜ | — |
 | Etapa 4 | 4.1 Tablas DG-2018 · 4.2 `verificar_norma` · 4.3 Norma en el alineamiento | ⬜ | — |
 | Continuo | F · L.2 · 5.2 | ❓ | Viven en `memoria-firma` y en la PC |
+
+**Decisión del dueño (13/11/2026): solo 3 rondas de prueba en la PC** para lo que queda: **A** = Etapa 2 completa
+(1.12.0, 1.13.0, 1.14.0, 1.14.1, receta 2.8 y evaluación 5.2), **B** = Etapa 3 (3.1 y 3.2), **C** = Etapa 4 (4.2 y 4.3;
+la 4.1 no necesita la PC). El estado al día de ramas, PR y sesiones está en `herramientas-dev/REGISTRO_AVANCE.md`.
 
 **Pendientes que no están en la hoja de ruta** (salieron de las validaciones; ver los hechos validados de `CLAUDE.md`).
 Resueltos en la 1.10.1 (validada el 13/11/2026, PR #22): `ejecutar_comando` conserva los espacios finales, un error
