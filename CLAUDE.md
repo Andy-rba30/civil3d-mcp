@@ -150,6 +150,8 @@ de uso de las herramientas** (precedencia API > comando, flujo obligatorio para 
 glosario, mensajes típicos). Las **recetas** (procedimientos paso a paso para un caso concreto, ejemplos largos,
 aprendizajes de una validación) viven en `memoria-firma/recetas/` y el agente las encuentra con la herramienta
 `buscar_api`; **nunca se copian** en `INSTRUCCIONES_AGENTE.md`. Si una tarea produce una receta, va a esa carpeta.
+**Única excepción**, pedida expresamente por el dueño (prompt 2.8, 13/11/2026): la receta «Flujo vial completo»
+(sección 2b de `INSTRUCCIONES_AGENTE.md`), porque es el flujo principal. Se mantiene corta: orden, paradas y reglas.
 
 Nota (actualizada el 31/10/2026): `memoria-firma` existe como **repositorio privado aparte** (catálogo de la API en
 `catalogo/catalogo_c3d2027.sqlite`, glosario en `catalogo/glosario.yaml` y recetas en `recetas/`); en la PC se

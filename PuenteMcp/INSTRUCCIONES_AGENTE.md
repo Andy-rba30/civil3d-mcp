@@ -29,6 +29,27 @@ Estas herramientas actúan sobre el dibujo activo de Civil 3D 2027 a través del
 
 Después de cada escritura comprueba `esta_desactualizado` (corredor) o `esta_desactualizada` (superficie): un objeto desactualizado no refleja aún el cambio en pantalla.
 
+## 2b. Flujo vial completo (de la superficie al volumen)
+
+Es la **única receta** de este archivo, porque es el flujo principal (las demás se buscan con `buscar_api`). Úsala cuando el usuario pida el flujo entero o varios de sus pasos seguidos. Las reglas de cada herramienta están en la sección 3; aquí van el orden y las paradas.
+
+| Paso | Herramienta | Necesita antes |
+|---|---|---|
+| 1 | `crear_superficie_tin` | el archivo o el grupo de puntos del usuario |
+| 2 | `crear_alineamiento_desde_polilinea` | la polilínea 2D de tangentes del usuario |
+| 3 | `crear_perfil_terreno_y_vista` | el eje (2) y el terreno (1) |
+| 4 | `crear_rasante` | el eje (2) y los PVI del usuario |
+| 5 | `crear_corredor` | la rasante (4), el ensamblaje y el terreno (1) como `superficie_objetivo` |
+| 6 | `crear_superficies_corredor` | el corredor (5): crea la Top y la Datum |
+| 7 | `crear_secciones` | el corredor y sus superficies (5 y 6), para que las secciones los muestren |
+| 8 | `calcular_volumenes` | el terreno (1) y la Datum (6), con los parámetros que publique la herramienta |
+
+1. **Lo manual va antes.** El **ensamblaje** lo crea la persona en Civil 3D (no hay herramienta para eso): compruébalo con `listar_ensamblajes` antes de empezar y, si no hay, pídeselo y espera. La polilínea, el archivo de puntos y los PVI los da el usuario: no los inventes.
+2. **Plan y simulación, sin escribir nada.** Lee el dibujo (`listar_superficies`, `listar_alineamientos`, `listar_perfiles`, `listar_ensamblajes`, `listar_corredores`), simula con `simular=true` todos los pasos cuyos datos ya existen (en un dibujo vacío, el 1 y el 2: los demás responderían "No existe ..." porque usan el objeto del paso anterior) y muestra una tabla con los 8 pasos: herramienta, argumentos, qué crea y si ya está simulado. **Espera la confirmación.**
+3. **Paso a paso.** En cada paso, en orden: simúlalo si aún no lo está con el dibujo actual, ejecútalo sin `simular` y muestra su resultado (nombres creados, `avisos`, `copia.ruta`) junto con la simulación del paso siguiente; **espera la confirmación antes de seguir**. Cuando el usuario dé el paso por bueno, `aprobar_resultado` con el `id_log` de esa escritura.
+4. **Si un paso falla, o un aviso cambia lo pedido** (un radio o una curva que no cabe, un corredor desactualizado, líneas sin secciones), para, explícalo y espera; no reintentes ni pases al siguiente, y no completes nada con `ejecutar_comando`. Si una herramienta dice que la persona tiene que completar un cuadro de diálogo, dile qué marcar, espera a que lo cierre y comprueba el resultado leyendo el dibujo.
+5. **Al terminar**, resume los objetos creados, el `id_log` de cada paso y el corte, el relleno y el neto. Para volver atrás: cada paso es una entrada de Deshacer, pero `_.UNDO` no quita la superficie TIN ni revierte objetivos (`deshacer_objetivos`); la copia previa de cada paso está en su `copia.ruta`.
+
 ## 3. Reglas de dominio
 
 - Los **taludes** (`DaylightGeneral`, `DaylightBasin`, `BasicSideSlopeCutDitch`, `LinkSlopeToSurface`, "Talud") **siempre necesitan un objetivo de superficie**; sin él el corredor avisa "TargetDTM not found" y el talud no se dibuja.
