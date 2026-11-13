@@ -150,7 +150,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = HerramientaCrearSecciones,
-                Descripcion = "Crea un grupo de líneas de muestreo en un alineamiento con una línea cada 'intervalo' metros (y otra en el final del tramo) con los anchos izquierdo y derecho pedidos, marca como muestreadas las fuentes (por defecto todas las superficies, los corredores del eje y sus superficies; o las de 'fuentes') y, si crear_vistas=true (por defecto), crea una vista de sección por línea en cuadrícula de 'filas_por_columna' filas (por defecto 5): columnas de izquierda a derecha, en cada columna la progresiva crece de abajo arriba, desde 'punto_insercion' o, si falta, a la derecha de lo dibujado. Todo en una sola transacción y una sola entrada de Deshacer. Vía: SampleLineGroup.Create, GetSectionSources/IsSampled, SampleLine.Create con dos puntos (Alignment.PointLocation a −ancho_izquierdo y +ancho_derecho) y SectionView.Create con el estilo pedido (StyleId), cada vista encima de la anterior según su extensión real. Relee el grupo y comprueba el número de líneas y de vistas, cada progresiva (±0,01) y las fuentes muestreadas (si no, error sin reintentar). Devuelve las líneas (progresiva, anchos leídos, secciones), las fuentes, las vistas (fila, columna, punto) y los solapes. Con simular=true solo comprueba e informa (sin copia ni cambios). Si ya existe un grupo con ese nombre en el eje, error sin tocar nada.",
+                Descripcion = "Crea un grupo de líneas de muestreo en un alineamiento con una línea cada 'intervalo' metros (y otra en el final del tramo) con los anchos izquierdo y derecho pedidos, marca como muestreadas las fuentes (por defecto todas las superficies, los corredores del eje y sus superficies; o las de 'fuentes') y, si crear_vistas=true (por defecto), crea una vista de sección por línea en cuadrícula de 'filas_por_columna' filas (por defecto 5): columnas de izquierda a derecha, en cada columna la progresiva crece de abajo arriba, desde 'punto_insercion' o, si falta, a la derecha del eje, de sus vistas de perfil y de las vistas de sección de sus grupos ya existentes (desde 1.14.1; el resto del dibujo no cuenta). Todo en una sola transacción y una sola entrada de Deshacer. Vía: SampleLineGroup.Create, GetSectionSources/IsSampled, SampleLine.Create con dos puntos (Alignment.PointLocation a −ancho_izquierdo y +ancho_derecho) y SectionView.Create con el estilo pedido (StyleId), cada vista encima de la anterior según su extensión real. Relee el grupo y comprueba el número de líneas y de vistas, cada progresiva (±0,01) y las fuentes muestreadas (si no, error sin reintentar). Devuelve las líneas (progresiva, anchos leídos, secciones), las fuentes, las vistas (fila, columna, punto) y los solapes. Con simular=true solo comprueba e informa (sin copia ni cambios). Si ya existe un grupo con ese nombre en el eje, error sin tocar nada.",
                 Parametros =
                 {
                     P("alineamiento", "string", "Nombre del alineamiento (eje); ver listar_alineamientos", true),
@@ -164,7 +164,7 @@ namespace ArbaMcp
                     P("crear_vistas", "boolean", "Con false solo crea el grupo y las líneas, sin vistas de sección (por defecto true)"),
                     P("filas_por_columna", "number", "Vistas de sección por columna de la cuadrícula (entero ≥ 1, por defecto " + Secciones.FilasPorDefecto + ")"),
                     P("estilo_vista", "string", "Estilo de vista de sección del dibujo. Si falta, el que pone Civil 3D (el de la configuración del dibujo); si no existe, error con la lista"),
-                    P("punto_insercion", "json", "Esquina inferior izquierda de la primera vista: {\"x\": 2000, \"y\": 1900}. Si falta, a la derecha de lo dibujado (como crear_perfil_terreno_y_vista) y la respuesta devuelve el punto usado"),
+                    P("punto_insercion", "json", "Esquina inferior izquierda de la primera vista: {\"x\": 2000, \"y\": 1900}. Si falta, a la derecha del eje, de sus vistas de perfil y de las vistas de sección que ya tenga (como crear_perfil_terreno_y_vista) y la respuesta devuelve el punto usado"),
                     P("simular", "boolean", "Con true comprueba eje, nombre libre, progresivas, anchos, fuentes, estilo y punto y devuelve lo previsto sin tocar el dibujo (ni copia)")
                 },
                 Ejecutar = a => Escritura.Ejecutar(HerramientaCrearSecciones, a, ctx =>
@@ -269,13 +269,9 @@ namespace ArbaMcp
                                     if (estiloUsado == null)
                                         ctx.Avisos.Add("No se pudo leer el estilo de vista de sección por defecto del dibujo: las vistas llevan el que ponga Civil 3D. Pasa 'estilo_vista' para elegir uno.");
                                 }
-                                if (puntoPedido.HasValue) punto = puntoPedido.Value;
-                                else
-                                {
-                                    var total = Extension2.Unir(ExtensionDe(al), ExtensionDibujo(db));
-                                    punto = PerfilVista.PuntoAutomatico(total);
-                                    ctx.Avisos.Add(PerfilVista.ExplicacionPuntoAutomatico(total.Value, punto));
-                                }
+                                // Sin punto pedido: a la derecha del eje, de sus vistas de perfil y de las vistas de sección de sus
+                                // grupos ya existentes (1.14.1; antes, del dibujo entero), para no caer encima de ellas
+                                punto = puntoPedido ?? PuntoAutomaticoDelEje(tr, db, al, true, ctx.Avisos);
                             }
                             else if (!string.IsNullOrWhiteSpace(estiloVista) || puntoPedido.HasValue || Tiene(a, "filas_por_columna"))
                                 ctx.Avisos.Add("Con crear_vistas=false no se crean vistas de sección: 'estilo_vista', 'punto_insercion' y 'filas_por_columna' no se usan.");

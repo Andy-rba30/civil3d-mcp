@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.Json;
 using ArbaMcp.Nucleo;
 using Xunit;
@@ -7,7 +8,7 @@ namespace ArbaMcp.Pruebas
 {
     /// <summary>
     /// Lógica de crear_perfil_terreno_y_vista que no depende de Civil 3D: nombres por defecto, lectura de
-    /// 'punto_insercion', regla del punto automático (a la derecha de lo dibujado), comprobación de rangos tras crear y
+    /// 'punto_insercion', regla del punto automático (a la derecha del eje y de sus vistas desde 1.14.1), comprobación de rangos tras crear y
     /// bloques 'perfil' y 'vista' de la respuesta. Extensiones sintéticas en coordenadas genéricas (ningún dato real).
     /// </summary>
     public class PerfilVistaPruebas
@@ -151,5 +152,74 @@ namespace ArbaMcp.Pruebas
             Assert.Equal("(sin bandas)", sinBandas["conjunto_bandas"]);
             Assert.Null(sinBandas["bandas"]);
         }
-    }
+    
+        // ---------------------------------------------------------------- referencia del punto automático (1.14.1)
+        private static readonly Extension2 Eje1 = new Extension2(1000, 2000, 1600, 2300);   // el eje genérico de las validaciones
+        private static readonly Extension2 DibujoLejano = new Extension2(900, 1900, 600000, 2400); // con un punto en x = 600000
+
+        [Fact]
+        public void ReferenciaDelEjeIgnoraElContenidoLejano()
+        {
+            var avisos = new List<string>();
+            var r = PerfilVista.ReferenciaDelEje("Eje 1", Eje1, null, null, DibujoLejano, avisos);
+            Assert.False(r.DelDibujo);
+            Assert.Equal(0, r.VistasPerfil);
+            var p = PerfilVista.PuntoAutomatico(r.Extension);
+            Assert.Equal(1600 + 60, p.X, 6);     // 10 % de 600 = 60
+            Assert.Equal(2000, p.Y, 6);
+            Assert.Equal("extremo derecho del eje 'Eje 1'", r.Origen);
+            Assert.Empty(avisos);
+            string texto = PerfilVista.ExplicacionPuntoAutomatico(r.Extension.Value, p, r.Origen);
+            Assert.Contains("x = 1600 (extremo derecho del eje 'Eje 1') + 60 de margen", texto);
+            Assert.Contains("= 1660", texto);
+        }
+
+        [Fact]
+        public void ReferenciaDelEjeIncluyeSusVistasExistentes()
+        {
+            // Una vista de perfil ya existente a la derecha del eje: la nueva va a la derecha de esa
+            var vistaPerfil = new Extension2(1660, 2000, 2500, 2150);
+            var r = PerfilVista.ReferenciaDelEje("Eje 1", Eje1, new Extension2?[] { vistaPerfil, null, new Extension2(double.NaN, 0, 1, 1) }, null, DibujoLejano, new List<string>());
+            Assert.Equal(1, r.VistasPerfil);                     // las no legibles no cuentan
+            Assert.Equal("extremo derecho del eje 'Eje 1' y de su vista de perfil", r.Origen);
+            var p = PerfilVista.PuntoAutomatico(r.Extension);
+            Assert.Equal(2500 + 150, p.X, 6);                    // unión 1000..2500: 10 % de 1500 = 150
+            Assert.Equal(2000, p.Y, 6);
+
+            // crear_secciones: también las vistas de sección de los grupos ya existentes del eje
+            var secciones = new Extension2?[] { new Extension2(2650, 2000, 2700, 2040), new Extension2(2650, 2046, 2700, 2086) };
+            var r2 = PerfilVista.ReferenciaDelEje("Eje 1", Eje1, new Extension2?[] { vistaPerfil, new Extension2(1660, 2200, 2400, 2350) }, secciones, DibujoLejano, null);
+            Assert.Equal(2, r2.VistasPerfil);
+            Assert.Equal(2, r2.VistasSeccion);
+            Assert.Equal("extremo derecho del eje 'Eje 1' y de sus 2 vistas de perfil y sus 2 vistas de sección", r2.Origen);
+            Assert.Equal(2700 + 170, PerfilVista.PuntoAutomatico(r2.Extension).X, 6);   // unión 1000..2700
+        }
+
+        [Fact]
+        public void ReferenciaDelEjeSinEjeLegibleUsaSusVistas()
+        {
+            var vista = new Extension2(1660, 2000, 2500, 2150);
+            var r = PerfilVista.ReferenciaDelEje("Eje 1", null, new Extension2?[] { vista }, null, DibujoLejano, new List<string>());
+            Assert.False(r.DelDibujo);
+            Assert.StartsWith("extremo derecho de las vistas del eje 'Eje 1' (su vista de perfil; la extensión del eje no se pudo leer)", r.Origen);
+            Assert.Equal(2500 + 84, PerfilVista.PuntoAutomatico(r.Extension).X, 6);
+        }
+
+        [Fact]
+        public void ReferenciaDelEjeSinNadaLegibleUsaElDibujoConAviso()
+        {
+            var avisos = new List<string>();
+            var r = PerfilVista.ReferenciaDelEje("Eje 1", new Extension2(1e20, 1e20, -1e20, -1e20), null, null, DibujoLejano, avisos);
+            Assert.True(r.DelDibujo);
+            Assert.Equal("extremo derecho del dibujo entero", r.Origen);
+            Assert.Single(avisos);
+            Assert.StartsWith("Ni el eje 'Eje 1' ni sus vistas tienen una extensión legible", avisos[0]);
+
+            // Sin dibujo legible tampoco: Extension es null y PuntoAutomatico da el error de siempre
+            var nada = PerfilVista.ReferenciaDelEje("Eje 1", null, null, null, null, avisos);
+            Assert.Null(nada.Extension);
+            var ex = Assert.Throws<InvalidOperationException>(() => PerfilVista.PuntoAutomatico(nada.Extension));
+            Assert.Contains("punto_insercion", ex.Message);
+        }
+}
 }

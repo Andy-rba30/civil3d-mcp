@@ -330,6 +330,29 @@ def test_comando_sin_variable_sale_con_2(memoria):
     assert r.returncode == 2 and r.stdout.startswith("Error: Falta la variable de entorno MEMORIA_FIRMA_DIR")
 
 
+def test_como_modulo_con_consola_cp1252_y_ruta_con_tilde(tmp_path):
+    """Con la consola de Windows (cp1252) y una ruta con tilde, la salida sigue en UTF-8 y el programa no se cae.
+
+    Es el problema que tenía exportar_dataset (informe del agente instalador sobre la rama 2.5, 13/11/2026, PR #23): en
+    cp1252 el hijo moría con UnicodeEncodeError al escribir la flecha "→" de la cabecera.
+    """
+    carpeta = tmp_path / "carpeta_ó" / "memoria-firma"
+    (carpeta / "catalogo").mkdir(parents=True)
+    (carpeta / "recetas").mkdir()
+    crear_catalogo(str(carpeta / "catalogo" / "catalogo_c3d2027.sqlite"))
+    (carpeta / "catalogo" / "glosario.yaml").write_text(GLOSARIO_YAML, encoding="utf-8")
+    (carpeta / "recetas" / "rasante_con_piv.md").write_text(RECETA_RASANTE, encoding="utf-8")
+    env = dict(os.environ, PYTHONIOENCODING="cp1252")
+    env.pop(buscar_api.VARIABLE_ENTORNO, None)
+    r = subprocess.run([sys.executable, "-m", "buscar_api", "rasante con PVI", "--memoria", str(carpeta)],
+                       cwd=CARPETA_PUENTE, env=env, capture_output=True)
+    texto = r.stdout.decode("utf-8")      # falla aquí si la salida no viene en UTF-8
+    errores = r.stderr.decode("utf-8")
+    assert r.returncode == 0, texto + errores
+    assert texto.startswith('buscar_api "rasante con PVI" → 1 recetas, 2 entradas del glosario'), texto + errores
+    assert "carpeta_ó" in texto and "perfil de diseño" in texto
+
+
 # ---------------------------------------------------------------------------------------------- en el puente MCP
 def texto_mcp(resultado):
     return resultado.content[0].text

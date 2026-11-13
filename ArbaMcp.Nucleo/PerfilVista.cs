@@ -6,8 +6,9 @@ using System.Text.Json;
 namespace ArbaMcp.Nucleo
 {
     /// <summary>
-    /// Rectángulo que ocupa algo en planta (x = este, y = norte). Se usa para colocar la vista de perfil a la derecha
-    /// de lo dibujado: la extensión del alineamiento, de la superficie y, si es legible, la del dibujo.
+    /// Rectángulo que ocupa algo en planta (x = este, y = norte). Se usa para colocar la vista de perfil (y las de
+    /// sección) a la derecha del eje: desde 1.14.1, la extensión del alineamiento y de sus vistas (hasta la 1.14.0, la
+    /// del alineamiento, la de la superficie y la del dibujo entero).
     /// </summary>
     public struct Extension2
     {
@@ -32,13 +33,14 @@ namespace ArbaMcp.Nucleo
 
     /// <summary>
     /// Lógica de crear_perfil_terreno_y_vista que no depende de Civil 3D: nombres por defecto del perfil y de la vista,
-    /// lectura del punto de inserción pedido, regla del punto de inserción automático (a la derecha de lo dibujado),
+    /// lectura del punto de inserción pedido, regla del punto de inserción automático (a la derecha del eje y de sus
+    /// vistas desde 1.14.1),
     /// comprobación de los rangos leídos tras crear y armado de las respuestas 'perfil' y 'vista'. Se prueba en
     /// ArbaMcp.Pruebas con datos sintéticos.
     /// </summary>
     public static class PerfilVista
     {
-        /// <summary>Margen a la derecha de lo dibujado: el 10 % del ancho de la extensión, nunca menos de MargenMinimo.</summary>
+        /// <summary>Margen a la derecha de la extensión de referencia: el 10 % de su ancho, nunca menos de MargenMinimo.</summary>
         public const double FraccionMargen = 0.10;
         /// <summary>Margen mínimo (unidades del dibujo) cuando lo dibujado es muy estrecho o no tiene ancho.</summary>
         public const double MargenMinimo = 50.0;
@@ -93,29 +95,85 @@ namespace ArbaMcp.Nucleo
         }
 
         private static string MensajePuntoNoValido(string motivo)
-            => "El parámetro 'punto_insercion' no es válido (" + motivo + "). Debe ser {\"x\": 1500, \"y\": 2000} con las coordenadas de la esquina inferior izquierda de la vista, o no pasarlo para colocarla automáticamente a la derecha de lo dibujado.";
+            => "El parámetro 'punto_insercion' no es válido (" + motivo + "). Debe ser {\"x\": 1500, \"y\": 2000} con las coordenadas de la esquina inferior izquierda de la vista, o no pasarlo para colocarla automáticamente a la derecha del eje.";
 
         /// <summary>
-        /// Punto de inserción automático: a la derecha de lo dibujado. x = el extremo máximo en X de la extensión más un
-        /// margen (el 10 % de su ancho, mínimo MargenMinimo); y = el extremo mínimo en Y. Así la esquina inferior
-        /// izquierda de la vista queda fuera de lo que ya hay, alineada por abajo. La extensión es la unión de las que se
-        /// pasan (alineamiento, superficie y dibujo); las no válidas se ignoran. Si ninguna sirve, error.
+        /// Punto de inserción automático: a la derecha de la extensión de referencia. x = el extremo máximo en X de la
+        /// extensión más un margen (el 10 % de su ancho, mínimo MargenMinimo); y = el extremo mínimo en Y. Así la esquina
+        /// inferior izquierda de la vista queda fuera de lo que ya hay, alineada por abajo. La extensión es la unión de
+        /// las que se pasan (desde 1.14.1, la que da ReferenciaDelEje); las no válidas se ignoran. Si ninguna sirve, error.
         /// </summary>
         public static Punto2 PuntoAutomatico(params Extension2?[] extensiones)
         {
             Extension2? total = null;
             foreach (var e in extensiones) total = Extension2.Unir(total, e);
             if (!total.HasValue)
-                throw new InvalidOperationException("No se pudo calcular el punto de inserción automático: ni el alineamiento ni la superficie tienen una extensión legible. Pasa 'punto_insercion' con {\"x\": .., \"y\": ..}.");
+                throw new InvalidOperationException("No se pudo calcular el punto de inserción automático: ni el alineamiento, ni sus vistas, ni el dibujo tienen una extensión legible. Pasa 'punto_insercion' con {\"x\": .., \"y\": ..}.");
             return new Punto2(total.Value.MaxX + Margen(total.Value.Ancho), total.Value.MinY);
         }
 
         /// <summary>El 10 % del ancho, nunca menos de MargenMinimo.</summary>
         public static double Margen(double ancho) => Math.Max(MargenMinimo, FraccionMargen * Math.Max(0, ancho));
 
-        /// <summary>Texto de la regla aplicada, para 'avisos' y la memoria técnica.</summary>
-        public static string ExplicacionPuntoAutomatico(Extension2 total, Punto2 punto)
-            => "Punto de inserción automático: x = " + F(total.MaxX) + " (extremo derecho de lo dibujado) + " + F(Margen(total.Ancho)) + " de margen (10 % del ancho " + F(total.Ancho) + ", mínimo " + F(MargenMinimo) + ") = " + F(punto.X) + "; y = " + F(total.MinY) + " (extremo inferior). Pasa 'punto_insercion' para elegir otro.";
+        /// <summary>Texto de la regla aplicada, para 'avisos' y la memoria técnica. 'origen' dice de dónde sale el extremo derecho (ReferenciaPunto.Origen).</summary>
+        public static string ExplicacionPuntoAutomatico(Extension2 total, Punto2 punto, string origen = "extremo derecho de lo dibujado")
+            => "Punto de inserción automático: x = " + F(total.MaxX) + " (" + origen + ") + " + F(Margen(total.Ancho)) + " de margen (10 % del ancho " + F(total.Ancho) + ", mínimo " + F(MargenMinimo) + ") = " + F(punto.X) + "; y = " + F(total.MinY) + " (extremo inferior). Pasa 'punto_insercion' para elegir otro.";
+
+        /// <summary>Extensión de referencia del punto automático y de dónde sale (para la explicación de 'avisos').</summary>
+        public sealed class ReferenciaPunto
+        {
+            /// <summary>La unión que se pasa a PuntoAutomatico; null si nada es legible.</summary>
+            public Extension2? Extension;
+            /// <summary>Texto para ExplicacionPuntoAutomatico ("extremo derecho del eje 'Eje 1' y de su vista de perfil").</summary>
+            public string Origen;
+            /// <summary>Vistas de perfil y de sección del eje con extensión legible que entraron en la unión.</summary>
+            public int VistasPerfil, VistasSeccion;
+            /// <summary>True si se tuvo que usar la extensión del dibujo (ni el eje ni sus vistas eran legibles).</summary>
+            public bool DelDibujo;
+        }
+
+        /// <summary>
+        /// Extensión de referencia del punto automático desde 1.14.1: la del eje unida a la de lo que ya cuelga de él
+        /// (sus vistas de perfil y, en crear_secciones, también las vistas de sección de sus grupos de muestreo), sin la
+        /// superficie ni el resto del dibujo. Hasta la 1.14.0 se usaba la extensión del dibujo entero y, con contenido
+        /// lejano, la vista quedaba muy a la derecha (informe 1.9.0, paso 2: x ≈ 6 × 10^5 con un eje en x ≈ 1000..1600).
+        /// Las vistas existentes entran para que una vista nueva no caiga encima de otra del mismo eje (y las de sección,
+        /// a la derecha de la de perfil). Solo si ni el eje ni sus vistas son legibles se usa la del dibujo, con aviso; si
+        /// tampoco esa sirve, Extension es null y PuntoAutomatico da el error de siempre.
+        /// </summary>
+        public static ReferenciaPunto ReferenciaDelEje(string nombreEje, Extension2? eje, IEnumerable<Extension2?> vistasPerfil, IEnumerable<Extension2?> vistasSeccion, Extension2? dibujo, List<string> avisos)
+        {
+            var r = new ReferenciaPunto();
+            bool ejeValido = eje.HasValue && eje.Value.EsValida;
+            Extension2? total = ejeValido ? eje : null;
+            foreach (var v in vistasPerfil ?? new List<Extension2?>())
+                if (v.HasValue && v.Value.EsValida) { total = Extension2.Unir(total, v); r.VistasPerfil++; }
+            foreach (var v in vistasSeccion ?? new List<Extension2?>())
+                if (v.HasValue && v.Value.EsValida) { total = Extension2.Unir(total, v); r.VistasSeccion++; }
+
+            string eje_ = "'" + (nombreEje ?? "").Trim() + "'";
+            if (total.HasValue)
+            {
+                var partes = new List<string>();
+                if (r.VistasPerfil > 0) partes.Add(r.VistasPerfil == 1 ? "su vista de perfil" : "sus " + r.VistasPerfil + " vistas de perfil");
+                if (r.VistasSeccion > 0) partes.Add(r.VistasSeccion == 1 ? "su vista de sección" : "sus " + r.VistasSeccion + " vistas de sección");
+                string vistas = partes.Count == 0 ? "" : " y de " + string.Join(" y ", partes);
+                r.Origen = ejeValido
+                    ? "extremo derecho del eje " + eje_ + vistas
+                    : "extremo derecho de las vistas del eje " + eje_ + " (" + string.Join(" y ", partes) + "; la extensión del eje no se pudo leer)";
+                r.Extension = total;
+                return r;
+            }
+
+            if (dibujo.HasValue && dibujo.Value.EsValida)
+            {
+                r.Extension = dibujo;
+                r.DelDibujo = true;
+                r.Origen = "extremo derecho del dibujo entero";
+                avisos?.Add("Ni el eje " + eje_ + " ni sus vistas tienen una extensión legible: el punto de inserción automático se calcula con la extensión del dibujo entero (si hay objetos lejos, la vista quedará lejos). Pasa 'punto_insercion' para elegir otro.");
+            }
+            return r;
+        }
 
         private static string F(double v) => Math.Round(v, 3).ToString("0.###", CultureInfo.InvariantCulture);
 

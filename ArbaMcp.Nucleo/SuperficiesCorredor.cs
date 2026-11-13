@@ -157,6 +157,23 @@ namespace ArbaMcp.Nucleo
             return avisos;
         }
 
+        // ------------------------------------------------------------------ contornos de estado_corredor (1.14.1)
+        /// <summary>
+        /// Un contorno de superficie de corredor tal como lo devuelve estado_corredor: nombre, tipo (BoundaryType),
+        /// es_extension_corredor (CorridorSurfaceBoundary.IsCorridorExtents: si el contorno es la extensión del corredor)
+        /// y, con el mismo valor, usar_como_exterior: el nombre antiguo y engañoso de ese campo (hasta la 1.14.0 era el
+        /// único). Se conserva, obsoleto, porque un agente puede depender de él; el tipo de contorno (exterior o
+        /// interior) lo dice 'tipo'.
+        /// </summary>
+        public static Dictionary<string, object> Contorno(string nombre, string tipo, bool? esExtensionCorredor)
+            => new Dictionary<string, object>
+            {
+                ["nombre"] = nombre,
+                ["tipo"] = tipo,
+                ["es_extension_corredor"] = esExtensionCorredor,
+                ["usar_como_exterior"] = esExtensionCorredor   // obsoleto desde 1.14.1: lee IsCorridorExtents; usa es_extension_corredor
+            };
+
         // ------------------------------------------------------------------ utilidades
         /// <summary>Lista ordenada sin distinguir mayúsculas (como Herramientas.Ordenada del plugin); null si la entrada es null.</summary>
         public static List<string> Ordenada(IEnumerable<string> l)

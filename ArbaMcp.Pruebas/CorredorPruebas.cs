@@ -244,5 +244,39 @@ namespace ArbaMcp.Pruebas
             Assert.Null(Corredor.MotivoObjetivosNoCoinciden(vacio, null));
             Assert.Contains("no se pidió ninguno", Corredor.MotivoObjetivosNoCoinciden(otro, null));
         }
-    }
+    
+        // ---------------------------------------------------------------- capa (1.14.1)
+        [Fact]
+        public void AvisoDeCapaNoEncontradaDejaElCorredorDondeEsta()
+        {
+            string noExiste = Corredor.AvisoCapaNoEncontrada(" C-ROAD-CORR ");
+            Assert.StartsWith("La capa de corredores de la configuración del dibujo ('C-ROAD-CORR') no existe en el dibujo; ", noExiste);
+            Assert.EndsWith(Corredor.ColaAvisoCapa, noExiste);
+            Assert.Contains("(sin nombre)", Corredor.AvisoCapaNoEncontrada("  "));
+            string sinLeer = Corredor.AvisoCapaNoEncontrada("C-ROAD-CORR", "El enumerado SettingsObjectLayerType no tiene el valor 'Corridor'");
+            Assert.StartsWith("No se pudo leer la capa de corredores de la configuración del dibujo (El enumerado SettingsObjectLayerType", sinLeer);
+            Assert.Contains("el corredor se queda en la capa que le pone Civil 3D", sinLeer);
+            Assert.DoesNotContain("capa actual", sinLeer);   // a diferencia del eje y el perfil, el corredor no se mueve
+        }
+
+        [Fact]
+        public void AvisoDeCapaNoAplicada()
+        {
+            string a = Corredor.AvisoCapaNoAplicada("C-ROAD-CORR", " eOnLockedLayer ");
+            Assert.StartsWith("No se pudo poner el corredor en la capa 'C-ROAD-CORR' de la configuración del dibujo (Entity.LayerId: eOnLockedLayer); ", a);
+            Assert.EndsWith(Corredor.ColaAvisoCapa, a);
+        }
+
+        [Fact]
+        public void CapaReleidaSoloAvisaSiNoEsLaPrevista()
+        {
+            Assert.Null(Corredor.AvisoCapa(null, "0"));                    // sin capa prevista no se tocó: nada que avisar
+            Assert.Null(Corredor.AvisoCapa("  ", "0"));
+            Assert.Null(Corredor.AvisoCapa("C-ROAD-CORR", "C-ROAD-CORR"));
+            Assert.Null(Corredor.AvisoCapa("C-ROAD-CORR", " c-road-corr "));   // sin distinguir mayúsculas
+            string otra = Corredor.AvisoCapa("C-ROAD-CORR", "0");
+            Assert.StartsWith("El corredor quedó en la capa '0' y se pidió 'C-ROAD-CORR'", otra);
+            Assert.Contains("(no legible)", Corredor.AvisoCapa("C-ROAD-CORR", null));
+        }
+}
 }
