@@ -83,6 +83,15 @@ namespace Autodesk.Civil.Settings
         }
         public SettingsStyles Styles => new SettingsStyles();
     }
+    // 1.13.0 (crear_secciones): estilo de vista de sección por defecto
+    public class SettingsSectionView
+    {
+        public class SettingsStyles
+        {
+            public Autodesk.Civil.PropertyObjectId SectionViewStyleId => new Autodesk.Civil.PropertyObjectId();
+        }
+        public SettingsStyles Styles => new SettingsStyles();
+    }
     public class SettingsRoot
     {
         public SettingsDrawing DrawingSettings => new SettingsDrawing();
@@ -407,12 +416,55 @@ namespace Autodesk.Civil.DatabaseServices
     }
     public class SectionSource { public string SourceName => ""; public ObjectId SourceId => ObjectId.Null; public bool IsSampled { get; set; } public object SourceType => null; }
     public class SectionSourceCollection : IEnumerable { public int Count => 0; public IEnumerator GetEnumerator() => new List<SectionSource>().GetEnumerator(); }
-    public class SampleLine : Entity { public double Station => 0; }
+    // 1.13.0 (crear_secciones): creación de grupos y líneas de muestreo, vértices, secciones y vistas de sección
+    public enum SampleLineVertexSideType { }
+    public class SampleLineVertex { public Point3d Location => new Point3d(); public int OffsetIndex => 0; public SampleLineVertexSideType Side => default; }
+    public class SampleLineVertexCollection : IEnumerable<SampleLineVertex>
+    {
+        public int Count => 0;
+        public SampleLineVertex this[int i] => new SampleLineVertex();
+        public IEnumerator<SampleLineVertex> GetEnumerator() => new List<SampleLineVertex>().GetEnumerator();
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+    public class SampleLine : Entity
+    {
+        public static ObjectId Create(string sampleLineName, ObjectId sampleLineGroupId, Point2dCollection points) => ObjectId.Null;
+        public static ObjectId Create(string sampleLineName, ObjectId sampleLineGroupId, double station) => ObjectId.Null;
+        public double Station { get; set; }
+        public int Number => 0;
+        public ObjectId GroupId => ObjectId.Null;
+        public bool LockToStation { get; set; }
+        public SampleLineVertexCollection Vertices => new SampleLineVertexCollection();
+        public ObjectIdCollection GetSectionIds() => new ObjectIdCollection();
+        public ObjectIdCollection GetSectionViewIds() => new ObjectIdCollection();
+    }
+    public class Section : Entity { public ObjectId SourceId => ObjectId.Null; public string SourceName => ""; public ObjectId SampleLineId => ObjectId.Null; }
+    public class Graph : Entity { public Point3d Location { get; set; } }
+    public class SectionView : Graph
+    {
+        public static ObjectId Create(string name, ObjectId sampleLineId, Point3d location) => ObjectId.Null;
+        public ObjectId SampleLineId => ObjectId.Null;
+        public double OffsetLeft { get; set; }
+        public double OffsetRight { get; set; }
+        // SectionView declara su propio StyleId solo de escritura; StyleId/StyleName de lectura se heredan de Entity (consulta del catálogo, 13/11/2026)
+        public new ObjectId StyleId { set { } }
+    }
+    public class SectionViewGroup { public string Name { get; set; } public ObjectId SampleLineGroupId => ObjectId.Null; public ObjectIdCollection GetSectionViewIds() => new ObjectIdCollection(); public void UpdateLayout() { } }
+    public class SectionViewGroupCollection : IEnumerable<SectionViewGroup>
+    {
+        public int Count => 0;
+        public SectionViewGroup this[int i] => new SectionViewGroup();
+        public IEnumerator<SectionViewGroup> GetEnumerator() => new List<SectionViewGroup>().GetEnumerator();
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
     public class SampleLineGroup : Entity
     {
+        public static ObjectId Create(string groupName, ObjectId alignmentId) => ObjectId.Null;
         public ObjectId ParentAlignmentId => ObjectId.Null;
         public ObjectIdCollection GetSampleLineIds() => new ObjectIdCollection();
         public SectionSourceCollection GetSectionSources() => new SectionSourceCollection();
+        public SectionViewGroupCollection SectionViewGroups => new SectionViewGroupCollection();
+        public SectionViewGroup IndividualSectionViewGroup => new SectionViewGroup();
     }
     public class FeatureLine : Entity { public Point3dCollection GetPoints(object tipo) => new Point3dCollection(); }
 }
@@ -443,6 +495,8 @@ namespace Autodesk.Civil.DatabaseServices.Styles
     public class ProfileViewBandSetStyleCollection : SurfaceStyleCollection { }
     public class ProfileLabelSetStyleCollection : SurfaceStyleCollection { }
     public class ProfileViewBandSetStyle : StyleBase { }
+    // ---- 1.13.0 (crear_secciones): estilos de vista de sección
+    public class SectionViewStyleCollection : SurfaceStyleCollection { }
     public class LabelSetStylesRoot
     {
         public AlignmentLabelSetStyleCollection AlignmentLabelSetStyles => new AlignmentLabelSetStyleCollection();
@@ -456,5 +510,6 @@ namespace Autodesk.Civil.DatabaseServices.Styles
         public ProfileStyleCollection ProfileStyles => new ProfileStyleCollection();
         public ProfileViewStyleCollection ProfileViewStyles => new ProfileViewStyleCollection();
         public ProfileViewBandSetStyleCollection ProfileViewBandSetStyles => new ProfileViewBandSetStyleCollection();
+        public SectionViewStyleCollection SectionViewStyles => new SectionViewStyleCollection();   // 1.13.0
     }
 }

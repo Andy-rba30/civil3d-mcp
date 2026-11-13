@@ -445,6 +445,7 @@ namespace ArbaMcp
             RegistrarPerfiles();        // 1.9.0: crear_perfil_terreno_y_vista (Herramientas.Perfiles.cs)
             RegistrarRasantes();        // 1.10.0: crear_rasante (Herramientas.Rasantes.cs)
             RegistrarCrearCorredor();   // 1.11.0: crear_corredor (Herramientas.Corredores.Crear.cs)
+            RegistrarSecciones();       // 1.13.0: crear_secciones (Herramientas.Secciones.cs)
         }
 
         // ------------------------------------------------------------------ herramientas genéricas adicionales
