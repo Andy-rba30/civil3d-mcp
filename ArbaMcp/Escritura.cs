@@ -260,6 +260,8 @@ namespace ArbaMcp
             public Action<Dictionary<string, object>> Verificar;
             /// <summary>Datos extra de la respuesta (campo 'datos'). Opcional.</summary>
             public Func<object> Extra;
+            /// <summary>Se llama justo después de confirmar la creación, antes de releer (crear_corredor apila ahí la restauración de objetivos). Opcional (1.11.0).</summary>
+            public Action AlConfirmar;
         }
 
         /// <summary>
@@ -284,6 +286,7 @@ namespace ArbaMcp
                 if (id.IsNull) throw new InvalidOperationException("La API no devolvió el objeto creado (" + c.Accion + "). No se reintenta.");
                 tr.Commit();
             }
+            c.AlConfirmar?.Invoke();
             Dictionary<string, object> despues;
             using (doc.LockDocument())
             using (var tr = doc.Database.TransactionManager.StartTransaction())

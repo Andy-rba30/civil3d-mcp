@@ -97,7 +97,11 @@ namespace Autodesk.Civil.DatabaseServices
     public class Entity : Autodesk.AutoCAD.DatabaseServices.Entity { public string Name { get; set; } public string Description { get; set; } public ObjectId StyleId { get; set; } public string StyleName { get; set; } }
 
     public class ColeccionIds : IEnumerable { public int Count => 0; public IEnumerator GetEnumerator() => new List<ObjectId>().GetEnumerator(); }
-    public class CorridorCollection : ColeccionIds { }
+    public class CorridorCollection : ColeccionIds
+    {
+        // 1.11.0 (crear_corredor): corredor con línea base y región en una llamada (confirmado en el catálogo; devuelve ObjectId)
+        public ObjectId Add(string corridorName, string baselineName, ObjectId alignmentId, ObjectId profileId, string baselineRegionName, ObjectId assemblyId) => ObjectId.Null;
+    }
     public class AssemblyCollection : ColeccionIds { }
     public class IntersectionCollection : ColeccionIds { }
 
