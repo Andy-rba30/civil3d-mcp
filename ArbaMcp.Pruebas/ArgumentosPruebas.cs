@@ -27,6 +27,42 @@ namespace ArbaMcp.Pruebas
         public void LeerSimular(string json, bool esperado) => Assert.Equal(esperado, Argumentos.LeerSimular(A(json)));
 
         [Fact]
+        public void ConSimularConservaElRestoYPoneSimularATrue()
+        {
+            var a = A("{\"alineamiento\":\"Eje 1\",\"nombre\":\"Rasante 1\",\"pvis\":\"[[0,100],[400,105]]\",\"longitud_curva\":120,\"pedido\":\"crea la rasante\"}");
+            var s = Argumentos.ConSimular(a);
+            Assert.True(Argumentos.LeerSimular(s));
+            Assert.Equal("Eje 1", s.GetProperty("alineamiento").GetString());
+            Assert.Equal("Rasante 1", s.GetProperty("nombre").GetString());
+            Assert.Equal("[[0,100],[400,105]]", s.GetProperty("pvis").GetString());
+            Assert.Equal(120, s.GetProperty("longitud_curva").GetDouble());
+            Assert.Equal("crea la rasante", Argumentos.LeerPedido(s));
+            Assert.False(Argumentos.LeerSimular(a), "los argumentos originales no cambian");
+        }
+
+        [Theory]
+        [InlineData("{\"simular\":false,\"nombre\":\"x\"}")]
+        [InlineData("{\"nombre\":\"x\",\"simular\":\"no\"}")]
+        [InlineData("{\"nombre\":\"x\",\"simular\":null}")]
+        public void ConSimularSustituyeUnSimularFalso(string json)
+        {
+            var s = Argumentos.ConSimular(A(json));
+            Assert.True(Argumentos.LeerSimular(s));
+            Assert.Equal("x", s.GetProperty("nombre").GetString());
+            int veces = 0;
+            foreach (var p in s.EnumerateObject()) if (p.Name == "simular") veces++;
+            Assert.Equal(1, veces);
+        }
+
+        [Fact]
+        public void ConSimularSinArgumentos()
+        {
+            Assert.True(Argumentos.LeerSimular(Argumentos.ConSimular(default)));
+            Assert.True(Argumentos.LeerSimular(Argumentos.ConSimular(A("{}"))));
+            Assert.True(Argumentos.LeerSimular(Argumentos.ConSimular(A("[]"))));
+        }
+
+        [Fact]
         public void StrNumBoolRequerido()
         {
             var a = A("{\"n\":\"Corredor 1\",\"v\":\"12,5\",\"w\":3,\"b\":\"si\",\"vacio\":\"  \",\"nulo\":null}");

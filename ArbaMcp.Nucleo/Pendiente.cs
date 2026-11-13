@@ -51,6 +51,12 @@ namespace ArbaMcp.Nucleo
         public Func<object> Funcion;
         public ContextoEjecucion Contexto;
         public string Nombre = "";
+        /// <summary>
+        /// Comprobación previa opcional de un trabajo de contexto Documento (desde 1.10.1; ver ComprobacionPrevia). El
+        /// hilo principal la corre con Comprobar() en contexto de aplicación, justo antes de entregar el trabajo al
+        /// contexto de comando; su resultado se descarta. Null: no hay comprobación.
+        /// </summary>
+        public Func<object> Comprobacion;
         /// <summary>True cuando ya se anotó en el historial que este trabajo espera a que Civil 3D quede libre.</summary>
         public bool AvisoEsperaDado;
 
@@ -100,6 +106,37 @@ namespace ArbaMcp.Nucleo
             try { Resultado.TrySetResult(Funcion()); }
             catch (Exception ex) { Resultado.TrySetException(ex); }
             finally { _finMs = _reloj.ElapsedMilliseconds; }
+        }
+
+        /// <summary>
+        /// Corre la comprobación previa, si la hay, sin reclamar el trabajo. Devuelve true si el trabajo debe entregarse
+        /// (no hay comprobación o pasó). Si la comprobación lanza, reclama el trabajo y entrega esa excepción como su
+        /// resultado: devuelve false y el trabajo ya no se ejecuta. Si el trabajo ya estaba descartado, lo cancela sin
+        /// correr la comprobación y devuelve false.
+        /// </summary>
+        public bool Comprobar()
+        {
+            if (EstaDescartado)
+            {
+                Resultado.TrySetCanceled();
+                return false;
+            }
+            if (Comprobacion == null) return true;
+            try
+            {
+                Comprobacion();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                if (Reclamar())
+                {
+                    Resultado.TrySetException(ex);
+                    _finMs = _reloj.ElapsedMilliseconds;
+                }
+                else Resultado.TrySetCanceled();   // el servidor lo descartó mientras se comprobaba
+                return false;
+            }
         }
 
         /// <summary>Marca el fin de la ejecución cuando el resultado lo entrega otro (por ejemplo, un fallo del contexto de comando).</summary>

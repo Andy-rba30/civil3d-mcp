@@ -22,7 +22,9 @@ namespace ArbaMcp
     /// y el contexto de comando. Los trabajos Documento y Aplicacion esperan a que Civil 3D esté libre (CMDACTIVE = 0
     /// y ventana principal habilitada, es decir, sin cuadro de diálogo modal) y se ejecutan de uno en uno; los Inmediato
     /// se atienden siempre y por delante. Mientras un trabajo espera, el servidor puede descartarlo (tiempo agotado) y
-    /// entonces no se ejecuta a destiempo cuando Civil 3D se libere.
+    /// entonces no se ejecuta a destiempo cuando Civil 3D se libere. Desde 1.10.1 un trabajo Documento puede traer una
+    /// comprobación previa (ArbaMcp.Nucleo.ComprobacionPrevia) que corre aquí, en contexto de aplicación, antes de
+    /// entregarlo al contexto de comando.
     /// </summary>
     internal static class HiloPrincipal
     {
@@ -107,10 +109,15 @@ namespace ArbaMcp
         public static Task<object> Ejecutar(Func<object> funcion, ContextoEjecucion contexto = ContextoEjecucion.Documento, string nombre = null)
             => Encolar(funcion, contexto, nombre).Tarea;
 
-        /// <summary>Como Ejecutar, pero devuelve el trabajo para poder descartarlo si sigue en cola y leer sus tiempos.</summary>
-        public static Pendiente Encolar(Func<object> funcion, ContextoEjecucion contexto = ContextoEjecucion.Documento, string nombre = null)
+        /// <summary>
+        /// Como Ejecutar, pero devuelve el trabajo para poder descartarlo si sigue en cola y leer sus tiempos.
+        /// 'comprobacion' (desde 1.10.1, solo para trabajos Documento): se corre en contexto de aplicación justo antes de
+        /// entregar el trabajo al contexto de comando; si lanza, el trabajo responde ese error y no se entrega.
+        /// </summary>
+        public static Pendiente Encolar(Func<object> funcion, ContextoEjecucion contexto = ContextoEjecucion.Documento, string nombre = null, Func<object> comprobacion = null)
         {
-            var p = Plan.Encolar(funcion, contexto, nombre);
+            var p = new Pendiente(funcion, contexto, nombre) { Comprobacion = comprobacion };
+            Plan.Encolar(p);
             Despertar();
             return p;
         }
@@ -189,7 +196,12 @@ namespace ArbaMcp
 
                 var trabajo = decision.Trabajo;
                 if (trabajo.Contexto == ContextoEjecucion.Documento && AcApp.DocumentManager.MdiActiveDocument != null)
-                    EntregarAlDocumento(trabajo);
+                {
+                    // 1.10.1: la comprobación previa (la misma herramienta con simular=true) corre aquí, en contexto de
+                    // aplicación, como cualquier simulación. Si falla, el error se responde sin abrir el contexto de
+                    // comando, que dejaría una entrada EXECUTEFUNCTION vacía en el menú Deshacer.
+                    if (trabajo.Comprobar()) EntregarAlDocumento(trabajo);
+                }
                 else
                     trabajo.Correr(); // Aplicacion, o Documento sin dibujo abierto (la herramienta responderá que no hay dibujo)
 

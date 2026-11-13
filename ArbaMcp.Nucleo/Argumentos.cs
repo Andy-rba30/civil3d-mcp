@@ -55,6 +55,27 @@ namespace ArbaMcp.Nucleo
         /// <summary>'simular': true, 1, "1", "si", "sí", "true" o "yes"; cualquier otra cosa (o ausente) es false.</summary>
         public static bool LeerSimular(JsonElement a) => Bool(a, "simular", false);
 
+        /// <summary>
+        /// Copia de los argumentos con simular=true y el resto igual, en el mismo orden (desde 1.10.1, para la
+        /// comprobación previa de las escrituras reales). Si 'a' no es un objeto (falta o es otra cosa), {"simular":true}.
+        /// </summary>
+        public static JsonElement ConSimular(JsonElement a)
+        {
+            using (var ms = new System.IO.MemoryStream())
+            {
+                using (var w = new Utf8JsonWriter(ms))
+                {
+                    w.WriteStartObject();
+                    if (a.ValueKind == JsonValueKind.Object)
+                        foreach (var p in a.EnumerateObject())
+                            if (p.Name != "simular") p.WriteTo(w);
+                    w.WriteBoolean("simular", true);
+                    w.WriteEndObject();
+                }
+                using (var doc = JsonDocument.Parse(ms.ToArray())) return doc.RootElement.Clone();
+            }
+        }
+
         /// <summary>Nombre del parámetro general 'pedido' (desde 1.6.0): el pedido original del usuario en lenguaje natural.</summary>
         public const string NombrePedido = "pedido";
 
