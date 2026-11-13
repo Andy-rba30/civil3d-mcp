@@ -10,7 +10,7 @@ Dos piezas, con la misma estructura que el conector de Revit:
 | [`PuenteMcp`](PuenteMcp/) | Puente MCP en Python. Lee las herramientas del plugin y las expone al agente por `streamable-http`. Con `tests/` (pytest). | 8001 |
 | [`herramientas-dev`](herramientas-dev/) | Prompts de validación para el agente local, tabla de miembros de la API por verificar, `InspectC3D` y `CompilarSinCivil`. | — |
 
-Versión actual: **1.10.1** (plugin, bundle y puente): corrección sin herramientas nuevas, salida de los informes de
+Versión actual: **1.11.0** (plugin, bundle y puente): herramienta nueva de escritura `crear_corredor`, el paso 6 del flujo vial: crea un corredor con una línea base (un alineamiento y su rasante) y una región con un ensamblaje que ya existe en el dibujo, entre dos progresivas (por defecto el tramo común del eje y la rasante) y con una frecuencia dada; pone la superficie de terreno en los objetivos de superficie de los taludes (con el deshacer propio de objetivos, `deshacer_objetivos`) y reconstruye el corredor, todo en una sola entrada de Deshacer, y devuelve `estado_corredor`; con `simular`, copia de seguridad y relectura (línea base, rango, frecuencias y objetivos; validación en `herramientas-dev/VALIDACION_111.md`). Las superficies de corredor Top y Datum quedan para la 1.12.0. La 1.10.1 fue una corrección sin herramientas nuevas, salida de los informes de
 validación 1.7.0 a 1.10.0. `ejecutar_comando` conserva los espacios finales del texto (un espacio equivale a Enter, así
 que `_.PLINE 1000,2000 1300,2000  ` cierra la polilínea) y solo añade un Enter si el texto no lo trae; una escritura real
 se ensaya antes con `simular=true` y, si el ensayo falla (nombre repetido, estilo que no existe...), responde el error

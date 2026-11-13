@@ -486,6 +486,27 @@ namespace ArbaMcp
             };
         }
 
+        /// <summary>
+        /// Bloque de estado de un corredor: lo devuelve estado_corredor y, desde 1.11.0, crear_corredor en 'datos.estado_corredor'
+        /// (mismos campos en las dos).
+        /// </summary>
+        private static object EstadoCorredorInfo(Transaction tr, Civ.Corridor cor)
+        {
+            var superficies = new List<object>();
+            foreach (Civ.CorridorSurface cs in cor.CorridorSurfaces) superficies.Add(InfoSuperficieCorredor(tr, cs));
+            DateTime? ultima = null;
+            lock (UltimaReconstruccion) if (UltimaReconstruccion.TryGetValue(cor.Name, out var t)) ultima = t;
+            return new
+            {
+                nombre = cor.Name,
+                esta_desactualizado = cor.IsOutOfDate,
+                reconstruir_automatico = cor.RebuildAutomatic,
+                ultima_reconstruccion = ultima?.ToString("yyyy-MM-dd HH:mm:ss") ?? Api.Leer<object>(cor, null, "LastRebuildTime", "LastBuildTime")?.ToString(),
+                n_lineas_base = cor.Baselines.Count,
+                superficies
+            };
+        }
+
         // ------------------------------------------------------------------ patrón de escritura sobre un corredor
         /// <summary>
         /// Abre el corredor (ForWrite salvo en simulación), lee 'antes', calcula 'esperado', aplica 'cambiar', confirma
@@ -1025,19 +1046,7 @@ namespace ArbaMcp
                     using (var tr = doc.Database.TransactionManager.StartTransaction())
                     {
                         var cor = (Civ.Corridor)tr.GetObject(BuscarCorredor(tr, nombre), OpenMode.ForRead);
-                        var superficies = new List<object>();
-                        foreach (Civ.CorridorSurface cs in cor.CorridorSurfaces) superficies.Add(InfoSuperficieCorredor(tr, cs));
-                        DateTime? ultima = null;
-                        lock (UltimaReconstruccion) if (UltimaReconstruccion.TryGetValue(cor.Name, out var t)) ultima = t;
-                        var r = new
-                        {
-                            nombre = cor.Name,
-                            esta_desactualizado = cor.IsOutOfDate,
-                            reconstruir_automatico = cor.RebuildAutomatic,
-                            ultima_reconstruccion = ultima?.ToString("yyyy-MM-dd HH:mm:ss") ?? Api.Leer<object>(cor, null, "LastRebuildTime", "LastBuildTime")?.ToString(),
-                            n_lineas_base = cor.Baselines.Count,
-                            superficies
-                        };
+                        var r = EstadoCorredorInfo(tr, cor);
                         tr.Commit();
                         return r;
                     }
