@@ -338,7 +338,7 @@ namespace ArbaMcp
                     // Lo releído
                     VolumenesCivil civil = null;
                     ResumenVolumenes resumen = null;
-                    string errorResumen = null, baseLeida = null, comparacionLeida = null;
+                    string errorResumen = null, baseLeida = null, comparacionLeida = null, estiloLeido = null;
                     int? triangulos = null;
                     Dictionary<string, object> extension = null;
                     object tabla = null;
@@ -435,10 +435,17 @@ namespace ArbaMcp
                                 throw new InvalidOperationException("No se pudo crear la superficie de volumen '" + e.Nombre + "' (TinVolumeSurface.Create: " + ex.Message + "). Nada queda escrito (la transacción se descarta) y no se reintenta.", ex);
                             }
                             if (id.IsNull) return id;
-                            var vs = (Civ.TinVolumeSurface)tr.GetObject(id, OpenMode.ForWrite);
-                            vs.CutFactor = esponjamiento;
-                            vs.FillFactor = compactacion;
-                            vs.Rebuild();
+                            try
+                            {
+                                var vs = (Civ.TinVolumeSurface)tr.GetObject(id, OpenMode.ForWrite);
+                                vs.CutFactor = esponjamiento;
+                                vs.FillFactor = compactacion;
+                                vs.Rebuild();
+                            }
+                            catch (Exception ex)
+                            {
+                                throw new InvalidOperationException("No se pudieron poner los factores o reconstruir la superficie de volumen '" + e.Nombre + "' (TinVolumeSurface.CutFactor/FillFactor/Rebuild: " + ex.Message + "). Nada queda escrito (la transacción se descarta) y no se reintenta.", ex);
+                            }
                             return id;
                         },
                         Despues = (tr, id) =>
@@ -475,7 +482,7 @@ namespace ArbaMcp
                             triangulos = vs == null ? null : Seguro(() => (int?)vs.GetTinProperties().NumberOfTriangles, null);
                             try { extension = ExtensionDe(su, out _); }
                             catch (Exception ex) { ctx.Avisos.Add("No se pudo leer la extensión de la superficie de volumen (Surface.GetGeneralProperties): " + ex.Message); }
-                            string estiloLeido = Api.Leer<string>(su, estiloUsado, "StyleName") ?? estiloUsado;
+                            estiloLeido = Api.Leer<string>(su, estiloUsado, "StyleName") ?? estiloUsado;
 
                             // Tabla por progresivas (solo lectura de las secciones; nunca rompe la herramienta)
                             if (grupo != null)
@@ -574,7 +581,7 @@ namespace ArbaMcp
                             },
                             convencion_neto_civil3d = resumen.ConvencionNetoCivil3d,
                             unidades = Volumenes.Unidades,
-                            estilo = estiloUsado ?? "(estilo por defecto del dibujo)",
+                            estilo = estiloLeido ?? estiloUsado ?? "(estilo por defecto del dibujo)",
                             triangulos,
                             extension,
                             tabla_progresivas = tabla
