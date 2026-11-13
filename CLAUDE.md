@@ -221,17 +221,20 @@ Los prompts que no tocan Civil 3D (solo documentación, scripts de la nube o el 
   pasa lo mismo con el eje y el perfil (los informes 1.8.0 y 1.9.0 omitieron ese paso, los objetos se conservaron para
   la validación siguiente) y valorar un deshacer propio, como `deshacer_objetivos`. El informe 1.10.0 aclara una parte:
   las rasantes creadas con `crear_rasante` **sí** se quitan con `_.UNDO 1` (13/11/2026, paso 10); el eje sigue sin
-  probarse (el `Eje 1` de esa validación se conservó).
-- `ejecutar_comando` recorta los espacios finales del texto (`Trim`), así que un comando interactivo que necesita un
-  espacio doble final para cerrar la entrada (por ejemplo `_.PLINE ...`) no termina; el agente lo resolvió con un
-  archivo `.scr` (31/10/2026, informe 1.8.0, paso 0). Pendiente: corregirlo en el plugin. En la validación 1.10.0 la
-  polilínea de prueba se dibujó a mano en Civil 3D por el mismo motivo (13/11/2026, paso 0).
-- En `crear_superficie_tin`, `crear_alineamiento_desde_polilinea` y `crear_perfil_terreno_y_vista`, la lista de estilos
-  que acompaña a los errores "No existe el estilo..." sale como "ninguno legible": el nombre de `StyleBase` no se pudo
-  leer por reflexión en esta instalación (31/10/2026, informe 1.7.0, paso 8; igual en 1.8.0 y 1.9.0). `crear_rasante`
-  ya devuelve la lista real de estilos de perfil y de conjuntos de etiquetas porque lee el nombre con
-  `Autodesk.Civil.DatabaseServices.DBObject.Name` (13/11/2026, informe 1.10.0, paso 4). Pendiente: aplicarlo a las otras
-  herramientas (1.10.1).
+  probarse (el `Eje 1` de esa validación se conservó). El informe 1.11.0 añade que el corredor creado con
+  `crear_corredor` **también** se quita del dibujo con un `_.UNDO 1` (13/11/2026, paso 10).
+- Hasta la 1.10.0, `ejecutar_comando` recortaba los espacios finales del texto (`Trim`), así que un comando interactivo
+  que necesita un espacio doble final para cerrar la entrada (por ejemplo `_.PLINE ...`) no terminaba; el agente lo
+  resolvió con un archivo `.scr` (31/10/2026, informe 1.8.0, paso 0) y en la validación 1.10.0 la polilínea se dibujó a
+  mano (13/11/2026, paso 0). Desde la 1.10.1 el texto se envía con sus espacios finales y sin `"\n"` añadido:
+  `_.PLINE 1000,2000 1300,2000 1300,2300 1600,2300  ` (dos espacios finales) termina con `"result": "terminado"` y
+  `CMDACTIVE` en `0` (13/11/2026, informe 1.10.1, paso 3).
+- Hasta la 1.10.0, en `crear_superficie_tin`, `crear_alineamiento_desde_polilinea` y `crear_perfil_terreno_y_vista` la
+  lista de estilos que acompaña a los errores "No existe el estilo..." salía como "ninguno legible": el nombre de
+  `StyleBase` no se podía leer por reflexión (31/10/2026, informe 1.7.0, paso 8; igual en 1.8.0 y 1.9.0). Esas tres
+  herramientas y `crear_rasante` leen ahora el nombre con `Autodesk.Civil.DatabaseServices.DBObject.Name` y devuelven la
+  lista real: `crear_rasante` desde la 1.10.0 (13/11/2026, informe 1.10.0, paso 4) y las otras tres desde la 1.10.1
+  (las siete listas del paso 7 del informe 1.10.1 salieron con nombres, ninguna con "ninguno legible").
 - El formato de archivo de puntos `PENZD (comma delimited)` existe en la instalación del dueño y `crear_superficie_tin`
   lo elige solo (31/10/2026, informe 1.7.0, pasos 2 y 3).
 - `Alignment.Create` con `PolylineOptions` más una curva libre por PI con `AddFreeCurve` crea el eje con las curvas y
@@ -250,8 +253,24 @@ Los prompts que no tocan Civil 3D (solo documentación, scripts de la nube o el 
   (0,025 = 2,5 %), y `Profile.ElevationMax` da la cota del vértice de la parábola, no la del PVI (13/11/2026, informe
   1.10.0, paso 5: 109,5248 frente a 110). Los textos de los enumerados de curvas y PVI están en
   `miembros_por_verificar_civil3d.md`.
-- El error por nombre repetido de `crear_rasante` (paso 8, repitiendo la creación real) deja una entrada
-  `EXECUTEFUNCTION` **vacía** en el menú Deshacer, así que después hace falta un `_.UNDO 1` de más; los errores del
-  paso 4, en simulación, no dejaron ninguna (13/11/2026, informe 1.10.0, pasos 8 y 10). Pendiente: corrección en 1.10.1.
-- `ping` devuelve `"version": "1.10.0.0"` (la `FileVersion` con cuatro cifras) en vez de `"1.10.0"` (13/11/2026,
-  informe 1.10.0, paso 0). Pendiente: corrección en 1.10.1.
+- Hasta la 1.10.0, el error por nombre repetido de `crear_rasante` (repitiendo la creación real) dejaba una entrada
+  `EXECUTEFUNCTION` **vacía** en el menú Deshacer, así que después hacía falta un `_.UNDO 1` de más (13/11/2026,
+  informe 1.10.0, pasos 8 y 10). Desde la 1.10.1, la **comprobación previa por simulación** ensaya cada escritura real
+  con `simular=true` antes de abrir el contexto de comando; si falla, la herramienta responde el error **sin contexto de
+  comando, sin copia y sin entrada de Deshacer**. Repetir `Rasante 1` ya no dejó `EXECUTEFUNCTION` ni archivo nuevo en
+  `backups\`, y después bastó **un** `_.UNDO 1` para quitar la rasante (13/11/2026, informe 1.10.1, pasos 10 y 11);
+  repetir `Corredor 1` se comportó igual (informe 1.11.0, paso 11).
+- Hasta la 1.10.0, `ping` devolvía `"version": "1.10.0.0"` (la `FileVersion` con cuatro cifras) en vez de `"1.10.0"`
+  (13/11/2026, informe 1.10.0, paso 0). Desde la 1.10.1 da tres cifras: `ping` y `GET /ping` responden
+  `"version": "1.11.0"` (13/11/2026, informe 1.10.1, paso 0).
+- `CorridorCollection.Add` de 6 argumentos (corredor, línea base y región en una llamada) crea la región con el **rango
+  completo de la línea base** (de 0 a 831.3274 en la prueba), y el ajuste posterior de `BaselineRegion.StartStation` y
+  `EndStation` en la misma transacción funciona (`Corredor 2` quedó de 100 a 600); no hizo falta
+  `BaselineRegionCollection.Add` (13/11/2026, informe 1.11.0, pasos 5 y 9).
+- En una región recién creada, los objetivos de superficie ya aparecen con `GetTargets()` **antes de la primera
+  reconstrucción** (`camino_objetivos: "antes_de_reconstruir"`), y `Corridor.Rebuild()` funciona dentro de la
+  transacción que crea el corredor (una reconstrucción, `esta_desactualizado: false`). El corredor queda en la capa `0`
+  (13/11/2026, informe 1.11.0, pasos 5 y 9).
+- Un `_.UNDO 1` después de `crear_corredor` **quita el corredor entero** (desaparece de `listar_corredores`), y entonces
+  `deshacer_objetivos` sobre esa creación responde "No existe el corredor 'Corredor 2'. Corredores del dibujo: Corredor
+  1." (13/11/2026, informe 1.11.0, paso 10).
