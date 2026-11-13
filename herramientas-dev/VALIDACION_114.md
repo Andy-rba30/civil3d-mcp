@@ -18,10 +18,14 @@ Copia este texto tal cual en el agente que tiene conectado el MCP de Civil 3D. R
     1.13.0) si el `_.UNDO 1` de su paso 10 no lo quitó: anótalo (el paso 3 lo usa).
   - **No** debe haber ninguna superficie llamada `Corredor 1 - Volumen` ni `Volumen sin factores`. Si la hay, **para** y
     anótalo.
-- El plugin **1.14.0** se instala en el paso 0 desde la rama `tarea/2.7-volumenes` (trae fusionadas la 1.12.0 y la
-  1.13.0, así que es la misma instalación en la que se pasaron `VALIDACION_112.md` y `VALIDACION_113.md`); el bundle
-  queda con `ArbaMcp.dll` y `ArbaMcp.Nucleo.dll`. Puente reiniciado con el `main.py` de 1.14.0 (`uv sync` antes) y el
-  cliente MCP reiniciado para que cargue la lista de **53** herramientas del plugin (más `buscar_api` del puente). El
+- **Ronda de validación 1.12.0 a 1.14.1 (una sola instalación).** El plugin se instala **una vez**, en el paso 0 de
+  `VALIDACION_112.md`, desde la rama integrada `tarea/2.7-volumenes`: versión **1.14.1** (junta la 1.12.0, la 1.13.0, la
+  1.14.0 y la 1.14.1) con **53** herramientas del plugin (más `buscar_api` del puente). Los cinco prompts van en este
+  orden y en la misma instalación: `VALIDACION_112.md` → `VALIDACION_113.md` → `VALIDACION_114.md` →
+  `VALIDACION_1141.md` → `VALIDACION_FLUJO_COMPLETO.md`. En los cuatro últimos **no se reinstala**: su paso 0 solo
+  comprueba `ping` y la lista de herramientas.
+- El plugin es el que instaló el paso 0 de `VALIDACION_112.md` (rama `tarea/2.7-volumenes`, versión **1.14.1**, que trae
+  `calcular_volumenes` de la 1.14.0; **53** herramientas del plugin): **no se reinstala**. El
   puente le da a `calcular_volumenes` hasta **300 s** (si llamas por `curl`, pasa `"timeout_s":300`).
 - Reparto de papeles: el agente local **instala y verifica**; el código, la tabla de miembros y este prompt los mantiene
   la sesión de desarrollo a partir del informe. El agente no edita ningún archivo del repositorio salvo su informe en
@@ -48,7 +52,7 @@ Copia este texto tal cual en el agente que tiene conectado el MCP de Civil 3D. R
 
 ---
 
-Eres el agente de validación de la versión 1.14.0 del conector Civil 3D MCP (plugin `ArbaMcp` + puente `PuenteMcp`).
+Eres el agente de validación de la versión 1.14.0 (instalada como 1.14.1) del conector Civil 3D MCP (plugin `ArbaMcp` + puente `PuenteMcp`).
 Trabajas sobre una **copia** del dibujo. Usa las herramientas MCP **por su nombre** (los argumentos van dentro de
 `args`), salvo en los pasos que indican PowerShell o clics en Civil 3D. Ejecuta los pasos en orden, anota la respuesta
 **literal** (JSON completo o, si es muy largo, las primeras 40 líneas; de `datos.tabla_progresivas.filas` basta con la
@@ -70,15 +74,13 @@ Reglas:
 
 ## Pasos
 
-0. **Instalar.** Con Civil 3D cerrado, en PowerShell desde la raíz del repo en la rama `tarea/2.7-volumenes`:
-   `powershell -ExecutionPolicy Bypass -File .\ArbaMcp\instalar.ps1`. En `PuenteMcp`, `uv sync`. Reinicia el puente y el
-   cliente MCP. Abre Civil 3D con el dibujo (ver requisitos). `ping` con
-   `args={"pedido":"comprueba que el plugin responde"}` → `version` debe ser exactamente `1.14.0` (si la rama trae ya
-   fusionada una corrección posterior, la versión de esa corrección: anótala). Pide la lista de herramientas: deben ser
+0. **Comprobar la instalación** (no se reinstala: la hizo el paso 0 de `VALIDACION_112.md`). Con Civil 3D abierto con el
+   dibujo (ver requisitos), `ping` con `args={"pedido":"comprueba que el plugin responde"}` → `version` debe ser
+   exactamente `1.14.1`. Pide la lista de herramientas: deben ser
    **53** del plugin (las 52 de la 1.13.0 y `calcular_volumenes`) y `calcular_volumenes` debe tener los parámetros
    `terreno`, `datum`, `corredor`, `nombre`, `factor_esponjamiento`, `factor_compactacion`, `estilo`,
    `grupo_muestreo`, `tabla_progresivas`, `simular` y `pedido`. Si no, para aquí. (Si cerraste Civil 3D después de la
-   1.13.0, este paso deja el dibujo recién abierto: el paso 1 dirá qué falta.)
+   1.13.0, abre el dibujo antes de este paso: el paso 1 dirá qué falta.)
 
 1. **Comprobar el dibujo** (no decisivo; solo lecturas).
    - `listar_superficies` con `args={"pedido":"lista las superficies"}`: deben estar `Terreno` (tipo `TIN`, sin

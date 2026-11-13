@@ -9,11 +9,13 @@ paso) y cuánto tarda.
 
 Requisitos previos:
 
-- **Orden.** Se ejecuta **después de `herramientas-dev/VALIDACION_114.md`**, en la **misma instalación** (plugin
-  **1.14.0**, con `calcular_volumenes`). Si VALIDACION_114 falló en un paso decisivo, anótalo aquí y sigue solo si
-  `calcular_volumenes` responde.
-- **Instalación.** La rama que junte la 1.14.0 (`tarea/2.7-volumenes`) con esta receta (`tarea/2.8-flujo`); la indica
-  el PR. El puente debe estar reiniciado **con el `INSTRUCCIONES_AGENTE.md` de esa rama** y el cliente MCP reconectado
+- **Orden.** Es el último prompt de la ronda de validación 1.12.0 a 1.14.1, que va en una sola instalación y en este
+  orden: `VALIDACION_112.md` → `VALIDACION_113.md` → `VALIDACION_114.md` → `VALIDACION_1141.md` → este. Se ejecuta
+  **después de `herramientas-dev/VALIDACION_1141.md`**, en la **misma instalación** (plugin **1.14.1**, con
+  `calcular_volumenes` de la 1.14.0; **53** herramientas del plugin). Si VALIDACION_114 falló en un paso decisivo,
+  anótalo aquí y sigue solo si `calcular_volumenes` responde.
+- **Instalación.** La de la ronda: la rama integrada `tarea/2.7-volumenes`, que junta la 1.14.0, la 1.14.1 y esta
+  receta (`tarea/2.8-flujo`); la instaló el paso 0 de `VALIDACION_112.md`. No se reinstala. El puente debe estar reiniciado **con el `INSTRUCCIONES_AGENTE.md` de esa rama** y el cliente MCP reconectado
   después, porque las instrucciones se entregan al agente al conectar. El paso 0 lo comprueba.
 - **Dibujo nuevo.** Civil 3D 2027 (en español): **Nuevo** con la plantilla métrica que Civil 3D propone por defecto
   (anota su nombre). Guárdalo **antes de empezar** como `C:\Proyectos\dibujos_prueba\PRUEBA_FLUJO.dwg`: así las copias
@@ -68,7 +70,7 @@ Requisitos previos:
   `herramientas-dev/informes/` y no hace commits.
 - **Lo que decide esta validación**: si la receta del flujo funciona de principio a fin con las ocho herramientas de
   creación, una entrada de Deshacer y una copia por paso, y si el volumen sale bien. No hay miembros nuevos de la API
-  (los decidieron las validaciones 1.7.0 a 1.14.0). **Los pasos 3, 8, 9, 10, 11, 12, 13 y 14 son los decisivos.**
+  (los decidieron las validaciones 1.7.0 a 1.14.1). **Los pasos 3, 8, 9, 10, 11, 12, 13 y 14 son los decisivos.**
 - **Pedido**, tal como lo diría el dueño (se usa literal en el paso 3): **"Flujo completo, de la superficie al
   volumen: el terreno con el archivo C:\Proyectos\dibujos_prueba\terreno_corredor.csv y curvas cada 1 y 5 m; el Eje 1
   desde la polilínea de la capa EJE_PRUEBA con radio 80 en cada PI; su perfil de terreno y la vista; la Rasante 1 con
@@ -97,8 +99,8 @@ Reglas:
   paso 1 (capa y polilínea, como en `VALIDACION_1101.md`) y para `_.ZOOM`.
 - Los parámetros de tipo `json` (`pvis`, `fuentes`, `punto_insercion`) se pasan como **texto** con el JSON dentro.
 - Los números esperados son en metros con redondeo a 4 decimales; una diferencia menor de 0,001 es OK (0,01 en cotas).
-- Las herramientas que reconstruyen (`crear_corredor`, `crear_superficies_corredor`, `crear_secciones`) tienen hasta
-  300 s en el puente; `calcular_volumenes`, lo que diga VALIDACION_114.
+- Las herramientas que reconstruyen (`crear_corredor`, `crear_superficies_corredor`, `crear_secciones`) y
+  `calcular_volumenes` tienen hasta 300 s en el puente.
 - **`listar_lineas_muestreo` deja una entrada en el menú Deshacer** (es así desde la 1.2.2): no la llames antes del
   recuento del paso 12.
 - Al final hay **preguntas para el informe**: respóndelas con lo que viste.
@@ -109,10 +111,12 @@ Reglas:
    reiniciar el puente y reconectar el cliente MCP. Si no, con Civil 3D cerrado, en PowerShell desde la raíz del repo en
    esa rama: `powershell -ExecutionPolicy Bypass -File .\ArbaMcp\instalar.ps1`, y en `PuenteMcp`, `uv sync`; reinicia el
    puente y el cliente MCP. Abre Civil 3D con `PRUEBA_FLUJO.dwg`. `ping` con
-   `args={"pedido":"comprueba que el plugin responde"}` → `version` debe ser `1.14.0` (o la que diga el PR). Pide la
+   `args={"pedido":"comprueba que el plugin responde"}` → `version` debe ser exactamente `1.14.1`. Pide la
    lista de herramientas: deben estar las ocho del flujo (`crear_superficie_tin`, `crear_alineamiento_desde_polilinea`,
    `crear_perfil_terreno_y_vista`, `crear_rasante`, `crear_corredor`, `crear_superficies_corredor`, `crear_secciones` y
-   `calcular_volumenes`) y `aprobar_resultado`; anota cuántas hay y **los parámetros de `calcular_volumenes`**.
+   `calcular_volumenes`) y `aprobar_resultado`, **53** del plugin en total, y `calcular_volumenes` con los parámetros
+   `terreno`, `datum`, `corredor`, `nombre`, `factor_esponjamiento`, `factor_compactacion`, `estilo`, `grupo_muestreo`,
+   `tabla_progresivas`, `simular` y `pedido`.
    Comprueba que las instrucciones del servidor MCP que recibiste tienen la sección **«2b. Flujo vial completo (de la
    superficie al volumen)»** con una tabla de 8 pasos: copia su primera frase en el informe. Si falta algo, para aquí.
 
@@ -212,27 +216,29 @@ Reglas:
     releído con **43** líneas (`progresivas` de `0` a `831.3274`), **43** vistas en 9 columnas de 5 filas,
     `fuentes_muestreadas` **reales** con el terreno, el corredor y sus dos superficies, y `datos.lineas_sin_secciones: 0`;
     `copia` terminada. Jose mira dos o tres vistas de sección en Civil 3D: se ven el terreno, el corredor y las dos
-    superficies. En la parada, el resultado y la **simulación del paso 8** (`calcular_volumenes` con `Terreno` y
-    `Corredor 1 - Datum`, **con los parámetros que publica la herramienta**: anótalos literales; si tiene factores de
-    esponjamiento y compactación, el agente debe preguntarlos o proponer los que diga la herramienta por defecto, no
-    inventarlos). Jose confirma: **"El paso 7 está bien, sigue; sin factores"** (si la herramienta exige factores, Jose
-    pide `1` en los dos, para que el paso 14 pueda comparar). OK si las 43 líneas tienen secciones de las cuatro
-    fuentes.
+    superficies. En la parada, el resultado y la **simulación del paso 8**: `calcular_volumenes` con `simular=true` y
+    `terreno: "Terreno"` y `corredor: "Corredor 1"` (o `datum: "Corredor 1 - Datum"`; sin ellos también vale, porque en
+    este dibujo hay un solo terreno y un solo corredor). Anota los argumentos literales. El agente debe **preguntar** los
+    factores (`factor_esponjamiento` va al corte y `factor_compactacion` al relleno; por defecto `1`), no inventarlos.
+    Esperado: `accion` = `Crear la superficie de volumen TIN 'Corredor 1 - Volumen' con base 'Terreno' y comparación
+    'Corredor 1 - Datum', factor de esponjamiento (corte) 1 y de compactación (relleno) 1, y reconstruirla, con la tabla
+    por progresivas del grupo 'Eje 1 - Muestreo'` y `despues` con `lineas_tabla: 43`. Jose confirma: **"El paso 7 está
+    bien, sigue; sin factores"** (factores `1` en los dos, o sin pasarlos, para que el paso 14 pueda comparar). OK si
+    las 43 líneas tienen secciones de las cuatro fuentes.
 
-11. **Paso 8 del flujo: volúmenes (decisivo).** `calcular_volumenes` sin `simular` (si la herramienta no declara
-    `simular`, anótalo). Anota la respuesta completa: el **corte**, el **relleno** y el **neto** (en m³), los factores
-    aplicados, el nombre de la superficie de volumen creada y, si la hay, la tabla por progresivas. Esperado: corte
-    **mayor que 0** y relleno **mayor que 0** (la rasante va en terraplén al principio y en desmonte al final), neto =
-    corte − relleno (o como lo defina la respuesta: anota la fórmula), y la superficie de volumen en `listar_superficies`.
-    Si la respuesta dice que la persona tiene que completar un cuadro de diálogo, el agente debe decirle qué marcar,
-    esperar a que lo cierre y comprobar el resultado leyendo el dibujo (anota la hora en que se abre y se cierra el
-    cuadro, y qué marcó Jose). En la parada final, el **resumen** del punto 5 de la receta: objetos creados, `id_log` de
+11. **Paso 8 del flujo: volúmenes (decisivo).** `calcular_volumenes` sin `simular`, con los argumentos de la simulación
+    del paso 10. No usa comandos ni cuadros de diálogo. Anota la respuesta completa. Esperado: `despues` con
+    `tipo: "TinVolume"`, `factor_corte: 1` y `factor_relleno: 1`; `datos.superficie_volumen: "Corredor 1 - Volumen"` (el
+    nombre de la superficie creada); `datos.corte` **mayor que 0** y `datos.relleno` **mayor que 0** (la rasante va en
+    terraplén al principio y en desmonte al final); `datos.neto` = `corte` − `relleno` (positivo: sobra material); con
+    factores 1, `datos.sin_ajustar` igual a `corte`/`relleno`/`neto`; `datos.balance` y `datos.texto` de acuerdo con el
+    signo del neto; `datos.convencion_neto_civil3d` (anótalo); y `datos.tabla_progresivas` con `numeros: true`,
+    `numero_lineas: 43` y `tramos: 42` (anota `diferencia_con_superficie_pct`). `copia` terminada. En la parada final, el **resumen** del punto 5 de la receta: objetos creados, `id_log` de
     cada paso, corte, relleno y neto. Jose confirma: **"El paso 8 está bien, terminamos"**; esperado:
     `aprobar_resultado` del paso 8. Anota la hora de esta última confirmación.
 
 12. **Una entrada de Deshacer y una copia por paso (decisivo).** Abre el menú Deshacer: respecto al paso 2 debe haber
-    **ocho** entradas nuevas (`Executefunction`), una por paso del flujo (si `calcular_volumenes` usó un comando de
-    Civil 3D, puede haber más: anota cuántas y de qué). Las lecturas, simulaciones y `aprobar_resultado` no dejan
+    **ocho** entradas nuevas (`Executefunction`), una por paso del flujo. Las lecturas, simulaciones y `aprobar_resultado` no dejan
     ninguna. En `backups\` debe haber un archivo por paso del flujo (`<nombre del dwg>_<fecha>_<herramienta>.dwg`), salvo
     los pasos con `copia.reutilizada: true` (anótalos: no es fallo). `leer_log` con `args={"ultimas_n":80}`: por cada
     paso del flujo, una línea `llamada` con `"simular":true` antes de la real (las de los pasos 1 y 2, en el paso 3), la
@@ -254,7 +260,8 @@ Reglas:
       cota **menor** que la de la Top.
     - **Tarea 7**: `listar_lineas_muestreo` con `args={"alineamiento":"Eje 1","fuentes":true}` (deja una entrada en
       Deshacer, es normal) → el grupo `Eje 1 - Muestreo` con **43** líneas y las cuatro fuentes muestreadas.
-    - **Tarea 8**: `listar_superficies` → la superficie de volumen del paso 11 sigue en el dibujo (anota su `tipo`).
+    - **Tarea 8**: `listar_superficies` → `Corredor 1 - Volumen`, la superficie de volumen del paso 11, sigue en el
+      dibujo con `tipo_superficie: "TinVolume"`.
     OK solo si las ocho comprobaciones dan OK (la tarea 1 puede quedar **parcial** por los intervalos de curvas, ver
     paso 4: anótalo aparte).
 
@@ -264,16 +271,15 @@ Reglas:
     superficie de volumen** (*Create new volume surface*): nombre `Volumen manual`, superficie base `Terreno`, superficie
     de comparación `Corredor 1 - Datum`, factores de corte y de relleno `1`. Anota el corte, el relleno y el neto que
     muestra el panel. Compáralos con los del paso 11: diferencia = |agente − manual| / manual × 100. OK solo si el corte
-    y el relleno difieren **menos del 1 %** (si el paso 11 aplicó factores distintos de 1, compara con los volúmenes sin
-    factores que dé la respuesta; si no los da, es un hallazgo). Este paso añade una superficie al dibujo y una entrada
+    y el relleno difieren **menos del 1 %** (si el paso 11 aplicó factores distintos de 1, compara con
+    `datos.sin_ajustar` del paso 11). Este paso añade una superficie al dibujo y una entrada
     en Deshacer: va después de los recuentos, no cuenta en el tiempo del flujo.
 
 15. **Tiempo total.** Con `leer_log` (`args={"ultimas_n":120}`):
     - `T0` = `hora` de la primera llamada después de la anotada en el paso 2 (la primera lectura del paso 3).
     - `T1` = `hora` de la última `aprobacion` (la del paso 11).
     - **Esperas**: por cada parada, desde la última llamada antes de parar hasta la `aprobacion` que sigue a la
-      confirmación de Jose (la del paso 3 va hasta la primera escritura). Suma las nueve esperas y, aparte, el tiempo
-      con un cuadro de diálogo abierto (paso 11, si lo hubo).
+      confirmación de Jose (la del paso 3 va hasta la primera escritura). Suma las nueve esperas.
     - **Tiempo del agente** = (T1 − T0) − esperas. Anota también la suma de `ms` de las ocho escrituras (lo que tardó
       Civil 3D).
     Da el tiempo total de reloj (T1 − T0), el tiempo del agente y el porcentaje frente a **130 min**. No es decisivo:
@@ -296,8 +302,8 @@ respuestas a estas **preguntas para la memoria técnica**:
 2. ¿Llamó a `aprobar_resultado` después de cada confirmación (ocho veces) y nunca antes? ¿Qué puso en `pedido` en cada
    llamada (el pedido entero o la parte de cada paso)?
 3. ¿Hubo algún paso con un aviso que obligara a parar (radio, curva, corredor desactualizado, líneas sin secciones)?
-4. ¿Qué parámetros tiene `calcular_volumenes` y qué preguntó el agente sobre los factores? ¿Hizo falta algún cuadro de
-   diálogo? ¿Cuánto duró?
+4. ¿Qué argumentos pasó el agente a `calcular_volumenes` y qué preguntó sobre los factores? ¿Salió la tabla por
+   progresivas con números y cuánto difiere de la superficie (`diferencia_con_superficie_pct`)? ¿Cuánto tardó (`ms`)?
 5. ¿Qué estilo de superficie se usó y qué intervalos de curvas tiene? ¿Qué propuso el agente para las curvas de 1 y 5 m?
 6. Corte, relleno y neto del agente y del Panel de volúmenes, con la diferencia en %.
 7. Tiempo de reloj, tiempo del agente y porcentaje frente a los 130 min manuales.

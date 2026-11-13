@@ -16,11 +16,17 @@ Copia este texto tal cual en el agente que tiene conectado el MCP de Civil 3D. R
   en su paso 13 que el dibujo **no se guardó**, así que es posible que `PRUEBA_111.dwg` no tenga todo. El paso 1 crea lo
   que falte con los mismos `args` de `VALIDACION_111.md` (requisitos y pasos 1 y 5); el ensamblaje, si falta, se hace a
   mano con los clics de los requisitos de VALIDACION_111.
-- El plugin **1.12.0** se instala en el paso 0 desde la rama `tarea/2.5b-superficies-corredor`; el bundle queda con
-  `ArbaMcp.dll` y `ArbaMcp.Nucleo.dll`. Puente reiniciado con el `main.py` de 1.12.0 (`uv sync` antes) y el cliente MCP
-  reiniciado para que cargue la lista de **51** herramientas del plugin (más `buscar_api` del puente). Si la
-  instalación es de una rama que junta esta con la 1.13.0, `ping` dará la versión de esa rama y habrá más herramientas:
-  anótalo, no es fallo, siempre que estén `crear_superficies_corredor` y `estado_corredor`.
+- **Ronda de validación 1.12.0 a 1.14.1 (una sola instalación).** El plugin se instala **una vez**, en el paso 0 de
+  `VALIDACION_112.md`, desde la rama integrada `tarea/2.7-volumenes`: versión **1.14.1** (junta la 1.12.0, la 1.13.0, la
+  1.14.0 y la 1.14.1) con **53** herramientas del plugin (más `buscar_api` del puente). Los cinco prompts van en este
+  orden y en la misma instalación: `VALIDACION_112.md` → `VALIDACION_113.md` → `VALIDACION_114.md` →
+  `VALIDACION_1141.md` → `VALIDACION_FLUJO_COMPLETO.md`. En los cuatro últimos **no se reinstala**: su paso 0 solo
+  comprueba `ping` y la lista de herramientas.
+- El plugin se instala en el paso 0 de **este** prompt desde la rama `tarea/2.7-volumenes`; el bundle queda con
+  `ArbaMcp.dll` y `ArbaMcp.Nucleo.dll`. Puente reiniciado con el `main.py` de esa rama (`uv sync` antes) y el cliente MCP
+  reiniciado para que cargue la lista de **53** herramientas del plugin. Si se instalara sola la rama de la 1.12.0
+  (`tarea/2.5b-superficies-corredor`), `ping` daría `1.12.0` con **51** herramientas: anótalo, no es fallo, siempre que
+  estén `crear_superficies_corredor` y `estado_corredor`.
 - Reparto de papeles: el agente local **instala y verifica**; el código, la tabla de miembros y este prompt los mantiene
   la sesión de desarrollo a partir del informe. El agente no edita ningún archivo del repositorio salvo su informe en
   `herramientas-dev/informes/` y no hace commits.
@@ -71,11 +77,11 @@ Reglas:
 
 ## Pasos
 
-0. **Instalar.** Con Civil 3D cerrado, en PowerShell desde la raíz del repo en la rama `tarea/2.5b-superficies-corredor`:
+0. **Instalar** (la única instalación de la ronda). Con Civil 3D cerrado, en PowerShell desde la raíz del repo en la rama `tarea/2.7-volumenes`:
    `powershell -ExecutionPolicy Bypass -File .\ArbaMcp\instalar.ps1`. En `PuenteMcp`, `uv sync`. Reinicia el puente y el
    cliente MCP. Abre Civil 3D con `PRUEBA_112.dwg`. `ping` con `args={"pedido":"comprueba que el plugin responde"}` →
-   `version` debe ser exactamente `1.12.0` (ver requisitos si la rama junta 1.12.0 y 1.13.0). Pide la lista de
-   herramientas: deben ser **51** del plugin e incluir `crear_superficies_corredor` con los parámetros `corredor`,
+   `version` debe ser exactamente `1.14.1` (`1.12.0` si se instaló sola la rama de la 1.12.0; ver requisitos). Pide la
+   lista de herramientas: deben ser **53** del plugin (**51** con la rama sola) e incluir `crear_superficies_corredor` con los parámetros `corredor`,
    `nombre_top`, `nombre_datum`, `simular` y `pedido`. Si no, para aquí.
 
 1. **Preparar el dibujo** (no decisivo; cada creación deja su entrada en Deshacer, es normal).

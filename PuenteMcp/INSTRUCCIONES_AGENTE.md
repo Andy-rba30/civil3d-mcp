@@ -42,7 +42,7 @@ Es la **única receta** de este archivo, porque es el flujo principal (las demá
 | 5 | `crear_corredor` | la rasante (4), el ensamblaje y el terreno (1) como `superficie_objetivo` |
 | 6 | `crear_superficies_corredor` | el corredor (5): crea la Top y la Datum |
 | 7 | `crear_secciones` | el corredor y sus superficies (5 y 6), para que las secciones los muestren |
-| 8 | `calcular_volumenes` | el terreno (1) y la Datum (6), con los parámetros que publique la herramienta |
+| 8 | `calcular_volumenes` | el terreno (1) y la Datum (6); para la tabla por progresivas, las secciones (7). Pregunta los factores (por defecto 1) |
 
 1. **Lo manual va antes.** El **ensamblaje** lo crea la persona en Civil 3D (no hay herramienta para eso): compruébalo con `listar_ensamblajes` antes de empezar y, si no hay, pídeselo y espera. La polilínea, el archivo de puntos y los PVI los da el usuario: no los inventes.
 2. **Plan y simulación, sin escribir nada.** Lee el dibujo (`listar_superficies`, `listar_alineamientos`, `listar_perfiles`, `listar_ensamblajes`, `listar_corredores`), simula con `simular=true` todos los pasos cuyos datos ya existen (en un dibujo vacío, el 1 y el 2: los demás responderían "No existe ..." porque usan el objeto del paso anterior) y muestra una tabla con los 8 pasos: herramienta, argumentos, qué crea y si ya está simulado. **Espera la confirmación.**

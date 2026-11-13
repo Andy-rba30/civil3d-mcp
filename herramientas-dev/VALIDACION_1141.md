@@ -14,11 +14,15 @@ Copia este texto tal cual en el agente que tiene conectado el MCP de Civil 3D. R
   - Las superficies de corredor `Corredor 1 - Top` y `Corredor 1 - Datum` (las creó la 1.12.0).
   Lo que hayan dejado las validaciones 1.13.0 y 1.14.0 (grupos de líneas de muestreo, vistas de sección, volúmenes) no
   molesta: anótalo en el paso 1. Si falta algo de la lista, **para** y anótalo: esta validación no lo crea.
-- El plugin **1.14.1** se instala en el paso 0 desde la rama `tarea/1.14.1-arreglos` (o desde la rama integrada que
-  indique el PR, si la orquestadora la juntó con la 1.14.0); el bundle queda con `ArbaMcp.dll` y `ArbaMcp.Nucleo.dll`.
-  Puente reiniciado con el `main.py` de 1.14.1 (`uv sync` antes) y el cliente MCP reiniciado. **Esta versión no añade
-  herramientas**: la lista es de **52** del plugin si es solo esta rama, o **53** si la instalación trae también
-  `calcular_volumenes` (1.14.0), más `buscar_api` del puente.
+- **Ronda de validación 1.12.0 a 1.14.1 (una sola instalación).** El plugin se instala **una vez**, en el paso 0 de
+  `VALIDACION_112.md`, desde la rama integrada `tarea/2.7-volumenes`: versión **1.14.1** (junta la 1.12.0, la 1.13.0, la
+  1.14.0 y la 1.14.1) con **53** herramientas del plugin (más `buscar_api` del puente). Los cinco prompts van en este
+  orden y en la misma instalación: `VALIDACION_112.md` → `VALIDACION_113.md` → `VALIDACION_114.md` →
+  `VALIDACION_1141.md` → `VALIDACION_FLUJO_COMPLETO.md`. En los cuatro últimos **no se reinstala**: su paso 0 solo
+  comprueba `ping` y la lista de herramientas.
+- El plugin es el que instaló el paso 0 de `VALIDACION_112.md` (rama integrada `tarea/2.7-volumenes`, versión
+  **1.14.1**): **no se reinstala**. **Esta versión no añade herramientas**: la lista es de **53** del plugin (con
+  `calcular_volumenes` de la 1.14.0), más `buscar_api` del puente.
 - Reparto de papeles: el agente local **instala y verifica**; el código, la tabla de miembros y este prompt los mantiene
   la sesión de desarrollo a partir del informe. El agente no edita ningún archivo del repositorio salvo su informe en
   `herramientas-dev/informes/` y no hace commits.
@@ -73,12 +77,11 @@ Reglas:
 
 ## Pasos
 
-0. **Instalar y versión (decisivo).** Con Civil 3D cerrado, en PowerShell desde la raíz del repo en la rama
-   `tarea/1.14.1-arreglos` (o la integrada): `powershell -ExecutionPolicy Bypass -File .\ArbaMcp\instalar.ps1`. En
-   `PuenteMcp`, `uv sync`. Reinicia el puente y el cliente MCP. Abre Civil 3D con la copia del DWG. `ping` con
+0. **Versión (decisivo).** No se reinstala: la instalación la hizo el paso 0 de `VALIDACION_112.md` (rama
+   `tarea/2.7-volumenes`). Con Civil 3D abierto con la copia del DWG, `ping` con
    `args={"pedido":"comprueba que el plugin responde"}` → `"version": "1.14.1"`, `"hay_dibujo": true`. En PowerShell:
    `curl.exe -s http://127.0.0.1:8765/ping` → `{"ok":true,"servidor":"ArbaMcp","version":"1.14.1"}`. Pide la lista de
-   herramientas: **52** del plugin (o **53** con `calcular_volumenes`); anota cuál. Si la versión no es exactamente
+   herramientas: **53** del plugin (con `calcular_volumenes`). Si la versión no es exactamente
    `1.14.1`, para aquí.
 
 1. **Comprobar el dibujo** (solo lecturas, no decisivo).
@@ -256,7 +259,7 @@ Guarda `herramientas-dev/informes/informe_validacion_1141_<AAAAMMDD>.md` con: ve
 tiempo, los hallazgos, el resultado global (OK solo si los pasos decisivos 0, 2, 5, 6, 7, 9, 10, 11 y 12 son OK) y las
 respuestas a estas preguntas para la memoria técnica:
 
-1. Las dos versiones del paso 0 (`ping` y `GET /ping`), literales, y el número de herramientas (52 o 53).
+1. Las dos versiones del paso 0 (`ping` y `GET /ping`), literales, y el número de herramientas (53).
 2. Paso 2: los contornos de `Corredor 1 - Top` y `Corredor 1 - Datum`, literales (`nombre`, `tipo`,
    `es_extension_corredor`, `usar_como_exterior`).
 3. Capa del corredor: la capa de la configuración (paso 3, y si el modificador era «Ninguno»), `despues.capa` de la
