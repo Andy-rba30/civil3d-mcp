@@ -80,6 +80,7 @@ def test_sin_conexion_y_401_al_sincronizar(servidor, puente, monkeypatch):
     ("ejecutar_comando", [P_TIMEOUT], {}, 120),
     ("abrir_dibujo", [], {}, 120),
     ("reconstruir_corredor", [P_CORREDOR, P_SIMULAR], {}, 300),
+    ("crear_corredor", [P_SIMULAR], {}, 300),   # 1.11.0: crea y reconstruye el corredor
     ("exportar_landxml", [P_TIMEOUT, P_SIMULAR], {}, 300),
     ("ejecutar_comando", [P_TIMEOUT], {"timeout_s": 200}, 210),
     ("exportar_imx", [P_TIMEOUT], {"timeout_s": 600}, 610),
@@ -173,7 +174,7 @@ def test_construir_app_expone_mcp_y_sse(puente):
     rutas = sorted(getattr(r, "path", "") for r in app.routes)
     assert "/mcp" in rutas and "/sse" in rutas
     assert puente.PUERTO_PUENTE == 8001
-    assert puente.__version__ == "1.10.0"
+    assert puente.__version__ == "1.11.0"
 
 
 # ---------------------------------------------------------------------------------------------- id_log (1.6.0)
