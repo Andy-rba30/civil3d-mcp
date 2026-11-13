@@ -86,13 +86,8 @@ namespace ArbaMcp
         {
             var estilos = CivilApplication.ActiveDocument.Styles.SurfaceStyles;
             if (estilos.Contains(nombre)) return estilos[nombre];
-            var nombres = new List<string>();
-            foreach (ObjectId id in estilos)
-            {
-                var st = tr.GetObject(id, OpenMode.ForRead);
-                string n = Api.Leer<string>(st, null, "Name", "DisplayName");
-                if (!string.IsNullOrEmpty(n)) nombres.Add(n);
-            }
+            // 1.10.1: nombres con el ayudante de crear_rasante (DBObject.Name); la reflexión por "Name" daba "ninguno legible"
+            var nombres = NombresDeEstilos(tr, estilos);
             throw new ArgumentException("No existe el estilo de superficie '" + nombre + "' en el dibujo. Estilos disponibles: " + (nombres.Count == 0 ? "ninguno legible" : string.Join(", ", nombres))
                 + ". En Civil 3D se ven en Espacio de herramientas → Configuración → Superficie → Estilos de superficie.");
         }

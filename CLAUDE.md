@@ -219,13 +219,19 @@ Los prompts que no tocan Civil 3D (solo documentación, scripts de la nube o el 
 - `_.UNDO 1` / Ctrl+Z **no elimina la superficie TIN** creada por API con `crear_superficie_tin`: la entrada de Deshacer
   existe, pero la entidad `TinSurface` sigue en el dibujo (31/10/2026, informe 1.7.0, paso 10). Pendiente: comprobar si
   pasa lo mismo con el eje y el perfil (los informes 1.8.0 y 1.9.0 omitieron ese paso, los objetos se conservaron para
-  la validación siguiente) y valorar un deshacer propio, como `deshacer_objetivos`.
+  la validación siguiente) y valorar un deshacer propio, como `deshacer_objetivos`. El informe 1.10.0 aclara una parte:
+  las rasantes creadas con `crear_rasante` **sí** se quitan con `_.UNDO 1` (13/11/2026, paso 10); el eje sigue sin
+  probarse (el `Eje 1` de esa validación se conservó).
 - `ejecutar_comando` recorta los espacios finales del texto (`Trim`), así que un comando interactivo que necesita un
   espacio doble final para cerrar la entrada (por ejemplo `_.PLINE ...`) no termina; el agente lo resolvió con un
-  archivo `.scr` (31/10/2026, informe 1.8.0, paso 0). Pendiente: corregirlo en el plugin.
-- La lista de estilos que acompaña a los errores "No existe el estilo..." sale como "ninguno legible": el nombre de
-  `StyleBase` no se pudo leer por reflexión en esta instalación (31/10/2026, informe 1.7.0, paso 8; igual en 1.8.0 y
-  1.9.0). Pendiente: corrección.
+  archivo `.scr` (31/10/2026, informe 1.8.0, paso 0). Pendiente: corregirlo en el plugin. En la validación 1.10.0 la
+  polilínea de prueba se dibujó a mano en Civil 3D por el mismo motivo (13/11/2026, paso 0).
+- En `crear_superficie_tin`, `crear_alineamiento_desde_polilinea` y `crear_perfil_terreno_y_vista`, la lista de estilos
+  que acompaña a los errores "No existe el estilo..." sale como "ninguno legible": el nombre de `StyleBase` no se pudo
+  leer por reflexión en esta instalación (31/10/2026, informe 1.7.0, paso 8; igual en 1.8.0 y 1.9.0). `crear_rasante`
+  ya devuelve la lista real de estilos de perfil y de conjuntos de etiquetas porque lee el nombre con
+  `Autodesk.Civil.DatabaseServices.DBObject.Name` (13/11/2026, informe 1.10.0, paso 4). Pendiente: aplicarlo a las otras
+  herramientas (1.10.1).
 - El formato de archivo de puntos `PENZD (comma delimited)` existe en la instalación del dueño y `crear_superficie_tin`
   lo elige solo (31/10/2026, informe 1.7.0, pasos 2 y 3).
 - `Alignment.Create` con `PolylineOptions` más una curva libre por PI con `AddFreeCurve` crea el eje con las curvas y
@@ -236,3 +242,16 @@ Los prompts que no tocan Civil 3D (solo documentación, scripts de la nube o el 
   punto de inserción automático usa la extensión del dibujo entera, así que en dibujos con contenido lejano la vista
   puede quedar muy a la derecha (informe 1.9.0, paso 2: x ≈ 6 × 10^5 con un eje en x ≈ 1000..1600). Pendiente: decidir
   si conviene usar solo la extensión del eje.
+- `Profile.CreateByLayout` más un `AddPVI` por PVI y una curva por PVI (`AddFreeSymmetricParabolaByPVIAndCurveLength` o
+  `AddFreeCircularCurveByPVIAndLength`) en una misma transacción crean la rasante (tipo `FG`) con sus curvas y dejan
+  **una** entrada de Deshacer (13/11/2026, informe 1.10.0, pasos 5, 7 y 9). A diferencia de la TIN, `_.UNDO 1` **sí**
+  quita estos perfiles del dibujo (paso 10).
+- Las pendientes de la API (`ProfileTangent.Grade`, `ProfilePVI.GradeIn`/`GradeOut`) vienen en **tanto por uno**
+  (0,025 = 2,5 %), y `Profile.ElevationMax` da la cota del vértice de la parábola, no la del PVI (13/11/2026, informe
+  1.10.0, paso 5: 109,5248 frente a 110). Los textos de los enumerados de curvas y PVI están en
+  `miembros_por_verificar_civil3d.md`.
+- El error por nombre repetido de `crear_rasante` (paso 8, repitiendo la creación real) deja una entrada
+  `EXECUTEFUNCTION` **vacía** en el menú Deshacer, así que después hace falta un `_.UNDO 1` de más; los errores del
+  paso 4, en simulación, no dejaron ninguna (13/11/2026, informe 1.10.0, pasos 8 y 10). Pendiente: corrección en 1.10.1.
+- `ping` devuelve `"version": "1.10.0.0"` (la `FileVersion` con cuatro cifras) en vez de `"1.10.0"` (13/11/2026,
+  informe 1.10.0, paso 0). Pendiente: corrección en 1.10.1.

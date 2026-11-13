@@ -9,12 +9,15 @@ Copia este texto tal cual en el agente que tiene conectado el MCP de Civil 3D. R
   Ningún dato real.
 - **Eje.** `Eje 1` de VALIDACION_18: alineamiento creado con `crear_alineamiento_desde_polilinea` desde la polilínea
   `1000,2000 → 1300,2000 → 1300,2300 → 1600,2300` de la capa `EJE_PRUEBA` con radio 80 (va de la progresiva `0` a la
-  `831.3274`). **Solo si partes de un dibujo nuevo** (sin `Eje 1`) hay que dibujar la polilínea, y a mano, porque
-  `ejecutar_comando` todavía recorta los espacios finales y `_.PLINE` no termina: en la línea de comandos de Civil 3D
-  escribe `_-LAYER`, Intro, `_M`, Intro, `EJE_PRUEBA`, Intro, Intro (crea la capa y la deja actual); luego `_.PLINE`,
-  Intro, y los cuatro puntos **con `#` delante** (coordenadas absolutas aunque esté activa la entrada dinámica):
-  `#1000,2000` Intro, `#1300,2000` Intro, `#1300,2300` Intro, `#1600,2300` Intro, e Intro otra vez para terminar. El
-  paso 1 crea el eje desde ella.
+  `831.3274`). **Solo si partes de un dibujo nuevo** (sin `Eje 1`) hay que dibujar la polilínea. Con la 1.10.1 (que
+  esta rama trae) ya se puede con `ejecutar_comando`, como en los pasos 2 y 3 de `VALIDACION_1101.md`:
+  `args={"comando":"_.-LAYER _M EJE_PRUEBA\n\n","timeout_s":20}` (termina en **dos saltos de línea**) y
+  `args={"comando":"_.PLINE 1000,2000 1300,2000 1300,2300 1600,2300  ","timeout_s":20}` (**dos espacios** al final);
+  los dos deben responder `terminado`. Si no, dibújala a mano: en la línea de comandos de Civil 3D escribe `_-LAYER`,
+  Intro, `_M`, Intro, `EJE_PRUEBA`, Intro, Intro (crea la capa y la deja actual); luego `_.PLINE`, Intro, y los cuatro
+  puntos **con `#` delante** (coordenadas absolutas aunque esté activa la entrada dinámica): `#1000,2000` Intro,
+  `#1300,2000` Intro, `#1300,2300` Intro, `#1600,2300` Intro, e Intro otra vez para terminar. El paso 1 crea el eje
+  desde ella.
 - **Archivo de puntos del terreno.** El `puntos_prueba.csv` de VALIDACION_17 **no** sirve: solo cubre x 1000..1020,
   y 2000..2020, y el eje va de x 1000 a 1600 e y 2000 a 2300. Crea en la PC `C:\Proyectos\dibujos_prueba\terreno_corredor.csv`
   con exactamente estas 10 líneas (9 puntos PENZD de un plano inclinado genérico que cubre x 900..1700, y 1900..2400;
@@ -61,6 +64,12 @@ Copia este texto tal cual en el agente que tiene conectado el MCP de Civil 3D. R
 - El plugin **1.11.0** se instala en el paso 0 desde la rama `tarea/2.5-corredor`; el bundle queda con `ArbaMcp.dll` y
   `ArbaMcp.Nucleo.dll`. Puente reiniciado con el `main.py` de 1.11.0 (`uv sync` antes) y el cliente MCP reiniciado para
   que cargue la lista de **50** herramientas del plugin (más `buscar_api` del puente).
+- **Esta rama trae también la 1.10.1** (rama `tarea/1.10.1-correcciones`, fusionada): `ejecutar_comando` conserva los
+  espacios finales, cada escritura real se ensaya antes con `simular=true` (si el ensayo falla, error sin entrada vacía
+  en Deshacer ni copia), `ping` da la versión con tres números y los errores de estilo listan los nombres. Por eso
+  `ping` debe responder **`1.11.0`** (no `1.11.0.0`). En la **misma instalación** se valida primero
+  `herramientas-dev/VALIDACION_1101.md` y **después** este prompt; si VALIDACION_1101 falla en un paso decisivo, anótalo
+  aquí también.
 - Reparto de papeles: el agente local **instala y verifica**; el código, la tabla de miembros y este prompt los mantiene
   la sesión de desarrollo a partir del informe. El agente no edita ningún archivo del repositorio salvo su informe en
   `herramientas-dev/informes/` y no hace commits.
@@ -92,7 +101,8 @@ Reglas:
 - **No marques OK lo que no viste.** Cada OK va con la respuesta literal.
 - Si un paso falla, anota el error literal y sigue con el siguiente salvo que el prompt diga que pares.
 - No uses `ejecutar_comando` para "arreglar" nada: si algo no funciona, es un hallazgo. En este prompt solo se usa
-  para `_.ZOOM` y `_.UNDO`, que son del propio Civil 3D.
+  para `_.ZOOM` y `_.UNDO`, que son del propio Civil 3D, y, si partes de un dibujo nuevo, para la capa y la polilínea
+  de los requisitos.
 - En este prompt, **`pedido` siempre lleva las palabras literales** que se indican; no las cambies.
 - Los parámetros de tipo `json` (`pvis`) se pasan como **texto** con la lista JSON dentro, tal como está escrito aquí.
 - Si el dibujo ya tiene un corredor llamado `Corredor 1` o `Corredor 2`, usa `Corredor MCP 111` y `Corredor MCP 111 b`
@@ -107,8 +117,8 @@ Reglas:
 0. **Instalar.** Con Civil 3D cerrado, en PowerShell desde la raíz del repo en la rama `tarea/2.5-corredor`:
    `powershell -ExecutionPolicy Bypass -File .\ArbaMcp\instalar.ps1`. En `PuenteMcp`, `uv sync`. Reinicia el puente y el
    cliente MCP. Abre Civil 3D con la copia del DWG. `ping` con `args={"pedido":"comprueba que el plugin responde"}` →
-   `version` debe ser `1.11.0` (si sale `1.11.0.0`, anótalo: es el hallazgo conocido de la 1.10.0, no un fallo de esta
-   versión). Pide la lista de herramientas: deben ser **50** del plugin e incluir `crear_corredor` con los parámetros
+   `version` debe ser exactamente `1.11.0` (con la 1.10.1 son tres números; `1.11.0.0` es FALLO). Pide la lista de
+   herramientas: deben ser **50** del plugin e incluir `crear_corredor` con los parámetros
    `nombre`, `alineamiento`, `perfil`, `ensamblaje`, `frecuencia`, `inicio`, `fin`, `superficie_objetivo`,
    `linea_base`, `region`, `simular` y `pedido`. Si no, para aquí.
 
@@ -172,7 +182,8 @@ Reglas:
    - **Sin frecuencia**: `args={"nombre":"C","alineamiento":"Eje 1","perfil":"Rasante 1","ensamblaje":"Ensamblaje 1","simular":true}`
      → `Falta el parámetro obligatorio 'frecuencia' (metros entre secciones del corredor, por ejemplo 10).`
 
-5. **Creación real (decisivo).** `crear_corredor` **sin** `simular`:
+5. **Creación real (decisivo).** `crear_corredor` **sin** `simular` (con la 1.10.1 el plugin la ensaya antes con
+   `simular=true`; si el ensayo pasa, la escritura sigue igual y deja **una** entrada en Deshacer):
    `args={"nombre":"Corredor 1","alineamiento":"Eje 1","perfil":"Rasante 1","ensamblaje":"Ensamblaje 1","frecuencia":10,"superficie_objetivo":"Terreno","pedido":"crea el corredor Corredor 1 con el Eje 1, la Rasante 1 y el Ensamblaje 1, cada 10 m, con los taludes al Terreno"}`.
    Esperado: `simulado: false`, `mensaje` igual a la `accion` del paso 3, `cambios` que incluye `existe`,
    `numero_lineas_base`, `numero_regiones`, `inicio`, `fin`, las frecuencias y `objetivos_superficie`; `antes` como en
@@ -255,9 +266,13 @@ Reglas:
 11. **Error por nombre repetido.** Si después del paso 10 ya no existe `Corredor 1`, créalo otra vez con el `args` del
     paso 5 (anota la respuesta). Luego repite exactamente el `crear_corredor` del paso 5 (sin `simular`). Esperado:
     `ok: false` y `error` que contiene `Ya existe el corredor 'Corredor 1'. Usa listar_corredores o pasa otro 'nombre'.`,
-    con `id_log`. OK solo si `listar_corredores` sigue mostrando un solo `Corredor 1`. Anota si aparece una entrada
-    `EXECUTEFUNCTION` vacía en Deshacer o un archivo nuevo en `backups\` (hallazgos conocidos de la 1.10.0; puede que la
-    1.10.1 los corrija).
+    con `id_log`. OK solo si `listar_corredores` sigue mostrando un solo `Corredor 1`, **no** hay entrada nueva en el
+    menú Deshacer y **no** aparece ningún archivo nuevo en `backups\`: con la 1.10.1 la escritura se ensaya antes con
+    `simular=true`, el ensayo da el error y el contexto de comando no se abre. `leer_historial` con
+    `args={"ultimas_n":15}` debe mostrar `MCP ✗ crear_corredor no se ejecutó: falló la comprobación previa
+    (simulación)...` y **ninguna** línea `Comando inicia: EXECUTEFUNCTION` desde la llamada; en `mcp_log.jsonl`, una
+    sola línea de esta llamada con `ok:false`. Si aparece la entrada vacía o la copia, es FALLO de la corrección de la
+    1.10.1 (anótalo también para VALIDACION_1101).
 
 12. **Superficie por defecto con varias superficies.** Crea una segunda superficie genérica con `crear_superficie_tin` y
     `args={"nombre":"Terreno 2","archivo":"C:\\Proyectos\\dibujos_prueba\\terreno_corredor.csv"}`. Luego:

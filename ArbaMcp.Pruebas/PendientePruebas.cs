@@ -152,6 +152,76 @@ namespace ArbaMcp.Pruebas
             Assert.Null(plan.EnCurso);
         }
 
+        // ------------------------------------------------------------------ comprobación previa (1.10.1)
+        [Fact]
+        public void SinComprobacionSeEntregaYSigueEnCola()
+        {
+            var p = new Pendiente(() => "escrito", ContextoEjecucion.Documento, "x");
+            Assert.True(p.Comprobar());
+            Assert.True(p.EstaEnCola, "Comprobar no reclama el trabajo: lo reclama Correr en el contexto de comando");
+            p.Correr();
+            Assert.Equal("escrito", p.Tarea.Result);
+        }
+
+        [Fact]
+        public void ComprobacionQuePasaSeCorreUnaVezYNoTocaElResultado()
+        {
+            int comprobaciones = 0, ejecuciones = 0;
+            var p = new Pendiente(() => { ejecuciones++; return "escrito"; }, ContextoEjecucion.Documento, "x")
+            {
+                Comprobacion = () => { comprobaciones++; return "simulado"; }
+            };
+            Assert.True(p.Comprobar());
+            Assert.Equal(1, comprobaciones);
+            Assert.Equal(0, ejecuciones);
+            Assert.False(p.Tarea.IsCompleted, "el resultado de la simulación no se filtra a la respuesta");
+            p.Correr();
+            Assert.Equal("escrito", p.Tarea.Result);
+            Assert.Equal(1, comprobaciones);
+            Assert.Equal(1, ejecuciones);
+        }
+
+        [Fact]
+        public async Task ComprobacionQueFallaEntregaSuErrorYElTrabajoNoSeEjecuta()
+        {
+            int ejecuciones = 0;
+            var p = new Pendiente(() => { ejecuciones++; return "escrito"; }, ContextoEjecucion.Documento, "crear_rasante")
+            {
+                Comprobacion = () => throw new ArgumentException("Ya existe el perfil 'Rasante 1' en el alineamiento 'Eje 1'.")
+            };
+            Assert.False(p.Comprobar());
+            Assert.True(p.EstaEjecutando, "reclamado: el servidor ya no puede descartarlo ni otro lo ejecuta");
+            var ex = await Assert.ThrowsAsync<ArgumentException>(() => p.Tarea);
+            Assert.Equal("Ya existe el perfil 'Rasante 1' en el alineamiento 'Eje 1'.", ex.Message);
+            Assert.NotNull(p.MsEspera);
+            Assert.NotNull(p.MsEjecucion);
+            p.Correr();   // si alguien lo intentara ejecutar después, no corre
+            Assert.Equal(0, ejecuciones);
+        }
+
+        [Fact]
+        public void DescartadoNoSeComprueba()
+        {
+            int comprobaciones = 0;
+            var p = new Pendiente(() => 1, ContextoEjecucion.Documento, "x") { Comprobacion = () => { comprobaciones++; return null; } };
+            Assert.True(p.Descartar());
+            Assert.False(p.Comprobar());
+            Assert.Equal(0, comprobaciones);
+            Assert.True(p.Tarea.IsCanceled);
+        }
+
+        [Fact]
+        public void DescartadoDuranteUnaComprobacionQueFallaSeCancela()
+        {
+            Pendiente p = null;
+            p = new Pendiente(() => 1, ContextoEjecucion.Documento, "x")
+            {
+                Comprobacion = () => { p.Descartar(); throw new InvalidOperationException("falla"); }
+            };
+            Assert.False(p.Comprobar());
+            Assert.True(p.Tarea.IsCanceled, "el servidor ya respondió tiempo agotado; no se entrega el error");
+        }
+
         [Fact]
         public void VaciarCancelaTodo()
         {

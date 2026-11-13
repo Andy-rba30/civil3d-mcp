@@ -75,6 +75,38 @@ namespace ArbaMcp
         }
 
         /// <summary>
+        /// Comprobación previa de una escritura real (desde 1.10.1; ArbaMcp.Nucleo.ComprobacionPrevia): null si la llamada
+        /// no la lleva; si la lleva, una función que el hilo principal corre en contexto de aplicación justo antes de
+        /// entregar la escritura al contexto de comando. La función ejecuta la misma herramienta con simular=true (bloqueo
+        /// de lectura, sin copia ni entrada de Deshacer) y descarta su resultado: si pasa, no escribe nada en el historial
+        /// ni en mcp_log.jsonl (la línea de la llamada la escribe EjecutarRegistrando al hacer la escritura). Si falla,
+        /// anota en el historial que el contexto de comando no se abrió, escribe la única línea de mcp_log.jsonl de esta
+        /// llamada (mismo id_log, args originales, ok=false) y relanza: el servidor responde ese error como siempre.
+        /// Se construye en el hilo del servidor sin tocar AutoCAD.
+        /// </summary>
+        internal static Func<object> CrearComprobacionPrevia(Herramienta h, JsonElement args, string idLog, ContextoEjecucion contexto)
+        {
+            if (!Nucleo.ComprobacionPrevia.Aplica(h, contexto, h.EjecutarAsync != null, args)) return null;
+            JsonElement simulada = Argumentos.ConSimular(args);
+            return () =>
+            {
+                var reloj = System.Diagnostics.Stopwatch.StartNew();
+                try
+                {
+                    h.Ejecutar(simulada);
+                    return null;
+                }
+                catch (Exception ex)
+                {
+                    string error = Raiz(ex).Message;
+                    Historial.Registrar("MCP ✗ " + h.Nombre + " no se ejecutó: falló la comprobación previa (simulación); sin contexto de comando, sin copia y sin entrada en Deshacer: " + error);
+                    Escritura.RegistrarLog(DocActivoONulo(), idLog, h.Nombre, args, false, reloj.ElapsedMilliseconds, error);
+                    throw;
+                }
+            };
+        }
+
+        /// <summary>
         /// Igual que EjecutarRegistrando para las herramientas asíncronas (ejecutar_comando): la línea del log se escribe
         /// al terminar, por la cola Inmediato del hilo principal, porque leer la ruta del dibujo toca la API de AutoCAD.
         /// </summary>
@@ -200,7 +232,7 @@ namespace ArbaMcp
                     return new
                     {
                         plugin = "ArbaMcp",
-                        version = typeof(Herramientas).Assembly.GetName().Version?.ToString(),
+                        version = Servidor.Version,   // tres números ("1.10.1"), como GET /ping (hasta 1.10.0 daba "1.10.0.0")
                         puerto = Servidor.Puerto,
                         dibujo = nombre,
                         hay_dibujo = doc != null,
@@ -355,16 +387,17 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "ejecutar_comando",
-                Descripcion = "Último recurso; usa primero las herramientas de API. Envía un comando a la línea de comandos del dibujo activo y espera a que termine. Devuelve 'terminado', 'cancelado', 'fallido', 'el comando no se inició en N s' o 'timeout con ESC'. Solo con undo=true la orden va en un grupo de UNDO (un solo Ctrl+Z la revierte).",
+                Descripcion = "Último recurso; usa primero las herramientas de API. Envía un comando a la línea de comandos del dibujo activo y espera a que termine. Devuelve 'terminado', 'cancelado', 'fallido', 'el comando no se inició en N s' o 'timeout con ESC'. Solo con undo=true la orden va en un grupo de UNDO (un solo Ctrl+Z la revierte). Los espacios finales se conservan (un espacio equivale a Enter): '_.PLINE 1000,2000 1300,2000  ' cierra la polilínea con el segundo espacio; si el texto no termina en espacio ni salto de línea se añade un Enter.",
                 Parametros =
                 {
-                    P("comando", "string", "Texto del comando, por ejemplo 'REGEN' o '_.ZOOM E'", true),
+                    P("comando", "string", "Texto del comando, por ejemplo 'REGEN', '_.ZOOM E' o '_.PLINE 1000,2000 1300,2000  ' (los espacios finales equivalen a Enter y se conservan)", true),
                     P("timeout_s", "number", "Segundos máximos de espera (por defecto 60). Si se agota, se envían dos ESC para cancelar"),
                     P("undo", "boolean", "Con true envuelve la orden en _.UNDO _BE / _.UNDO _E (por defecto false)")
                 },
                 EjecutarAsync = a =>
                 {
-                    string comando = Requerido(a, "comando").Trim();
+                    // 1.10.1: sin Trim. Los espacios finales cierran las entradas de una orden interactiva (ArbaMcp.Nucleo.Comando)
+                    string comando = Comando.Preparar(Requerido(a, "comando"));
                     int timeoutMs = (int)(Math.Max(1, Num(a, "timeout_s", 60)) * 1000);
                     return EjecutarComando(comando, timeoutMs, Bool(a, "undo", false));
                 }
@@ -503,8 +536,7 @@ namespace ArbaMcp
         {
             var tcs = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-            string cmdParse = comando.Split(new[] { ' ', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
-            cmdParse = cmdParse.TrimStart('_', '.').ToUpperInvariant();
+            string cmdParse = Comando.Nombre(comando);   // "_.PLINE 1000,2000  " → "PLINE"
 
             Document doc = null;  // lo asigna el hilo principal al enviar; el servidor lo lee solo después de esperar ese envío
             int iniciado = 0;     // se escribe en el hilo principal y se lee en el del servidor
@@ -554,7 +586,8 @@ namespace ArbaMcp
                 d.CommandFailed += OnCommandFailed;
                 try
                 {
-                    d.SendStringToExecute((undo ? "_.UNDO _BE\n" : "") + comando + "\n", true, false, false);
+                    // Enter final solo si el texto no lo trae ya (1.10.1): uno de más repetiría la orden en la línea vacía
+                    d.SendStringToExecute(Comando.TextoAEnviar(comando, undo), true, false, false);
                 }
                 catch
                 {
