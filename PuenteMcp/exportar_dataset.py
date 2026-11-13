@@ -264,5 +264,24 @@ def main(argv=None) -> int:
     return 0
 
 
+def _salida_en_utf8() -> None:
+    """Hace que stdout y stderr escriban en UTF-8 sea cual sea la página de códigos de la consola.
+
+    Solo para la línea de comandos (se llama desde el bloque __main__, no al importar el módulo ni desde main()). En
+    Windows la consola suele estar en cp1252, que no tiene la flecha "→" del resumen: el programa moría con
+    UnicodeEncodeError y quien capturaba su salida en UTF-8 (el agente instalador, la prueba) no la podía leer. Un flujo
+    que no admite reconfigure se deja como está.
+    """
+    for flujo in (sys.stdout, sys.stderr):
+        reconfigurar = getattr(flujo, "reconfigure", None)
+        if reconfigurar is None:
+            continue
+        try:
+            reconfigurar(encoding="utf-8")
+        except (ValueError, OSError):
+            pass
+
+
 if __name__ == "__main__":
+    _salida_en_utf8()
     sys.exit(main())

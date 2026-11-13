@@ -220,10 +220,27 @@ def test_sin_lista_de_prohibidos_avisa(registros, monkeypatch, capsys):
 def test_se_puede_ejecutar_como_modulo(registros, tmp_path):
     import subprocess
     salida = tmp_path / "m.jsonl"
-    # El hijo escribe en UTF-8 aunque la consola sea cp1252 (Windows): si no, una ruta con tilde o la flecha "→" de la
-    # salida no se leen con encoding="utf-8" (informe del agente instalador sobre 4c8b6f0). Igual que test_buscar_api.
-    env = dict(os.environ, PYTHONIOENCODING="utf-8")
     r = subprocess.run([sys.executable, "-m", "exportar_dataset", "--logs", registros["log1"], "--salida", str(salida)],
-                       cwd=os.path.dirname(ed.__file__), env=env, capture_output=True, text=True, encoding="utf-8")
+                       cwd=os.path.dirname(ed.__file__), capture_output=True, text=True, encoding="utf-8")
     assert r.returncode == 0, r.stdout + r.stderr
     assert "6 pares" in r.stdout and salida.is_file()
+
+
+def test_como_modulo_con_consola_cp1252_y_ruta_con_tilde(registros, tmp_path):
+    """Con la consola de Windows (cp1252) y una ruta con tilde, la salida sigue en UTF-8 y el programa no se cae.
+
+    Reproduce el informe del agente instalador sobre la rama 2.5 (13/11/2026): en cp1252 el hijo moría con
+    UnicodeEncodeError al escribir la flecha "→" del resumen, y la lectura en UTF-8 fallaba con UnicodeDecodeError.
+    """
+    import subprocess
+    carpeta = tmp_path / "carpeta_ó"
+    carpeta.mkdir()
+    salida = carpeta / "m.jsonl"
+    env = dict(os.environ, PYTHONIOENCODING="cp1252")
+    r = subprocess.run([sys.executable, "-m", "exportar_dataset", "--logs", registros["log1"], "--salida", str(salida)],
+                       cwd=os.path.dirname(ed.__file__), env=env, capture_output=True)
+    texto = r.stdout.decode("utf-8")      # falla aquí si la salida no viene en UTF-8
+    errores = r.stderr.decode("utf-8")
+    assert r.returncode == 0, texto + errores
+    assert "6 pares" in texto and "→" in texto and "carpeta_ó" in texto
+    assert salida.is_file()
