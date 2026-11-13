@@ -43,27 +43,30 @@ haya que probar. Usa Opus con esfuerzo extra alto en las sesiones hijas. Actuali
 - Cada informe de validación se sube a `herramientas-dev/informes/`. Una sesión de "hallazgos" (solo documentación)
   pasa lo aprendido a la tabla de miembros y a los "Hechos ya validados" de `CLAUDE.md`.
 
-## Estado actual (13/11/2026, noche)
+## Estado actual (13/11/2026, 23:40)
 
-**En `main`**: versión **1.11.0**, validada (1.10.1 y 1.11.0 el 13/11/2026; PR #22 a #25 fusionados).
+**En `main`**: versión **1.11.0**, validada (1.10.1 y 1.11.0 el 13/11/2026; PR #22 a #25 y #28 fusionados).
 
-**Ronda A en preparación (todavía no probada en la PC):**
+**Ronda A LISTA PARA PROBAR en la PC** (aviso enviado al dueño). Todo va en la rama **`tarea/2.7-volumenes`**
+(commit `a502066`, versión **1.14.1**, 53 herramientas; pruebas en la nube 349/84/0 errores/21), que contiene:
 
-| Rama | PR | Versión | Qué | Estado |
-|---|---|---|---|---|
-| `tarea/2.5b-superficies-corredor` | #26 (borrador) | 1.12.0 | `crear_superficies_corredor`: Top y Datum con voladizo y contorno | Terminada, pruebas en verde, al día con main |
-| `tarea/2.6-secciones` | #27 (borrador) | 1.13.0 | `crear_secciones`: líneas de muestreo y vistas en cuadrícula. **Contiene la 1.12.0** | Terminada, pruebas en verde (294/82/0/21) |
-| `tarea/2.7-volumenes` | — | 1.14.0 | `calcular_volumenes` (superficie de volumen TIN; tabla por progresivas si la API alcanza) | En marcha (parte de 2.6) |
-| `tarea/2.8-flujo` | — | — | Receta "flujo vial completo" en INSTRUCCIONES_AGENTE y VALIDACION_FLUJO_COMPLETO | En marcha (parte de 2.6) |
-| `tarea/1.14.1-arreglos` | — | 1.14.1 | Capa del corredor, buscar_api en cp1252, campo `usar_como_exterior`, punto de inserción de la vista de perfil, validar las `agregar_*` | En marcha (parte de 2.6) |
+| Rama | PR (borrador) | Versión | Qué |
+|---|---|---|---|
+| `tarea/2.5b-superficies-corredor` | #26 | 1.12.0 | `crear_superficies_corredor` (Top y Datum, voladizo, contorno) |
+| `tarea/2.6-secciones` | #27 | 1.13.0 | `crear_secciones` (líneas de muestreo y vistas en cuadrícula) |
+| `tarea/2.7-volumenes` | #31 | 1.14.0 | `calcular_volumenes` (superficie de volumen TIN y tabla por áreas medias) |
+| `tarea/1.14.1-arreglos` | #30 | 1.14.1 | Capa del corredor, buscar_api cp1252, `es_extension_corredor`, punto de inserción junto al eje, validar las `agregar_*` |
+| `tarea/2.8-flujo` | #29 | — | Receta 2b "Flujo vial completo" en INSTRUCCIONES_AGENTE y VALIDACION_FLUJO_COMPLETO |
 
-**Siguiente paso**: cuando terminen 2.7, 2.8 y 1.14.1, la sesión de la 2.7 fusiona las otras dos en
-`tarea/2.7-volumenes` (versión final 1.14.1). La orquestadora revisa, corre las cuatro pruebas y manda al dueño una
-sola prueba con este orden: VALIDACION_112 → 113 → 114 → 1141 → FLUJO_COMPLETO → evaluación (5.2-D y 5.2-PC). Si da
-OK, se fusionan los PR #26, #27 y los de 2.7, 1.14.1 y 2.8 en ese orden, se suben los informes y se lanza la sesión
-de hallazgos.
+Orden de la prueba en una sola instalación: VALIDACION_112 → 113 → 114 → 1141 → FLUJO_COMPLETO → evaluación
+(PROMPT_EVALUACION de memoria-firma + `comparar` + `sincronizar_memoria.ps1`). Dibujo: `PRUEBA_112.dwg`, copia de
+`PRUEBA_111.dwg`.
 
-**Después**: Ronda B (Etapa 3) y Ronda C (Etapa 4).
+**Si da OK**: fusionar en orden #26, #27, #31, #30 y #29 (o solo #31, que lo contiene todo, cerrando los demás como
+incluidos), subir los informes, lanzar la sesión de hallazgos y actualizar la hoja de ruta (Etapa 2 hecha). Después,
+la **Ronda B** (Etapa 3: 3.1 `ejecutar_codigo` y 3.2 recetas).
+**Si falla**: pasar cada fallo a la sesión de su rama (o a una nueva con el prompt del fallo), corregir en esa rama,
+volver a fusionar en `tarea/2.7-volumenes` y repetir solo lo que falló.
 
 ## Propuestas pendientes (no están en la hoja de ruta)
 
