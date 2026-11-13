@@ -221,7 +221,10 @@ namespace ArbaMcp
                     // lecturas, y así no deja entrada en el menú Deshacer. La escritura real sigue en contexto de comando.
                     var contexto = herramienta.Contexto;
                     if (contexto == ContextoEjecucion.Documento && Argumentos.LeerSimular(args)) contexto = ContextoEjecucion.Aplicacion;
-                    pendiente = HiloPrincipal.Encolar(() => Herramientas.EjecutarRegistrando(herramienta, args, idLog), contexto, nombre);
+                    // 1.10.1: una escritura real se ensaya antes con simular=true en contexto de aplicación; si el ensayo
+                    // falla, se responde ese error sin abrir el contexto de comando (sin entrada vacía en Deshacer)
+                    var comprobacion = Herramientas.CrearComprobacionPrevia(herramienta, args, idLog, contexto);
+                    pendiente = HiloPrincipal.Encolar(() => Herramientas.EjecutarRegistrando(herramienta, args, idLog), contexto, nombre, comprobacion);
                     tareaPrincipal = pendiente.Tarea;
                 }
 

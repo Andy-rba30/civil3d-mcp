@@ -75,6 +75,38 @@ namespace ArbaMcp
         }
 
         /// <summary>
+        /// Comprobación previa de una escritura real (desde 1.10.1; ArbaMcp.Nucleo.ComprobacionPrevia): null si la llamada
+        /// no la lleva; si la lleva, una función que el hilo principal corre en contexto de aplicación justo antes de
+        /// entregar la escritura al contexto de comando. La función ejecuta la misma herramienta con simular=true (bloqueo
+        /// de lectura, sin copia ni entrada de Deshacer) y descarta su resultado: si pasa, no escribe nada en el historial
+        /// ni en mcp_log.jsonl (la línea de la llamada la escribe EjecutarRegistrando al hacer la escritura). Si falla,
+        /// anota en el historial que el contexto de comando no se abrió, escribe la única línea de mcp_log.jsonl de esta
+        /// llamada (mismo id_log, args originales, ok=false) y relanza: el servidor responde ese error como siempre.
+        /// Se construye en el hilo del servidor sin tocar AutoCAD.
+        /// </summary>
+        internal static Func<object> CrearComprobacionPrevia(Herramienta h, JsonElement args, string idLog, ContextoEjecucion contexto)
+        {
+            if (!Nucleo.ComprobacionPrevia.Aplica(h, contexto, h.EjecutarAsync != null, args)) return null;
+            JsonElement simulada = Argumentos.ConSimular(args);
+            return () =>
+            {
+                var reloj = System.Diagnostics.Stopwatch.StartNew();
+                try
+                {
+                    h.Ejecutar(simulada);
+                    return null;
+                }
+                catch (Exception ex)
+                {
+                    string error = Raiz(ex).Message;
+                    Historial.Registrar("MCP ✗ " + h.Nombre + " no se ejecutó: falló la comprobación previa (simulación); sin contexto de comando, sin copia y sin entrada en Deshacer: " + error);
+                    Escritura.RegistrarLog(DocActivoONulo(), idLog, h.Nombre, args, false, reloj.ElapsedMilliseconds, error);
+                    throw;
+                }
+            };
+        }
+
+        /// <summary>
         /// Igual que EjecutarRegistrando para las herramientas asíncronas (ejecutar_comando): la línea del log se escribe
         /// al terminar, por la cola Inmediato del hilo principal, porque leer la ruta del dibujo toca la API de AutoCAD.
         /// </summary>

@@ -35,6 +35,12 @@ Archivos tocados: `HiloPrincipal.cs` (reescrito), `Servidor.cs`, `Herramientas.c
 `Herramientas.Superficies.cs` (`ExportarPorComando`), `Herramientas.Seguridad.cs`, `Escritura.cs`,
 `pruebas/probar_servidor.py` (prueba nueva "Civil 3D ocupado").
 
+**Desde 1.10.1 (comprobación previa)**: antes de entregar una escritura real al contexto `Documento`, el hilo principal
+corre en el mismo turno la misma herramienta con `simular=true`, en contexto de aplicación y con bloqueo de lectura,
+como cualquier simulación (`Pendiente.Comprobar`, llamado desde `HiloPrincipal.Atender`). Si falla, responde ese error
+y no abre el contexto de comando, que dejaba una entrada `EXECUTEFUNCTION` vacía en Deshacer. Todo sigue en el hilo
+principal y de uno en uno: la regla de no llamar a AutoCAD desde el servidor no cambia.
+
 ## 3. Cómo comprobar en tu equipo si el plugin era la causa
 
 Hazlo antes de instalar 1.2.2, con el mismo dibujo con el que falló (siempre sobre una copia).
