@@ -355,16 +355,17 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "ejecutar_comando",
-                Descripcion = "Último recurso; usa primero las herramientas de API. Envía un comando a la línea de comandos del dibujo activo y espera a que termine. Devuelve 'terminado', 'cancelado', 'fallido', 'el comando no se inició en N s' o 'timeout con ESC'. Solo con undo=true la orden va en un grupo de UNDO (un solo Ctrl+Z la revierte).",
+                Descripcion = "Último recurso; usa primero las herramientas de API. Envía un comando a la línea de comandos del dibujo activo y espera a que termine. Devuelve 'terminado', 'cancelado', 'fallido', 'el comando no se inició en N s' o 'timeout con ESC'. Solo con undo=true la orden va en un grupo de UNDO (un solo Ctrl+Z la revierte). Los espacios finales se conservan (un espacio equivale a Enter): '_.PLINE 1000,2000 1300,2000  ' cierra la polilínea con el segundo espacio; si el texto no termina en espacio ni salto de línea se añade un Enter.",
                 Parametros =
                 {
-                    P("comando", "string", "Texto del comando, por ejemplo 'REGEN' o '_.ZOOM E'", true),
+                    P("comando", "string", "Texto del comando, por ejemplo 'REGEN', '_.ZOOM E' o '_.PLINE 1000,2000 1300,2000  ' (los espacios finales equivalen a Enter y se conservan)", true),
                     P("timeout_s", "number", "Segundos máximos de espera (por defecto 60). Si se agota, se envían dos ESC para cancelar"),
                     P("undo", "boolean", "Con true envuelve la orden en _.UNDO _BE / _.UNDO _E (por defecto false)")
                 },
                 EjecutarAsync = a =>
                 {
-                    string comando = Requerido(a, "comando").Trim();
+                    // 1.10.1: sin Trim. Los espacios finales cierran las entradas de una orden interactiva (ArbaMcp.Nucleo.Comando)
+                    string comando = Comando.Preparar(Requerido(a, "comando"));
                     int timeoutMs = (int)(Math.Max(1, Num(a, "timeout_s", 60)) * 1000);
                     return EjecutarComando(comando, timeoutMs, Bool(a, "undo", false));
                 }
@@ -502,8 +503,7 @@ namespace ArbaMcp
         {
             var tcs = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-            string cmdParse = comando.Split(new[] { ' ', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
-            cmdParse = cmdParse.TrimStart('_', '.').ToUpperInvariant();
+            string cmdParse = Comando.Nombre(comando);   // "_.PLINE 1000,2000  " → "PLINE"
 
             Document doc = null;  // lo asigna el hilo principal al enviar; el servidor lo lee solo después de esperar ese envío
             int iniciado = 0;     // se escribe en el hilo principal y se lee en el del servidor
@@ -553,7 +553,8 @@ namespace ArbaMcp
                 d.CommandFailed += OnCommandFailed;
                 try
                 {
-                    d.SendStringToExecute((undo ? "_.UNDO _BE\n" : "") + comando + "\n", true, false, false);
+                    // Enter final solo si el texto no lo trae ya (1.10.1): uno de más repetiría la orden en la línea vacía
+                    d.SendStringToExecute(Comando.TextoAEnviar(comando, undo), true, false, false);
                 }
                 catch
                 {
