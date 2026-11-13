@@ -280,3 +280,21 @@ el nombre con un cast a esa clase base y, si falla, con la clave del diccionario
 | — | `ProfileEntityCollection.AddFreeSymmetricParabolaByLength(uint previousEntityId, uint nextEntityId, VerticalCurveType curveType, double length, bool preferFlat)`, `AddFreeSymmetricParabolaByK(...)`, `AddFreeSymmetricParabolaByRadius(...)`, `AddFixedTangent(Point2d, Point2d)` | 2027 | — | confirmados en el catálogo pero **no se usan**: exigen los ids de las tangentes y un valor de `VerticalCurveType`, que el catálogo no registra |
 | — | `ProfileEntityCollection.AddFreeAsymmetricParabolaByPVIAndLengths(ProfilePVI, double length1, double length2)` | 2027 | — | confirmado en el catálogo, **no se usa**: `tipo_curva` solo admite parábola simétrica y circular en 1.10.0 (propuesta: parábola asimétrica en otra sesión) |
 | — | `ProfileType.FG` (valor del enumerado) | 2027 | — | el catálogo no registra los valores; `crear_rasante` no lo nombra: compara `Profile.ProfileType.ToString()` con `"FG"` tras crear (aviso si no coincide) |
+
+## 1.10.1 (correcciones: espacios finales de `ejecutar_comando`, comprobación previa, `ping`, nombres de estilos): escrita sin compilar
+
+Escrita el 13/11/2026 sin Civil 3D y **sin consultar el catálogo** (en esta sesión no se pudo adjuntar `memoria-firma`).
+No usa ningún miembro nuevo de la API: amplía a otras clases o a otro uso miembros que ya estaban en el plugin. Decide
+la validación `herramientas-dev/VALIDACION_1101.md`. La **comprobación previa** (una escritura real se ensaya antes con
+`simular=true` en contexto de aplicación) no llama a nada nuevo: reutiliza los mismos miembros que cada herramienta usa
+al simular. Se apoya en un comportamiento de AutoCAD visto en el informe 1.10.0 (pasos 8 y 10): el pseudocomando de
+`DocumentCollection.ExecuteInCommandContextAsync` deja una entrada `EXECUTEFUNCTION` en Deshacer aunque la herramienta
+falle sin tocar nada.
+
+| Tipo | Miembro | Versión | Herramienta que lo usa | Estado |
+|---|---|---|---|---|
+| propiedad | `Autodesk.Civil.DatabaseServices.DBObject.Name` (lectura) sobre `Styles.SurfaceStyle` | 2027 | `crear_superficie_tin` (lista de estilos del error "No existe el estilo de superficie...") | por verificar en esta clase (ejecutado en Civil 3D 2027 sobre `ProfileStyle` y `ProfileLabelSetStyle`, 1.10.0, paso 4); se supone que hereda de `Styles.StyleBase`, sin confirmar en el catálogo |
+| propiedad | `Autodesk.Civil.DatabaseServices.DBObject.Name` (lectura) sobre `Styles.AlignmentStyle` y `Styles.AlignmentLabelSetStyle` | 2027 | `crear_alineamiento_desde_polilinea` (listas de los errores y nombre del estilo y del conjunto por defecto) | por verificar en estas clases (mismo supuesto) |
+| propiedad | `Autodesk.Civil.DatabaseServices.DBObject.Name` (lectura) sobre `Styles.ProfileStyle`, `Styles.ProfileLabelSetStyle`, `Styles.ProfileViewStyle` y `Styles.ProfileViewBandSetStyle` | 2027 | `crear_perfil_terreno_y_vista` (listas de los errores y nombres por defecto) | `ProfileStyle` y `ProfileLabelSetStyle` ejecutados en Civil 3D 2027 (1.10.0); `ProfileViewStyle` y `ProfileViewBandSetStyle` por verificar (mismo supuesto) |
+| método / propiedad | `DBObject.OwnerId`, `DBDictionary.Contains(ObjectId)`, `DBDictionary.NameAt(ObjectId)` | AutoCAD 2027 | las tres herramientas anteriores (segunda vía del nombre, solo si `DBObject.Name` falla) | por verificar (en 1.10.0 no hizo falta) |
+| método | `Document.SendStringToExecute(string, bool, bool, bool)` con un texto que **termina en espacios** (cada espacio, un Enter) y sin `"\n"` añadido | AutoCAD 2027 | `ejecutar_comando` (`_.PLINE 1000,2000 1300,2000 1300,2300 1600,2300  ` debe terminar con `terminado` y `CMDACTIVE` en 0) | por verificar (hasta 1.10.0 el texto se recortaba y siempre se añadía `"\n"`) |
