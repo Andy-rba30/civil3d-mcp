@@ -544,11 +544,11 @@ def cerrar_ejecucion(preparada: dict, respuesta: dict, hoy=None) -> dict:
     bloque = {"nombre": preparada["nombre"], "parametros": preparada["valores"], "veces_usada": veces, "sumada": False}
     resultado = respuesta.get("resultado")
     simulado_por_plugin = isinstance(resultado, dict) and resultado.get("simulado") is True
-    if preparada["simular"]:
+    if "error" in respuesta:
+        bloque["nota"] = "La ejecución falló: veces_usada no cambia."
+    elif preparada["simular"]:
         bloque["nota"] = ("Simulación: veces_usada no cambia; solo suma una ejecución real (simular=false) que sale bien. "
                           "Si el resultado es el esperado, confírmalo con el usuario y ejecútala con simular=false.")
-    elif "error" in respuesta:
-        bloque["nota"] = "La ejecución falló: veces_usada no cambia."
     elif simulado_por_plugin:
         bloque["nota"] = "El plugin respondió simulado=true: veces_usada no cambia."
     else:

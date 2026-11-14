@@ -370,9 +370,10 @@ def test_ejecutar_codigo_desactivada_no_suma(servidor, puente, con_receta):
     servidor.respuestas["ejecutar_codigo"] = {
         "ok": False, "id_log": "20261114-120001-def456",
         "error": "ejecutar_codigo está desactivada. Actívala con la variable de entorno ARBA_MCP_CODIGO=1."}
-    r = receta(puente, parametros={"nombre_capa": "Capa B"}, simular=False)
-    assert r["ok"] is False and "ejecutar_codigo está desactivada" in r["error"] and r["id_log"] == "20261114-120001-def456"
-    assert r["receta"]["sumada"] is False and r["receta"]["nota"] == "La ejecución falló: veces_usada no cambia."
+    for simular in (False, True):
+        r = receta(puente, parametros={"nombre_capa": "Capa B"}, simular=simular)
+        assert r["ok"] is False and "ejecutar_codigo está desactivada" in r["error"] and r["id_log"] == "20261114-120001-def456"
+        assert r["receta"]["sumada"] is False and r["receta"]["nota"] == "La ejecución falló: veces_usada no cambia."
     assert leer_yaml(con_receta)["veces_usada"] == 0
 
 
