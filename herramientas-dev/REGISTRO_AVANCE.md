@@ -104,6 +104,18 @@ y todavía **no están en el repositorio**: hay que pedírselos al dueño o al a
   la fusiona en `tarea/2.9-tabla-pi` como **1.15.1**.
 - Se propuso al dueño correr **ya** la evaluación con la 1.15.0 instalada (la tarea 8 mide los totales, que ya salen
   bien), para descubrir a la vez cualquier otro fallo; luego una instalación más, solo con VALIDACION_1143.
+- **16:30, 1.14.3 subida** por la hija a `tarea/2.7-volumenes` (`0526c6a`, CI del PR #31 en verde): bloquean solo el
+  ancho real de la línea (±0,01) y las cotas de terreno y Datum frente a sus superficies en el eje y a ±5 m;
+  `LeftOffset`/`RightOffset` y las cotas mín./máx. pasan a aviso; bloque `puntos_secciones`; `VALIDACION_1143.md`.
+- **La orquestadora la fusionó en `tarea/2.9-tabla-pi`** (commit `b37b21a`, versión **1.15.1**, 54 herramientas). Cuatro
+  pruebas OK: dotnet 400/400, puente 84, CompilarSinCivil 0 errores y 0 avisos, evaluador 21. PR #35 actualizado
+  ("Para Jose" → VALIDACION_1143 sobre `PRUEBA_1142.dwg` guardado).
+- El dueño no recordaba el dibujo base de la evaluación: se le dio un prompt para que el agente instalador encuentre o
+  prepare `C:\Proyectos\dibujos_prueba\PRUEBA_EVALUACION_BASE.dwg` (plantilla métrica + ensamblaje, sin nada más) y lo
+  anote en `ESTADO_PC.md`. En `memoria-firma/evaluacion/datos_prueba/` solo hay `.gitkeep`: los datos de la evaluación
+  viven en la PC (pendiente: ¿subirlos a memoria-firma?).
+- **Siguiente en la PC**: evaluación con la 1.15.0 ya instalada (en curso) y después L.1 con `tarea/2.9-tabla-pi`
+  (`b37b21a`) + VALIDACION_1143.
 - **Prueba corta prevista** (una instalación): VALIDACION_1142 → VALIDACION_115 → evaluación 5.2-D y 5.2-PC (su
   tarea 10 repite el flujo completo, así que no se repite VALIDACION_FLUJO_COMPLETO).
 
