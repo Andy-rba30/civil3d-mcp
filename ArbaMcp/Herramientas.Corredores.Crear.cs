@@ -4,6 +4,7 @@ using System.Linq;
 using ArbaMcp.Nucleo;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.Civil.ApplicationServices;
+using Autodesk.Civil.Settings;
 using CivAlignment = Autodesk.Civil.DatabaseServices.Alignment;
 using CivProfile = Autodesk.Civil.DatabaseServices.Profile;
 using CivSurface = Autodesk.Civil.DatabaseServices.Surface;
@@ -104,13 +105,49 @@ namespace ArbaMcp
 
         private static string DondeObjetivo(Civ.SubassemblyTargetInfo info) => info.SubassemblyName + " [" + (string.IsNullOrEmpty(info.LogicalName) ? "superficie" : info.LogicalName) + "]";
 
+        /// <summary>
+        /// Capa del corredor nuevo (desde 1.14.1): la capa de objetos "Corredor" de la configuración del dibujo
+        /// (ObjectLayerSettings.GetObjectLayerSetting(Corridor), el valor del enumerado resuelto por nombre), como el eje y
+        /// el perfil. CorridorCollection.Add no recibe capa, así que la herramienta la pone después con Entity.LayerId. Si
+        /// no se puede leer o la capa no existe en el dibujo, devuelve ObjectId.Null con aviso y el corredor se queda en la
+        /// capa que le pone Civil 3D (no la capa actual, a diferencia del eje y el perfil). El modificador de la capa
+        /// (Modifier/ModifierValue, prefijo o sufijo con el nombre del objeto) no se aplica, igual que en el eje y el perfil.
+        /// </summary>
+        private static ObjectId CapaParaCorredores(Transaction tr, Database db, List<string> avisos, out string nombre)
+        {
+            nombre = null;
+            try
+            {
+                var ajuste = CivilApplication.ActiveDocument.Settings.DrawingSettings.ObjectLayerSettings.GetObjectLayerSetting(ValorEnum<SettingsObjectLayerType>("Corridor"));
+                ObjectId idCapa = ajuste.LayerId;
+                string nombreCapa = ajuste.LayerName;
+                if (idCapa.IsNull)
+                {
+                    var capas = (LayerTable)tr.GetObject(db.LayerTableId, OpenMode.ForRead);
+                    if (string.IsNullOrWhiteSpace(nombreCapa) || !capas.Has(nombreCapa))
+                    {
+                        avisos.Add(Corredor.AvisoCapaNoEncontrada(nombreCapa));
+                        return ObjectId.Null;
+                    }
+                    idCapa = capas[nombreCapa];
+                }
+                try { nombre = ((LayerTableRecord)tr.GetObject(idCapa, OpenMode.ForRead)).Name; } catch { nombre = nombreCapa; }
+                return idCapa;
+            }
+            catch (Exception ex)
+            {
+                avisos.Add(Corredor.AvisoCapaNoEncontrada(null, ex.Message));
+                return ObjectId.Null;
+            }
+        }
+
         // ------------------------------------------------------------------ registro
         private static void RegistrarCrearCorredor()
         {
             Registrar(new Herramienta
             {
                 Nombre = HerramientaCrearCorredor,
-                Descripcion = "Crea un corredor nuevo con una línea base (un alineamiento y su rasante) y una región con un ensamblaje que ya existe en el dibujo, entre dos progresivas (por defecto el tramo común del eje y la rasante) y con una frecuencia dada (la misma en tangentes, curvas, espirales y curvas del perfil). Pone la superficie de terreno en todos los objetivos de tipo superficie de la región (los taludes, como asignar_objetivos_superficie) y reconstruye el corredor, todo en una sola entrada de Deshacer. Vía: CorridorCollection.Add(nombre, línea base, eje, rasante, región, ensamblaje), ajuste del rango de la región, AppliedAssemblySetting, GetTargets/SetTargets y Corridor.Rebuild(). Relee el corredor y comprueba línea base, eje, rasante, ensamblaje, rango (±0,01), frecuencias y que cada objetivo de superficie tiene la superficie pedida (si no, error sin reintentar). Devuelve 'estado_corredor' (el mismo bloque que la herramienta estado_corredor), los objetivos asignados, los subensamblajes del ensamblaje y 'restaurar': Civil 3D no deshace objetivos con Ctrl+Z, así que deshacer_objetivos los deja como estaban (sin objetivo). Con simular=true solo comprueba e informa (sin copia ni cambios). Si ya existe un corredor con ese nombre, error sin tocar nada. No crea superficies de corredor (Top, Datum).",
+                Descripcion = "Crea un corredor nuevo con una línea base (un alineamiento y su rasante) y una región con un ensamblaje que ya existe en el dibujo, entre dos progresivas (por defecto el tramo común del eje y la rasante) y con una frecuencia dada (la misma en tangentes, curvas, espirales y curvas del perfil). Pone la superficie de terreno en todos los objetivos de tipo superficie de la región (los taludes, como asignar_objetivos_superficie) y reconstruye el corredor, todo en una sola entrada de Deshacer. Vía: CorridorCollection.Add(nombre, línea base, eje, rasante, región, ensamblaje), ajuste del rango de la región, AppliedAssemblySetting, GetTargets/SetTargets y Corridor.Rebuild(). Relee el corredor y comprueba línea base, eje, rasante, ensamblaje, rango (±0,01), frecuencias y que cada objetivo de superficie tiene la superficie pedida (si no, error sin reintentar). Desde 1.14.1 pone el corredor en la capa de corredores de la configuración del dibujo (Entity.LayerId después de Add; si no existe o no se puede poner, aviso y se queda en la que le pone Civil 3D). Devuelve 'estado_corredor' (el mismo bloque que la herramienta estado_corredor), la capa, los objetivos asignados, los subensamblajes del ensamblaje y 'restaurar': Civil 3D no deshace objetivos con Ctrl+Z, así que deshacer_objetivos los deja como estaban (sin objetivo). Con simular=true solo comprueba e informa (sin copia ni cambios). Si ya existe un corredor con ese nombre, error sin tocar nada. No crea superficies de corredor (Top, Datum).",
                 Parametros =
                 {
                     P("nombre", "string", "Nombre del corredor nuevo (no debe existir; ver listar_corredores)", true),
@@ -139,8 +176,8 @@ namespace ArbaMcp
                     string nombreRegion = Corredor.NombreRegion(Str(a, "region"));
                     var frecuencias = Corredor.Frecuencias(frecuencia);
 
-                    ObjectId idAl = ObjectId.Null, idPerfil = ObjectId.Null, idEns = ObjectId.Null, idSu = ObjectId.Null;
-                    string nombreAlReal = nombreAl, nombrePerfilReal = nombrePerfil, nombreEnsReal = nombreEns, nombreSuperficie = null, tipoPerfil = null;
+                    ObjectId idAl = ObjectId.Null, idPerfil = ObjectId.Null, idEns = ObjectId.Null, idSu = ObjectId.Null, idCapa = ObjectId.Null;
+                    string nombreAlReal = nombreAl, nombrePerfilReal = nombrePerfil, nombreEnsReal = nombreEns, nombreSuperficie = null, tipoPerfil = null, capaPrevista = null;
                     RangoCorredor rango = null;
                     List<Dictionary<string, object>> subensamblajes = null;
 
@@ -149,7 +186,7 @@ namespace ArbaMcp
                     EntradaRestauracion entrada = null;
                     string caminoObjetivos = null;
                     double? inicioRegionAdd = null, finRegionAdd = null;
-                    bool regionAnadidaAparte = false;
+                    bool regionAnadidaAparte = false, capaNoAplicada = false;
                     int reconstrucciones = 0;
                     long msReconstruccion = 0;
 
@@ -184,6 +221,7 @@ namespace ArbaMcp
                         d["superficie_objetivo"] = nombreSuperficie;
                         d["objetivos_superficie"] = null;   // se conocen al crear la región
                         d["esta_desactualizado"] = false;
+                        d["capa"] = capaPrevista;           // null: no se encontró la de la configuración (aviso) y la pone Civil 3D
                         return d;
                     }
 
@@ -243,6 +281,8 @@ namespace ArbaMcp
                                 if (deCorredorPorId.TryGetValue(idSu, out string otro) || deCorredorPorNombre.TryGetValue(nombreSuperficie, out otro))
                                     ctx.Avisos.Add("La superficie '" + nombreSuperficie + "' la genera el corredor '" + otro + "': los taludes suelen ir al terreno. Revisa con listar_superficies si es la que quieres.");
                             }
+                            // Capa: la de corredores de la configuración del dibujo (si no, aviso y la que ponga Civil 3D)
+                            idCapa = CapaParaCorredores(tr, ctx.Db, ctx.Avisos, out capaPrevista);
                             creacion.Accion = Corredor.Accion(nombre, al.Name, pr.Name, asm.Name, rango, frecuencia, nombreSuperficie);
                             return new Dictionary<string, object> { ["nombre"] = nombre, ["existe"] = false, ["numero_lineas_base"] = 0, ["numero_regiones"] = 0 };
                         },
@@ -261,6 +301,14 @@ namespace ArbaMcp
                             ObjectId id = CivilApplication.ActiveDocument.CorridorCollection.Add(nombre, nombreLb, idAl, idPerfil, nombreRegion, idEns);
                             if (id.IsNull) return id;
                             var cor = (Civ.Corridor)tr.GetObject(id, OpenMode.ForWrite);
+
+                            // Capa (1.14.1): Add no la recibe. Si la API no deja ponerla, aviso y sigue: una capa no debe impedir crear el corredor
+                            if (!idCapa.IsNull)
+                            {
+                                try { cor.LayerId = idCapa; }
+                                catch (Exception ex) { capaNoAplicada = true; ctx.Avisos.Add(Corredor.AvisoCapaNoAplicada(capaPrevista, ex.Message)); }
+                            }
+
                             var bl = PrimeraLineaBase(cor, out var reg);
                             if (bl == null)
                                 throw new InvalidOperationException("CorridorCollection.Add creó el corredor '" + nombre + "' sin línea base. Nada queda escrito (la transacción se descarta) y no se reintenta; anótalo en miembros_por_verificar_civil3d.md.");
@@ -369,6 +417,7 @@ namespace ArbaMcp
                             d["superficie_objetivo"] = nombreSuperficie;
                             d["esta_desactualizado"] = Seguro(() => (bool?)cor.IsOutOfDate, null);
                             try { capa = cor.Layer; } catch { capa = null; }
+                            d["capa"] = capa;
                             estadoCorredor = EstadoCorredorInfo(tr, cor);
                             return d;
                         },
@@ -385,6 +434,8 @@ namespace ArbaMcp
                                 ctx.Avisos.Add("La línea base quedó con el nombre '" + lbLeida + "' (se pidió '" + nombreLb + "'): úsalo en listar_regiones y asignar_objetivo.");
                             if (!string.Equals(regionLeida, nombreRegion, StringComparison.OrdinalIgnoreCase))
                                 ctx.Avisos.Add("La región quedó con el nombre '" + regionLeida + "' (se pidió '" + nombreRegion + "'): úsalo (o su índice 0) en listar_objetivos y establecer_frecuencia.");
+                            string avisoCapa = Corredor.AvisoCapa(capaPrevista, capa);   // aviso, no error: el corredor está bien creado
+                            if (avisoCapa != null && !capaNoAplicada) ctx.Avisos.Add(avisoCapa);
                             if (d.TryGetValue("esta_desactualizado", out object des) && des is bool b && b)
                                 ctx.Avisos.Add("El corredor sigue desactualizado después de reconstruir: usa reconstruir_corredor y estado_corredor, y revisa los mensajes de Civil 3D (por ejemplo 'TargetDTM not found').");
                         },
@@ -412,6 +463,7 @@ namespace ArbaMcp
                             reconstrucciones,
                             ms_reconstruccion = msReconstruccion,
                             capa,
+                            capa_configuracion = capaPrevista,
                             estado_corredor = estadoCorredor
                         }
                     };

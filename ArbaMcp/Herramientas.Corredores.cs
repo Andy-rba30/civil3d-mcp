@@ -450,18 +450,17 @@ namespace ArbaMcp
             catch { return null; }
         }
 
+        /// <summary>
+        /// Contornos de una superficie de corredor (nombre, tipo, es_extension_corredor y, con el mismo valor, el campo
+        /// obsoleto usar_como_exterior: ver ArbaMcp.Nucleo.SuperficiesCorredor.Contorno).
+        /// </summary>
         private static List<object> Contornos(Civ.CorridorSurface cs)
         {
             var l = new List<object>();
             try
             {
                 foreach (Civ.CorridorSurfaceBoundary b in cs.Boundaries)
-                    l.Add(new
-                    {
-                        nombre = b.Name,
-                        tipo = b.BoundaryType.ToString(),
-                        usar_como_exterior = (bool?)b.IsCorridorExtents
-                    });
+                    l.Add(SuperficiesCorredor.Contorno(b.Name, b.BoundaryType.ToString(), b.IsCorridorExtents));
             }
             catch { }
             return l;
@@ -482,7 +481,11 @@ namespace ArbaMcp
                 codigos_punto = Codigos(cs, "punto"),
                 codigos_lineas_caracteristicas = Codigos(cs, "linea_caracteristica"),
                 contornos = Contornos(cs),
-                esta_desactualizada = desact
+                esta_desactualizada = desact,
+                // Desde 1.12.0 (solo se añaden; se leen por reflexión y valen null si no se pueden leer)
+                codigos_enlace_rotura = CodigosRotura(cs),
+                correccion_voladizo = Voladizo(cs),
+                construir = Construir(cs)
             };
         }
 
@@ -1036,7 +1039,7 @@ namespace ArbaMcp
             {
                 Nombre = "estado_corredor",
                 Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
-                Descripcion = "Estado de un corredor: si está desactualizado, última reconstrucción hecha desde MCP y sus superficies con códigos de enlace y punto, contornos y si están desactualizadas.",
+                Descripcion = "Estado de un corredor: si está desactualizado, última reconstrucción hecha desde MCP y sus superficies con códigos de enlace y punto, contornos (nombre, tipo y es_extension_corredor; el campo usar_como_exterior, con el mismo valor, es obsoleto desde 1.14.1) y si están desactualizadas.",
                 Parametros = { P("corredor", "string", "Nombre del corredor", true) },
                 Ejecutar = a =>
                 {

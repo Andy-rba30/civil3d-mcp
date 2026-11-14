@@ -29,6 +29,27 @@ Estas herramientas actúan sobre el dibujo activo de Civil 3D 2027 a través del
 
 Después de cada escritura comprueba `esta_desactualizado` (corredor) o `esta_desactualizada` (superficie): un objeto desactualizado no refleja aún el cambio en pantalla.
 
+## 2b. Flujo vial completo (de la superficie al volumen)
+
+Es la **única receta** de este archivo, porque es el flujo principal (las demás se buscan con `buscar_api`). Úsala cuando el usuario pida el flujo entero o varios de sus pasos seguidos. Las reglas de cada herramienta están en la sección 3; aquí van el orden y las paradas.
+
+| Paso | Herramienta | Necesita antes |
+|---|---|---|
+| 1 | `crear_superficie_tin` | el archivo o el grupo de puntos del usuario |
+| 2 | `crear_alineamiento_desde_polilinea` | la polilínea 2D de tangentes del usuario |
+| 3 | `crear_perfil_terreno_y_vista` | el eje (2) y el terreno (1) |
+| 4 | `crear_rasante` | el eje (2) y los PVI del usuario |
+| 5 | `crear_corredor` | la rasante (4), el ensamblaje y el terreno (1) como `superficie_objetivo` |
+| 6 | `crear_superficies_corredor` | el corredor (5): crea la Top y la Datum |
+| 7 | `crear_secciones` | el corredor y sus superficies (5 y 6), para que las secciones los muestren |
+| 8 | `calcular_volumenes` | el terreno (1) y la Datum (6); para la tabla por progresivas, las secciones (7). Pregunta los factores (por defecto 1) |
+
+1. **Lo manual va antes.** El **ensamblaje** lo crea la persona en Civil 3D (no hay herramienta para eso): compruébalo con `listar_ensamblajes` antes de empezar y, si no hay, pídeselo y espera. La polilínea, el archivo de puntos y los PVI los da el usuario: no los inventes.
+2. **Plan y simulación, sin escribir nada.** Lee el dibujo (`listar_superficies`, `listar_alineamientos`, `listar_perfiles`, `listar_ensamblajes`, `listar_corredores`), simula con `simular=true` todos los pasos cuyos datos ya existen (en un dibujo vacío, el 1 y el 2: los demás responderían "No existe ..." porque usan el objeto del paso anterior) y muestra una tabla con los 8 pasos: herramienta, argumentos, qué crea y si ya está simulado. **Espera la confirmación.**
+3. **Paso a paso.** En cada paso, en orden: simúlalo si aún no lo está con el dibujo actual, ejecútalo sin `simular` y muestra su resultado (nombres creados, `avisos`, `copia.ruta`) junto con la simulación del paso siguiente; **espera la confirmación antes de seguir**. Cuando el usuario dé el paso por bueno, `aprobar_resultado` con el `id_log` de esa escritura.
+4. **Si un paso falla, o un aviso cambia lo pedido** (un radio o una curva que no cabe, un corredor desactualizado, líneas sin secciones), para, explícalo y espera; no reintentes ni pases al siguiente, y no completes nada con `ejecutar_comando`. Si una herramienta dice que la persona tiene que completar un cuadro de diálogo, dile qué marcar, espera a que lo cierre y comprueba el resultado leyendo el dibujo.
+5. **Al terminar**, resume los objetos creados, el `id_log` de cada paso y el corte, el relleno y el neto. Para volver atrás: cada paso es una entrada de Deshacer, pero `_.UNDO` no quita la superficie TIN ni revierte objetivos (`deshacer_objetivos`); la copia previa de cada paso está en su `copia.ruta`.
+
 ## 3. Reglas de dominio
 
 - Los **taludes** (`DaylightGeneral`, `DaylightBasin`, `BasicSideSlopeCutDitch`, `LinkSlopeToSurface`, "Talud") **siempre necesitan un objetivo de superficie**; sin él el corredor avisa "TargetDTM not found" y el talud no se dibuja.
@@ -37,13 +58,15 @@ Después de cada escritura comprueba `esta_desactualizado` (corredor) o `esta_de
 - Los **objetivos de anchura** (desplazamiento) de un carril apuntan a un **eje de borde de calzada** (alineamiento de desplazamiento o de acuerdo) y los **objetivos de elevación** de ese carril apuntan al **perfil de ese mismo eje**. Un objetivo de elevación de un eje distinto produce escalones.
 - Cambia el ensamblaje de una región con `asignar_ensamblaje_region`; después revisa `listar_objetivos`, porque los objetivos se reasignan por nombre de subensamblaje y pueden quedar vacíos.
 - Para dividir una región usa `dividir_region`; para moverla, `establecer_rango_region` (falla si solapa). Ninguna herramienta borra regiones, líneas base, ensamblajes ni superficies: si el usuario lo necesita, que lo haga en Civil 3D.
-- Las superficies de corredor se crean con `agregar_superficie_corredor` (código `Top` o `Datum`), se completan con `agregar_codigo_superficie_corredor` y se cierran con `agregar_contorno_superficie_corredor`; si el contorno automático no cierra, usa `exterior_poligono` con una polilínea cerrada.
+- Las superficies **Top y Datum** de un corredor (las que usa el movimiento de tierras) se crean de una vez con `crear_superficies_corredor` (`simular=true` primero; nombres por defecto `<corredor> - Top` y `<corredor> - Datum`; deja los códigos como líneas de rotura, el voladizo, el contorno de la extensión del corredor y el corredor reconstruido). Para otras superficies de corredor: `agregar_superficie_corredor`, `agregar_codigo_superficie_corredor` y `agregar_contorno_superficie_corredor`; si el contorno automático no cierra, usa `exterior_poligono` con una polilínea cerrada.
 - La rasante final que se pega en una superficie compuesta se actualiza con `reconstruir_corredor` → `pegar_superficie` (o `reconstruir_superficie` si ya estaba pegada).
 - Superficie de terreno nueva → `crear_superficie_tin` (desde un grupo de puntos o un archivo de puntos; `simular=true` primero). Los intervalos de curvas de nivel viven en el **estilo** de superficie, no en la superficie: la herramienta no cambia estilos; si el usuario pide intervalos, elige con `estilo` uno del dibujo que ya los tenga y explícale lo que diga `avisos`.
 - Eje nuevo desde una polilínea → `crear_alineamiento_desde_polilinea` (`simular=true` primero: devuelve los PI y qué radios caben). La polilínea debe ser **2D, abierta y solo de tangentes** (sus vértices son los PI; sin arcos ni 3D): las curvas las pone la herramienta con `radio` y `radios_por_pi`; un radio que no cabe deja el PI sin curva y `avisos` dice el radio máximo.
 - Perfil de terreno y vista de perfil de un eje → `crear_perfil_terreno_y_vista` (`simular=true` primero: devuelve los nombres, el punto de inserción previsto y las progresivas). Crea los dos objetos en una sola entrada de Deshacer; sin `punto_insercion` coloca la vista a la derecha de lo dibujado y devuelve el punto usado; estilos y conjuntos por defecto del dibujo si no se pasan.
 - Rasante (perfil de diseño FG) → `crear_rasante` (`simular=true` primero: devuelve `tramos` con las pendientes, `curvas` con A, K y si cada curva cabe, y `avisos`). La lista `pvis` va **ordenada por progresiva**, con al menos 2 PVI dentro del eje; el primero y el último no llevan curva; `longitud_curva` es la longitud por defecto de los PVI intermedios que no traigan la suya. Una curva que no cabe queda como quiebre y `avisos` dice la longitud máxima; una pendiente mayor del 12 % solo avisa (no hay norma cargada).
-- Corredor nuevo → `crear_corredor`, después de la rasante y con un **ensamblaje que ya exista** en el dibujo (`listar_ensamblajes`; el plugin no crea ensamblajes: si no hay, pide al usuario que lo cree en Civil 3D). `simular=true` primero; luego `estado_corredor`. Pasa `superficie_objetivo` (el terreno) cuando haya más de una superficie; la herramienta pone esa superficie en todos los objetivos de superficie (taludes) y reconstruye. Para deshacer los objetivos usa `deshacer_objetivos` con `restaurar.args.id`; las superficies Top y Datum se añaden después con `agregar_superficie_corredor`.
+- Corredor nuevo → `crear_corredor`, después de la rasante y con un **ensamblaje que ya exista** en el dibujo (`listar_ensamblajes`; el plugin no crea ensamblajes: si no hay, pide al usuario que lo cree en Civil 3D). `simular=true` primero; luego `estado_corredor`. Pasa `superficie_objetivo` (el terreno) cuando haya más de una superficie; la herramienta pone esa superficie en todos los objetivos de superficie (taludes) y reconstruye. Para deshacer los objetivos usa `deshacer_objetivos` con `restaurar.args.id`; las superficies Top y Datum se añaden después con `crear_superficies_corredor`.
+- Líneas de muestreo y vistas de sección → `crear_secciones`, **después del corredor y de sus superficies** si las secciones deben mostrarlos (las fuentes se eligen al crear el grupo). `simular=true` primero: devuelve las progresivas, las fuentes previstas y el punto de la primera vista. Por defecto muestrea todas las superficies, los corredores del eje y sus superficies; para otra selección pasa `fuentes`. Comprueba en la respuesta `fuentes_muestreadas`, `numero_vistas` y los `avisos` (líneas sin secciones, vistas solapadas); revisa después con `listar_lineas_muestreo` (`fuentes=true`).
+- Volúmenes de corte y relleno → `calcular_volumenes`, **después de `crear_superficies_corredor`** (compara el terreno con la superficie Datum) y, si se quiere la tabla por progresivas, **después de `crear_secciones`** (la tabla sale de las secciones del terreno y del Datum del grupo). `simular=true` primero: dice qué terreno, Datum, factores y grupo usará. El **esponjamiento** va al corte (`factor_esponjamiento`, CutFactor) y la **compactación** al relleno (`factor_compactacion`, FillFactor), los dos como multiplicadores (1,25 se pasa `1.25`; un coeficiente menor que 1 se pasa como su inverso); **neto = corte − relleno** (positivo: sobra material; negativo: falta). Si hay varias superficies de terreno o varios corredores, pasa `terreno` o `corredor`. Muestra al usuario `datos.texto`, `corte`, `relleno`, `neto` y los `avisos`.
 - `guardar_dibujo` guarda por API (QSAVE). Antes de una serie de cambios grandes, `guardar_copia` con un sufijo descriptivo.
 
 ## 4. Glosario español ↔ API de Civil 3D
@@ -66,8 +89,11 @@ Después de cada escritura comprueba `esta_desactualizado` (corredor) o `esta_de
 | Código de enlace / de punto | Link code / Point code |
 | Línea característica | `FeatureLine` (o `CorridorFeatureLine` dentro del corredor) |
 | Eje / alineamiento | `Alignment` |
+| Tabla de PI (progresiva, radio, longitud de curva, PC y PT de cada PI) | `listar_pis` |
 | Rasante | Perfil de diseño (FG, `Profile` tipo `FG`) |
 | Terreno natural | Perfil de superficie (EG) / superficie TIN |
+| Superficie de volumen, corte, relleno, neto | `TinVolumeSurface` (Cut, Fill, Net volume) |
+| Esponjamiento / compactación | Cut factor / Fill factor |
 
 ## 5. Mensajes típicos de Civil 3D y su causa
 
