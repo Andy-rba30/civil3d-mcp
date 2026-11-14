@@ -102,6 +102,12 @@ Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a
   excepciones documentadas), fuera de la comprobación previa (asíncrona), Roslyn 5.0.0 en un contexto aislado, 60 s de
   tiempo límite. Catálogo: confirmados `GetAllObjects`, `IsNewObject`/`IsModified`/`IsErased`, `TopTransaction` y los
   argumentos de eventos; los eventos de `Database` no constan (el catálogo no registra eventos): solo de apoyo.
+- **18:14 la 3.2 terminó**: PR #38, `tarea/3.2-recetas` en `08906ed`, versión 1.17.0 (puente 166 pruebas). `parametros`
+  va a `ejecutar_codigo` como texto JSON (así pasa el puente todos los `json`); la 3.1 aceptará objeto y texto.
+- **18:16 planes aprobados** de la tabla de volúmenes (recorte por `FindElevationAtXY` en las dos superficies,
+  bisección 0,01 m, sin miembros nuevos) y de las curvas TIN (elige entre los estilos que dibujan curvas; catálogo:
+  `SettingsSurface.Styles.SurfaceStyleId` y `SurfaceStyle.GetDisplayStylePlan(...)`.`Visible`; cambia una frase de
+  `INSTRUCCIONES_AGENTE.md`).
 - **Integración prevista de la ronda B**: `tarea/3.1` → `tarea/3.2` → + `tarea/2.11` + `tarea/2.12` en una sola rama
   (versión **1.17.2**). Orden en la PC: VALIDACION_116 → 117 → 1171 → 1172 → evaluación (5.2-D/PC).
 
