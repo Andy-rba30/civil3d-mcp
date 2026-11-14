@@ -81,6 +81,13 @@ y todavía **no están en el repositorio**: hay que pedírselos al dueño o al a
   `7f2b298`, 4 pruebas OK: dotnet 375/375, puente 84, CompilarSinCivil 0 errores, evaluador 21), pero **no pudo hacer
   push**: GitHub responde 403 «GitHub authentication required» también a la orquestadora. **Bloqueado hasta que el
   dueño reconecte GitHub** (claude.ai/connect-github); después, push y PR de cada hija.
+- **15:42, GitHub reconectado por el dueño.** La 1.14.2 subió a `tarea/2.7-volumenes` (`402b728`, PR #31 actualizado:
+  370 pruebas xUnit) y `listar_pis` a `tarea/2.9-tabla-pi` (`7f2b298`, **PR #35** en borrador).
+- **La orquestadora fusionó `tarea/2.7-volumenes` en `tarea/2.9-tabla-pi`** (commit `31ef86b`, versión **1.15.0**, 54
+  herramientas). Conflictos solo de versión, README y tabla de miembros (quedan las dos secciones, 1.14.2 y 1.15.0).
+  Cuatro pruebas OK: dotnet 396/396, puente 84, CompilarSinCivil 0 errores y 0 avisos, evaluador 21. El PR #35 dice
+  "Para el agente instalador" y "Para Jose" de toda la prueba corta. **Orden de fusión cuando dé OK: #31 y luego #35.**
+- **Aviso al dueño enviado (15:46): prueba corta lista**, con L.1 y P sobre `tarea/2.9-tabla-pi`.
 - **Prueba corta prevista** (una instalación): VALIDACION_1142 → VALIDACION_115 → evaluación 5.2-D y 5.2-PC (su
   tarea 10 repite el flujo completo, así que no se repite VALIDACION_FLUJO_COMPLETO).
 
