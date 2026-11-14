@@ -460,10 +460,15 @@ namespace Autodesk.Civil.DatabaseServices
         public SampleLineVertexCollection Vertices => new SampleLineVertexCollection();
         public ObjectIdCollection GetSectionIds() => new ObjectIdCollection();
         public ObjectIdCollection GetSectionViewIds() => new ObjectIdCollection();
+        // 1.14.2 (calcular_volumenes, identificación de secciones): confirmado en el catálogo (consulta de la orquestadora, 14/11/2026)
+        public ObjectId GetSectionId(ObjectId sampledSourceId) => ObjectId.Null;
     }
+    public enum SectionSourceType { }
     public class Section : Entity
     {
         public ObjectId SourceId => ObjectId.Null; public string SourceName => ""; public ObjectId SampleLineId => ObjectId.Null;
+        // 1.14.2 (calcular_volumenes, identificación de secciones): confirmados en el catálogo (consulta de la orquestadora, 14/11/2026); el catálogo no da los valores de SectionSourceType
+        public ObjectId CorridorSurfaceId => ObjectId.Null; public SectionSourceType SourceType => default;
         // 1.14.0 (calcular_volumenes, tabla por progresivas): confirmado en el catálogo (consulta de la orquestadora, 13/11/2026)
         public SectionPointCollection SectionPoints => new SectionPointCollection();
         public double LeftOffset => 0; public double RightOffset => 0;

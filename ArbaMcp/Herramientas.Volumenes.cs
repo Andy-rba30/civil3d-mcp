@@ -98,28 +98,80 @@ namespace ArbaMcp
             return lista;
         }
 
-        private static bool SeccionEsDe(Civ.Section s, ObjectId idSuperficie, string nombre)
+        /// <summary>Una superficie cuya sección se busca en las líneas: su id en el dibujo, su nombre y el corredor que la genera (null si no es de corredor).</summary>
+        private sealed class SuperficieTabla
         {
-            ObjectId idF = Seguro(() => s.SourceId, ObjectId.Null);
-            if (!idF.IsNull && idF == idSuperficie) return true;
-            return string.Equals(Seguro(() => s.SourceName, null), nombre, StringComparison.OrdinalIgnoreCase);
+            public ObjectId Id;
+            public string Nombre;
+            public string Corredor;
+            public SuperficieBuscada Buscada => new SuperficieBuscada(ClaveId(Id), Nombre, Corredor);
         }
 
-        /// <summary>Secciones de la superficie base y de la de comparación de una línea (null la que falte).</summary>
-        private static (Civ.Section terreno, Civ.Section datum) SeccionesDeLinea(Transaction tr, Civ.SampleLine sl, ObjectId idT, string nT, ObjectId idD, string nD)
+        /// <summary>Un ObjectId como texto para ArbaMcp.Nucleo.IdentificacionSecciones (su handle); null si está vacío.</summary>
+        private static string ClaveId(ObjectId id) => id.IsNull ? null : id.Handle.ToString();
+
+        /// <summary>Las secciones de una línea con la del terreno y la de la Datum identificadas (1.14.2).</summary>
+        private sealed class SeccionesLeidas
         {
-            Civ.Section st = null, sd = null;
-            foreach (ObjectId idS in sl.GetSectionIds())
+            public List<Civ.Section> Secciones = new List<Civ.Section>();
+            public List<SeccionCandidata> Candidatas = new List<SeccionCandidata>();
+            public ObjectId GetTerreno = ObjectId.Null, GetDatum = ObjectId.Null;
+            public SeccionIdentificada IdTerreno = new SeccionIdentificada(), IdDatum = new SeccionIdentificada();
+            public Civ.Section Terreno => IdTerreno.Encontrada ? Secciones[IdTerreno.Indice] : null;
+            public Civ.Section Datum => IdDatum.Encontrada ? Secciones[IdDatum.Indice] : null;
+        }
+
+        /// <summary>Una línea del grupo con sus secciones identificadas.</summary>
+        private sealed class LineaLeida
+        {
+            public string Nombre;
+            public double Pk;
+            public SeccionesLeidas Secciones;
+        }
+
+        /// <summary>
+        /// Secciones de una línea y cuál es la del terreno y cuál la de la Datum (desde 1.14.2, ArbaMcp.Nucleo.IdentificacionSecciones):
+        /// 1) SampleLine.GetSectionId(id de la superficie), 2) Section.CorridorSurfaceId, 3) Section.SourceId, 4) SourceName igual
+        /// al nombre, 5) SourceName "&lt;corredor&gt; &lt;superficie&gt;". Cada lectura en su Seguro: si un miembro no existe o lanza
+        /// (GetSectionId con una superficie que no es fuente muestreada del grupo), se pasa al intento siguiente sin aviso.
+        /// No se usa SectionSource.GetSectionIds: llegar a él exige SampleLineGroup.GetSectionSources con el grupo abierto
+        /// para escritura, imposible con el bloqueo de lectura de la simulación (con el grupo en lectura Civil 3D 2027 aborta).
+        /// </summary>
+        private static SeccionesLeidas LeerSeccionesDeLinea(Transaction tr, Civ.SampleLine sl, SuperficieTabla t, SuperficieTabla d)
+        {
+            var r = new SeccionesLeidas();
+            try
             {
-                if (!(tr.GetObject(idS, OpenMode.ForRead) is Civ.Section s)) continue;
-                if (st == null && SeccionEsDe(s, idT, nT)) st = s;
-                else if (sd == null && SeccionEsDe(s, idD, nD)) sd = s;
+                foreach (ObjectId idS in sl.GetSectionIds())
+                {
+                    if (!(tr.GetObject(idS, OpenMode.ForRead) is Civ.Section s)) continue;
+                    r.Secciones.Add(s);
+                    r.Candidatas.Add(new SeccionCandidata(ClaveId(idS), ClaveId(Seguro(() => s.SourceId, ObjectId.Null)),
+                        ClaveId(Seguro(() => s.CorridorSurfaceId, ObjectId.Null)), Seguro(() => s.SourceName, null)));
+                }
             }
-            return (st, sd);
+            catch (Exception ex) { Historial.Registrar(HerramientaCalcularVolumenes + ": no se pudieron leer las secciones de " + Seguro(() => sl.Name, "?") + ": " + ex.Message); }
+            r.GetTerreno = Seguro(() => sl.GetSectionId(t.Id), ObjectId.Null);
+            r.GetDatum = Seguro(() => sl.GetSectionId(d.Id), ObjectId.Null);
+            (r.IdTerreno, r.IdDatum) = IdentificacionSecciones.IdentificarLasDos(r.Candidatas, t.Buscada, ClaveId(r.GetTerreno), d.Buscada, ClaveId(r.GetDatum));
+            return r;
+        }
+
+        /// <summary>Todas las líneas del grupo con sus secciones identificadas.</summary>
+        private static List<LineaLeida> LeerLineas(Transaction tr, GrupoTabla g, SuperficieTabla t, SuperficieTabla d)
+        {
+            var slg = (Civ.SampleLineGroup)tr.GetObject(g.Id, OpenMode.ForRead);
+            var lineas = new List<LineaLeida>();
+            foreach (ObjectId idL in slg.GetSampleLineIds())
+            {
+                if (!(tr.GetObject(idL, OpenMode.ForRead) is Civ.SampleLine sl)) continue;
+                lineas.Add(new LineaLeida { Nombre = Seguro(() => sl.Name, null), Pk = Seguro(() => sl.Station, double.NaN), Secciones = LeerSeccionesDeLinea(tr, sl, t, d) });
+            }
+            return lineas;
         }
 
         /// <summary>True si alguna línea del grupo tiene sección de las dos superficies.</summary>
-        private static bool GrupoMuestreaLasDos(Transaction tr, GrupoTabla g, ObjectId idT, string nT, ObjectId idD, string nD)
+        private static bool GrupoMuestreaLasDos(Transaction tr, GrupoTabla g, SuperficieTabla t, SuperficieTabla d)
         {
             try
             {
@@ -127,21 +179,97 @@ namespace ArbaMcp
                 foreach (ObjectId idL in slg.GetSampleLineIds())
                 {
                     if (!(tr.GetObject(idL, OpenMode.ForRead) is Civ.SampleLine sl)) continue;
-                    var (st, sd) = SeccionesDeLinea(tr, sl, idT, nT, idD, nD);
-                    if (st != null && sd != null) return true;
+                    var s = LeerSeccionesDeLinea(tr, sl, t, d);
+                    if (s.Terreno != null && s.Datum != null) return true;
                 }
             }
             catch (Exception ex) { Historial.Registrar(HerramientaCalcularVolumenes + ": no se pudieron leer las secciones del grupo " + g.Nombre + ": " + ex.Message); }
             return false;
         }
 
+        /// <summary>Nombre y tipo del objeto de un id leído de una sección (null si está vacío), para el diagnóstico.</summary>
+        private static object DescribirIdSeccion(Transaction tr, ObjectId id, SuperficieTabla t, SuperficieTabla d)
+        {
+            if (id.IsNull) return null;
+            return new
+            {
+                nombre = NombreDe(tr, id),
+                tipo = Seguro(() => tr.GetObject(id, OpenMode.ForRead).GetType().Name, null),
+                es_el_terreno = id == t.Id,
+                es_la_datum = id == d.Id
+            };
+        }
+
+        /// <summary>Lo que devolvió SampleLine.GetSectionId para una superficie: null si nada (o lanzó); si no, si es una sección de la línea y su SourceName.</summary>
+        private static object DescribirDevueltaPorGetSectionId(Transaction tr, ObjectId id, SeccionesLeidas s)
+        {
+            if (id.IsNull) return null;
+            int i = s.Candidatas.FindIndex(c => string.Equals(c.Clave, ClaveId(id), StringComparison.OrdinalIgnoreCase));
+            return new
+            {
+                de_la_linea = i >= 0,
+                source_name = i >= 0 ? s.Candidatas[i].NombreFuente : Seguro(() => (tr.GetObject(id, OpenMode.ForRead) as Civ.Section)?.SourceName, null)
+            };
+        }
+
+        /// <summary>
+        /// Bloque identificacion_secciones (1.14.2, para la memoria técnica): con qué intento se encontró la sección del terreno
+        /// y la de la Datum en cada línea del grupo y, de la primera línea con secciones, los valores crudos de cada sección
+        /// (SourceName, SourceType, el objeto de SourceId y de CorridorSurfaceId) y lo que devolvió GetSectionId.
+        /// </summary>
+        private static object DiagnosticoIdentificacion(Transaction tr, GrupoTabla g, List<LineaLeida> lineas, SuperficieTabla t, SuperficieTabla d)
+        {
+            var rt = new RecuentoIdentificacion();
+            var rd = new RecuentoIdentificacion();
+            foreach (var l in lineas) { rt.Anotar(l.Secciones.IdTerreno); rd.Anotar(l.Secciones.IdDatum); }
+            var p = lineas.FirstOrDefault(l => l.Secciones.Secciones.Count > 0) ?? lineas.FirstOrDefault();
+            return new
+            {
+                grupo = g.Nombre,
+                alineamiento = g.Eje,
+                orden = IdentificacionSecciones.Orden,
+                terreno = new { superficie = t.Nombre, corredor = t.Corredor, metodos = rt.Metodos, lineas = rt.Lineas, lineas_sin_seccion = rt.SinSeccion },
+                datum = new { superficie = d.Nombre, corredor = d.Corredor, metodos = rd.Metodos, lineas = rd.Lineas, lineas_sin_seccion = rd.SinSeccion },
+                primera_linea = p == null ? null : new
+                {
+                    linea = p.Nombre,
+                    pk = double.IsNaN(p.Pk) ? (double?)null : N(p.Pk),
+                    get_section_id = new
+                    {
+                        terreno = DescribirDevueltaPorGetSectionId(tr, p.Secciones.GetTerreno, p.Secciones),
+                        datum = DescribirDevueltaPorGetSectionId(tr, p.Secciones.GetDatum, p.Secciones)
+                    },
+                    secciones = p.Secciones.Secciones.Select((s, i) => (object)new
+                    {
+                        source_name = p.Secciones.Candidatas[i].NombreFuente,
+                        source_type = Seguro(() => s.SourceType.ToString(), null),
+                        source_id = DescribirIdSeccion(tr, Seguro(() => s.SourceId, ObjectId.Null), t, d),
+                        corridor_surface_id = DescribirIdSeccion(tr, Seguro(() => s.CorridorSurfaceId, ObjectId.Null), t, d),
+                        es = i == p.Secciones.IdTerreno.Indice ? "terreno" : i == p.Secciones.IdDatum.Indice ? "datum" : null
+                    }).ToList()
+                }
+            };
+        }
+
+        /// <summary>El bloque identificacion_secciones de un grupo leyendo todas sus líneas; nunca rompe la herramienta.</summary>
+        private static object DiagnosticoDeGrupo(Transaction tr, GrupoTabla g, SuperficieTabla t, SuperficieTabla d)
+        {
+            try { return DiagnosticoIdentificacion(tr, g, LeerLineas(tr, g, t, d), t, d); }
+            catch (Exception ex) { return new { grupo = g.Nombre, alineamiento = g.Eje, error = ex.Message }; }
+        }
+
+        private const string PistaIdentificacion = " El bloque identificacion_secciones de la respuesta dice qué sección de cada línea se tomó y con qué intento.";
+
         /// <summary>
         /// Grupo para la tabla: el pedido (error si no existe: se pidió expresamente) o, si no, el único grupo de los ejes
         /// del corredor (o de todos los ejes si el Datum no es de un corredor) con secciones de las dos superficies. Sin
-        /// grupo o con varios, null y aviso: la tabla no bloquea los totales.
+        /// grupo o con varios, null y aviso: la tabla no bloquea los totales. 'paraDiagnostico': el grupo cuyo bloque
+        /// identificacion_secciones se devuelve (el elegido o, si no hay, el primer candidato, para ver por qué).
         /// </summary>
-        private static GrupoTabla ElegirGrupoTabla(Transaction tr, string pedido, List<ObjectId> ejesCorredor, ObjectId idT, string nT, ObjectId idD, string nD, List<string> avisos)
+        private static GrupoTabla ElegirGrupoTabla(Transaction tr, string pedido, List<ObjectId> ejesCorredor, SuperficieTabla t, SuperficieTabla d, List<string> avisos, out GrupoTabla paraDiagnostico)
         {
+            paraDiagnostico = null;
+            string nT = t.Nombre, nD = d.Nombre;
             var todosLosEjes = new List<ObjectId>();
             foreach (ObjectId id in CivilApplication.ActiveDocument.GetAlignmentIds()) todosLosEjes.Add(id);
             if (!string.IsNullOrWhiteSpace(pedido))
@@ -160,8 +288,9 @@ namespace ArbaMcp
                     iguales = delCorredor;
                 }
                 var elegido = iguales[0];
-                if (!GrupoMuestreaLasDos(tr, elegido, idT, nT, idD, nD))
-                    avisos.Add("El grupo '" + elegido.Nombre + "' no tiene ninguna línea con secciones de '" + nT + "' y de '" + nD + "': la tabla saldrá sin volúmenes. Revisa sus fuentes con listar_lineas_muestreo (fuentes=true).");
+                paraDiagnostico = elegido;
+                if (!GrupoMuestreaLasDos(tr, elegido, t, d))
+                    avisos.Add("El grupo '" + elegido.Nombre + "' no tiene ninguna línea con secciones de '" + nT + "' y de '" + nD + "': la tabla saldrá sin volúmenes. Revisa sus fuentes con listar_lineas_muestreo (fuentes=true)." + PistaIdentificacion);
                 return elegido;
             }
 
@@ -171,11 +300,12 @@ namespace ArbaMcp
                 avisos.Add("No hay ningún grupo de líneas de muestreo en " + (ejesCorredor.Count > 0 ? "el eje del corredor" : "el dibujo") + ": sin tabla por progresivas. Créalo con crear_secciones y repite, o pasa 'grupo_muestreo'.");
                 return null;
             }
-            var conLasDos = candidatos.Where(g => GrupoMuestreaLasDos(tr, g, idT, nT, idD, nD)).ToList();
+            var conLasDos = candidatos.Where(g => GrupoMuestreaLasDos(tr, g, t, d)).ToList();
+            paraDiagnostico = conLasDos.Count > 0 ? conLasDos[0] : candidatos[0];
             if (conLasDos.Count == 1) return conLasDos[0];
             if (conLasDos.Count == 0)
                 avisos.Add("Ningún grupo de líneas de muestreo (" + string.Join(", ", candidatos.Select(g => g.Nombre))
-                    + ") tiene secciones de '" + nT + "' y de '" + nD + "': sin tabla por progresivas. Crea las líneas con crear_secciones después de crear las superficies del corredor, o revisa las fuentes con listar_lineas_muestreo (fuentes=true).");
+                    + ") tiene secciones de '" + nT + "' y de '" + nD + "': sin tabla por progresivas. Crea las líneas con crear_secciones después de crear las superficies del corredor, o revisa las fuentes con listar_lineas_muestreo (fuentes=true)." + PistaIdentificacion);
             else
                 avisos.Add("Hay varios grupos de líneas de muestreo con secciones de las dos superficies: " + string.Join(", ", conLasDos.Select(g => g.Nombre + " (" + g.Eje + ")"))
                     + ". Sin tabla por progresivas: pasa 'grupo_muestreo' con el que quieres usar.");
@@ -207,20 +337,22 @@ namespace ArbaMcp
         /// superficie (Surface.FindElevationAtXY en Alignment.PointLocation(pk, 0)). Si no se cumple, 'motivo' lo dice y
         /// la tabla no da números.
         /// </summary>
-        private static List<SeccionLinea> SeccionesDelGrupo(Transaction tr, GrupoTabla g, CivSurface terreno, ObjectId idT, string nT, ObjectId idD, string nD,
-            out string motivo, out int comprobadas)
+        private static List<SeccionLinea> SeccionesDelGrupo(Transaction tr, GrupoTabla g, CivSurface terreno, SuperficieTabla t, SuperficieTabla d,
+            out string motivo, out int comprobadas, out object identificacion)
         {
             motivo = null;
             comprobadas = 0;
+            string nT = t.Nombre, nD = d.Nombre;
             var al = (CivAlignment)tr.GetObject(g.IdEje, OpenMode.ForRead);
-            var slg = (Civ.SampleLineGroup)tr.GetObject(g.Id, OpenMode.ForRead);
+            var leidas = LeerLineas(tr, g, t, d);
+            identificacion = DiagnosticoIdentificacion(tr, g, leidas, t, d);
             var lineas = new List<SeccionLinea>();
-            foreach (ObjectId idL in slg.GetSampleLineIds())
+            foreach (var l in leidas)
             {
-                if (!(tr.GetObject(idL, OpenMode.ForRead) is Civ.SampleLine sl)) continue;
-                double pk = Seguro(() => sl.Station, double.NaN);
-                string nombre = Seguro(() => sl.Name, null);
-                var (st, sd) = SeccionesDeLinea(tr, sl, idT, nT, idD, nD);
+                double pk = l.Pk;
+                string nombre = l.Nombre;
+                var st = l.Secciones.Terreno;
+                var sd = l.Secciones.Datum;
                 if (st == null || sd == null)
                 {
                     lineas.Add(new SeccionLinea(nombre, pk, null, "falta la sección de " + (st == null ? "'" + nT + "'" : "") + (st == null && sd == null ? " y de " : "") + (sd == null ? "'" + nD + "'" : "")));
@@ -342,6 +474,9 @@ namespace ArbaMcp
                     int? triangulos = null;
                     Dictionary<string, object> extension = null;
                     object tabla = null;
+                    // Superficies cuya sección se busca en las líneas y bloque identificacion_secciones (1.14.2)
+                    SuperficieTabla supT = null, supD = null;
+                    object identificacionAntes = null, identificacionDespues = null;
                     var avisosTabla = new List<string>();
 
                     Escritura.Creacion creacion = null;
@@ -388,7 +523,14 @@ namespace ArbaMcp
                                 estiloUsado = NombreEstilo(tr, idEstilo) ?? estilo.Trim();
                             }
 
-                            if (conTabla) grupo = ElegirGrupoTabla(tr, grupoPedido, ejesCorredor, idTerreno, e.Terreno, idDatum, e.Datum, avisosTabla);
+                            var corredorDe = SuperficiesDeCorredores(tr, out _);
+                            supT = new SuperficieTabla { Id = idTerreno, Nombre = e.Terreno, Corredor = corredorDe.TryGetValue(idTerreno, out string corT) ? corT : null };
+                            supD = new SuperficieTabla { Id = idDatum, Nombre = e.Datum, Corredor = e.Corredor ?? (corredorDe.TryGetValue(idDatum, out string corD) ? corD : null) };
+                            if (conTabla)
+                            {
+                                grupo = ElegirGrupoTabla(tr, grupoPedido, ejesCorredor, supT, supD, avisosTabla, out GrupoTabla paraDiagnostico);
+                                if (paraDiagnostico != null) identificacionAntes = DiagnosticoDeGrupo(tr, paraDiagnostico, supT, supD);
+                            }
                             else if (!string.IsNullOrWhiteSpace(grupoPedido)) ctx.Avisos.Add("Con tabla_progresivas=false no se calcula la tabla: 'grupo_muestreo' no se usa.");
                             ctx.Avisos.AddRange(avisosTabla);
                             avisosTabla.Clear();
@@ -411,7 +553,9 @@ namespace ArbaMcp
                                 ["factor_relleno"] = compactacion,
                                 ["estilo"] = estiloUsado ?? "(estilo por defecto del dibujo)",
                                 ["grupo_muestreo"] = grupo?.Nombre,
-                                ["lineas_tabla"] = grupo?.Lineas ?? 0
+                                ["lineas_tabla"] = grupo?.Lineas ?? 0,
+                                // La simulación no devuelve 'datos': el diagnóstico va en 'despues' (1.14.2)
+                                ["identificacion_secciones"] = ctx.Simular ? identificacionAntes : null
                             };
                         },
                         Esperado = new Dictionary<string, object>
@@ -490,7 +634,7 @@ namespace ArbaMcp
                                 try
                                 {
                                     var terreno = (CivSurface)tr.GetObject(idTerreno, OpenMode.ForRead);
-                                    var lineas = SeccionesDelGrupo(tr, grupo, terreno, idTerreno, e.Terreno, idDatum, e.Datum, out string motivo, out int comprobadas);
+                                    var lineas = SeccionesDelGrupo(tr, grupo, terreno, supT, supD, out string motivo, out int comprobadas, out identificacionDespues);
                                     TablaVolumenes t = null;
                                     if (motivo != null)
                                         avisosTabla.Add("La tabla por progresivas sale sin números: " + motivo + ". Anótalo en miembros_por_verificar_civil3d.md (SectionPoint.Location) para corregir la herramienta; los totales de la superficie de volumen no dependen de esto.");
@@ -584,7 +728,8 @@ namespace ArbaMcp
                             estilo = estiloLeido ?? estiloUsado ?? "(estilo por defecto del dibujo)",
                             triangulos,
                             extension,
-                            tabla_progresivas = tabla
+                            tabla_progresivas = tabla,
+                            identificacion_secciones = identificacionDespues ?? identificacionAntes
                         }
                     };
                     return Escritura.CrearObjeto(ctx, creacion);
