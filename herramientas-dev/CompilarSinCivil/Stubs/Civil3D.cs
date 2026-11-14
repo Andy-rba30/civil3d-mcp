@@ -92,6 +92,16 @@ namespace Autodesk.Civil.Settings
         }
         public SettingsStyles Styles => new SettingsStyles();
     }
+    // 1.17.2 (crear_superficie_tin): estilo de superficie por defecto (la propiedad se llama Styles, no StyleSettings)
+    public class SettingsSurface
+    {
+        public class SettingsStyles
+        {
+            public Autodesk.Civil.PropertyObjectId SurfaceStyleId => new Autodesk.Civil.PropertyObjectId();
+            public Autodesk.Civil.PropertyString Surface => new Autodesk.Civil.PropertyString();
+        }
+        public SettingsStyles Styles => new SettingsStyles();
+    }
     public class SettingsRoot
     {
         public SettingsDrawing DrawingSettings => new SettingsDrawing();
@@ -523,7 +533,15 @@ namespace Autodesk.Civil.DatabaseServices.Styles
     // StyleBase hereda Name (lectura/escritura) de Autodesk.Civil.DatabaseServices.DBObject y la oculta con una propiedad solo de escritura (así está en la DLL; 1.10.0)
     public class StyleBase : DBObject { public new string Name { set { } } }
     public class SurfaceContourStyle { public double MinorContourInterval { get; set; } public double MajorContourInterval { get; set; } }
-    public class SurfaceStyle : StyleBase { public SurfaceContourStyle ContourStyle => new SurfaceContourStyle(); }
+    // ---- 1.17.2 (crear_superficie_tin): si el estilo dibuja las curvas en planta. El plugin llama a GetDisplayStylePlan por
+    // reflexión (Api.IntentarInvocar) con el valor por nombre; el catálogo no da los valores del enumerado (aquí, los dos usados)
+    public enum SurfaceDisplayStyleType { MajorContour, MinorContour }
+    public class DisplayStyle { public bool Visible { get; set; } }
+    public class SurfaceStyle : StyleBase
+    {
+        public SurfaceContourStyle ContourStyle => new SurfaceContourStyle();
+        public DisplayStyle GetDisplayStylePlan(SurfaceDisplayStyleType tipo) => new DisplayStyle();
+    }
     public class SurfaceStyleCollection : IEnumerable<ObjectId>
     {
         public int Count => 0;
