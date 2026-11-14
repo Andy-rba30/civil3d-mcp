@@ -116,11 +116,14 @@ namespace Autodesk.AutoCAD.DatabaseServices
     public class Database : DBObject
     {
         public TransactionManager TransactionManager => null;
+        public ObjectId Clayer { get; set; }
         public void SaveAs(string fileName, bool bakAndRename) { }
         public void ReadDwgFile(string fileName, int mode, bool allowCPConversion, string password) { }
         public void Insert(string blockName, Database dataBase, bool preserveSourceDatabase) { }
         public event ObjectEventHandler ObjectAppended;
     }
+    public class RasterImageDef : DBObject { public string SourceFileName { get; set; } }
+    public class BlockTableRecord : DBObject { public string PathName { get; set; } public string Name { get; set; } }
     public class HostApplicationServices
     {
         public static HostApplicationServices Current => null;

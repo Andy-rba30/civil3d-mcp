@@ -127,6 +127,16 @@ return v;");
         }
 
         [Fact]
+        public void Documentos_AsignarUnaRutaAUnaPropiedadDeLaApi()
+        {
+            var p = Scripts.Bloqueado("RasterImageDef d = null;\nd.SourceFileName = @\"C:\\x.png\";\nreturn null;", CodigoReglas.Documentos);
+            Assert.Equal(2, p.Linea);
+            Scripts.Bloqueado("BlockTableRecord b = null; b.PathName = \"x.dwg\"; return null;", CodigoReglas.Documentos);
+            // Leer la ruta o asignar un nombre que no es de archivo sí vale
+            Scripts.CompilarBien("RasterImageDef d = null; BlockTableRecord b = null; b.Name = \"Bloque\"; return d.SourceFileName + b.PathName;");
+        }
+
+        [Fact]
         public void Documentos_AsignarDibujoActivoOBaseDeTrabajo()
         {
             var p = Scripts.Bloqueado("AcApp.DocumentManager.MdiActiveDocument = null; return null;", CodigoReglas.Documentos);
@@ -217,8 +227,13 @@ return v;");
         }
 
         [Fact]
-        public void Sistema_CambiarVariablesDeSistema()
-            => Scripts.Bloqueado("AcApp.SetSystemVariable(\"PDMODE\", 3); return null;", CodigoReglas.Sistema);
+        public void Sistema_CambiarVariablesDeSistemaODelDibujo()
+        {
+            Scripts.Bloqueado("AcApp.SetSystemVariable(\"PDMODE\", 3); return null;", CodigoReglas.Sistema);
+            var p = Scripts.Bloqueado("Database db = null; db.Clayer = default(ObjectId); return null;", CodigoReglas.Sistema);
+            Assert.Contains("(asignación)", p.Mensaje);
+            Scripts.CompilarBien("Database db = null; return db.Clayer;");
+        }
 
         [Fact]
         public void Transaccion_OpenCloseTopTransactionYObjectIdOpen()

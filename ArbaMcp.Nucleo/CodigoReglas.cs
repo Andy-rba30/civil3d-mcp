@@ -53,7 +53,7 @@ namespace ArbaMcp.Nucleo
                 case Comandos: return "ejecutar_codigo no admite enviar comandos ni LISP: se ejecutarían fuera de la transacción, también al simular. Si hace falta, usa ejecutar_comando.";
                 case Transaccion: return "usa F.Tr o una transacción anidada (F.Db.TransactionManager.StartTransaction()): este miembro se salta la transacción de la herramienta y la simulación no podría deshacerlo.";
                 case Documentos: return "ejecutar_codigo no admite abrir, cerrar ni guardar dibujos, ni leer o escribir archivos con la API: usa abrir_dibujo, guardar_dibujo, guardar_copia o la herramienta específica (crear_superficie_tin, exportar_landxml...).";
-                case Sistema: return "ejecutar_codigo no admite cambiar variables de sistema: la simulación no podría deshacerlas.";
+                case Sistema: return "ejecutar_codigo no admite cambiar variables de sistema ni del dibujo (propiedades de Database) ni el perfil de AutoCAD: la simulación no podría deshacerlas.";
                 case Plugin: return "de ArbaMcp, el script solo puede usar la Fachada F.";
                 case Borrado: return "ninguna herramienta borra ni recrea regiones, líneas base, ensamblajes, corredores ni superficies.";
                 default: return "no está en la lista blanca de ejecutar_codigo (lo básico de System, colecciones, LINQ, texto, JSON, Path y la API de AutoCAD y Civil 3D).";
@@ -237,6 +237,12 @@ namespace ArbaMcp.Nucleo
             new ReglaMiembro("Editor", "Drag", Interfaz),
             new ReglaMiembro("Editor", "StartUserInteraction", Interfaz),
             new ReglaMiembro("Editor", "Get", Interfaz, prefijo: true, excepto: new[] { "GetCurrentView", "GetHashCode", "GetType" }),
+            new ReglaMiembro("Document", "Dispose", Proceso),
+            new ReglaMiembro("DocumentCollection", "Dispose", Proceso),
+            new ReglaMiembro("Editor", "Dispose", Proceso),
+            new ReglaMiembro("Application", "UserConfigurationManager", Sistema),
+            // Las variables del dibujo (db.Clayer, db.Insunits...) no se deshacen al abortar la transacción
+            new ReglaMiembro("Database", "", Sistema, soloEscritura: true, prefijo: true),
             new ReglaMiembro("Database", "SaveAs", Documentos),
             new ReglaMiembro("Database", "Save", Documentos),
             new ReglaMiembro("Database", "ReadDwgFile", Documentos),

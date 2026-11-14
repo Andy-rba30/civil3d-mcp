@@ -310,14 +310,14 @@ funciones locales, sin declarar clases ni métodos; puede empezar con `using`. U
    Roslyn): solo lo básico de System (números, textos, fechas, colecciones, LINQ, `StringBuilder`, JSON, `Path`,
    `Stopwatch`) y la API de AutoCAD y Civil 3D. **No compila**, y el error dice la categoría: red (`System.Net`,
    `GetRemoteFile`), procesos (`Process`, COM `Autodesk.AutoCAD.Interop`), archivos (`File`, `Directory`, flujos, y todo
-   miembro de la API con un parámetro de archivo o ruta: `SaveAs(fileName)`, `AddPointFile(pointFilePath)`...),
+   miembro de la API con un parámetro de archivo o ruta, `SaveAs(fileName)`, `AddPointFile(pointFilePath)`..., o asignar una ruta a una propiedad, `RasterImageDef.SourceFileName`, `BlockTableRecord.PathName`),
    reflexión (`GetMethod`, `Assembly`, `Activator`, `dynamic`, expresiones), hilos (`Thread`, `Task`, `async`/`await`,
    `lock`, PLINQ), código nativo (`unsafe`, punteros, `DllImport`, `Marshal`, un `IntPtr` que no sea `IntPtr.Zero`),
    el proceso (`Environment` salvo `NewLine`, `AppDomain`, `GC`, `Console`, `Quit`), ventanas y entrada interactiva
    (`ShowAlertDialog`, `Editor.Get*`, `Autodesk.AutoCAD.Windows`, `Autodesk.Windows`, `System.Windows`), eventos
    (cualquier `+=` a un evento), comandos (`SendStringToExecute`, `Editor.Command`, `Application.Invoke` de LISP),
    la transacción (`StartOpenCloseTransaction`, `TopTransaction`, `ObjectId.Open`), documentos (abrir, cerrar,
-   guardar, cambiar el dibujo activo), variables de sistema (`SetSystemVariable`), el plugin (de ArbaMcp solo `F`) y la
+   guardar, cambiar el dibujo activo), variables de sistema y del dibujo (`SetSystemVariable`, asignar propiedades de `Database` como `Clayer`, el perfil `UserConfigurationManager`: abortar la transacción no las deshace), el plugin (de ArbaMcp solo `F`) y la
    regla del proyecto (`Remove`/`RemoveAt` de regiones, líneas base y superficies de corredor). También `goto`,
    atributos, `#line` y los nombres que empiezan por `__arba`.
 3. **Ejecución en el hilo principal**, en contexto `Documento` (una entrada `Executefunction` de Deshacer) y con el

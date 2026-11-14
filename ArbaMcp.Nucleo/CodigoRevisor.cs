@@ -294,6 +294,13 @@ namespace ArbaMcp.Nucleo
                 // La API de Autodesk con parámetros de archivo o ruta: SaveAs(fileName), AddPointFile(path), AttachXref...
                 if (nombreTipo.StartsWith("Autodesk", StringComparison.Ordinal))
                 {
+                    // Asignar una ruta a una propiedad (RasterImageDef.SourceFileName, BlockTableRecord.PathName) hace que
+                    // Civil 3D lea un archivo de cualquier carpeta; leerla (Database.Filename) no
+                    if (escritura && s is IPropertySymbol propiedad && propiedad.Type.SpecialType == SpecialType.System_String && CodigoReglas.EsParametroDeArchivo(propiedad.Name))
+                    {
+                        Anotar(n, CodigoReglas.Documentos, Nombre(declarante) + "." + s.Name + " (asignación) es una ruta de archivo: " + CodigoReglas.Explicacion(CodigoReglas.Documentos));
+                        return;
+                    }
                     var parametros = (original as IMethodSymbol)?.Parameters ?? (s as IPropertySymbol)?.Parameters ?? ImmutableArrayVacio;
                     var deArchivo = parametros.FirstOrDefault(p => p.Type.SpecialType == SpecialType.System_String && CodigoReglas.EsParametroDeArchivo(p.Name));
                     if (deArchivo != null)
