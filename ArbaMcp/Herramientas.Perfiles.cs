@@ -200,7 +200,7 @@ namespace ArbaMcp
             catch { return null; }
         }
 
-        /// <summary>Extensión del dibujo guardada en la base (Database.Extmin/Extmax, sin recalcular) o null si no sirve.</summary>
+        /// <summary>Extensión del dibujo guardada en la base (Database.Extmin/Extmax, sin recalcular) o null si no sirve. Desde 1.14.1 solo es el respaldo del punto automático.</summary>
         private static Extension2? ExtensionDibujo(Database db)
         {
             try
@@ -209,6 +209,56 @@ namespace ArbaMcp
                 return ext.EsValida ? ext : (Extension2?)null;
             }
             catch { return null; }
+        }
+
+        /// <summary>Extensiones de las vistas de perfil que ya tiene el alineamiento (Alignment.GetProfileViewIds + Entity.GeometricExtents); null las no legibles.</summary>
+        private static List<Extension2?> ExtensionesVistasPerfil(Transaction tr, CivAlignment al)
+        {
+            var l = new List<Extension2?>();
+            try
+            {
+                foreach (ObjectId id in al.GetProfileViewIds())
+                    if (tr.GetObject(id, OpenMode.ForRead) is Autodesk.AutoCAD.DatabaseServices.Entity e) l.Add(ExtensionDe(e));
+            }
+            catch (Exception ex) { Historial.Registrar("Punto de inserción automático: no se pudieron leer las vistas de perfil de '" + al.Name + "': " + ex.Message); }
+            return l;
+        }
+
+        /// <summary>
+        /// Extensiones de las vistas de sección de los grupos de líneas de muestreo que ya tiene el alineamiento
+        /// (GetSampleLineGroupIds → GetSampleLineIds → GetSectionViewIds + Entity.GeometricExtents); null las no legibles.
+        /// </summary>
+        private static List<Extension2?> ExtensionesVistasSeccion(Transaction tr, CivAlignment al)
+        {
+            var l = new List<Extension2?>();
+            try
+            {
+                foreach (ObjectId idG in al.GetSampleLineGroupIds())
+                {
+                    if (!(tr.GetObject(idG, OpenMode.ForRead) is Civ.SampleLineGroup g)) continue;
+                    foreach (ObjectId idL in g.GetSampleLineIds())
+                    {
+                        if (!(tr.GetObject(idL, OpenMode.ForRead) is Civ.SampleLine sl)) continue;
+                        foreach (ObjectId idV in sl.GetSectionViewIds())
+                            if (tr.GetObject(idV, OpenMode.ForRead) is Autodesk.AutoCAD.DatabaseServices.Entity e) l.Add(ExtensionDe(e));
+                    }
+                }
+            }
+            catch (Exception ex) { Historial.Registrar("Punto de inserción automático: no se pudieron leer las vistas de sección de '" + al.Name + "': " + ex.Message); }
+            return l;
+        }
+
+        /// <summary>
+        /// Punto de inserción automático desde 1.14.1 (crear_perfil_terreno_y_vista y crear_secciones): a la derecha del
+        /// eje y de sus vistas de perfil (y, con conVistasSeccion, también de las vistas de sección de sus grupos), no del
+        /// dibujo entero (ArbaMcp.Nucleo.PerfilVista.ReferenciaDelEje). Añade a 'avisos' la explicación de la regla.
+        /// </summary>
+        private static Punto2 PuntoAutomaticoDelEje(Transaction tr, Database db, CivAlignment al, bool conVistasSeccion, List<string> avisos)
+        {
+            var r = PerfilVista.ReferenciaDelEje(al.Name, ExtensionDe(al), ExtensionesVistasPerfil(tr, al), conVistasSeccion ? ExtensionesVistasSeccion(tr, al) : null, ExtensionDibujo(db), avisos);
+            var punto = PerfilVista.PuntoAutomatico(r.Extension);
+            avisos.Add(PerfilVista.ExplicacionPuntoAutomatico(r.Extension.Value, punto, r.Origen));
+            return punto;
         }
 
         /// <summary>
@@ -250,7 +300,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = HerramientaCrearPerfilVista,
-                Descripcion = "Crea el perfil de terreno (EG) de un alineamiento sobre una superficie y la vista de perfil de ese alineamiento, los dos en una sola entrada de Deshacer y una sola transacción (si la vista falla, no queda el perfil a medias). Perfil: Profile.CreateFromSurface con el estilo y el conjunto de etiquetas de perfil del dibujo (o los pedidos). Vista: ProfileView.Create en 'punto_insercion' o, si no se pasa, automáticamente a la derecha de lo dibujado (x = extremo derecho de la extensión del alineamiento, la superficie y el dibujo + 10 % de su ancho, mínimo 50; y = extremo inferior), con el estilo de vista y el conjunto de bandas del dibujo (o los pedidos); después asigna el perfil a las bandas (si no se puede, lo dice en 'avisos'). Devuelve 'perfil' (nombre, tipo, progresivas, cotas, estilo, conjunto de etiquetas) y 'vista' (nombre, punto de inserción usado, estilo, conjunto de bandas, progresivas). Si ya existe un perfil o una vista con ese nombre en el alineamiento, error sin tocar nada.",
+                Descripcion = "Crea el perfil de terreno (EG) de un alineamiento sobre una superficie y la vista de perfil de ese alineamiento, los dos en una sola entrada de Deshacer y una sola transacción (si la vista falla, no queda el perfil a medias). Perfil: Profile.CreateFromSurface con el estilo y el conjunto de etiquetas de perfil del dibujo (o los pedidos). Vista: ProfileView.Create en 'punto_insercion' o, si no se pasa, automáticamente a la derecha del eje (desde 1.14.1: x = extremo derecho de la extensión del alineamiento y de sus vistas de perfil ya existentes + 10 % de su ancho, mínimo 50; y = extremo inferior; el resto del dibujo no cuenta, salvo de respaldo si nada de eso es legible), con el estilo de vista y el conjunto de bandas del dibujo (o los pedidos); después asigna el perfil a las bandas (si no se puede, lo dice en 'avisos'). Devuelve 'perfil' (nombre, tipo, progresivas, cotas, estilo, conjunto de etiquetas) y 'vista' (nombre, punto de inserción usado, estilo, conjunto de bandas, progresivas). Si ya existe un perfil o una vista con ese nombre en el alineamiento, error sin tocar nada.",
                 Parametros =
                 {
                     P("alineamiento", "string", "Nombre del alineamiento (eje) existente", true),
@@ -261,7 +311,7 @@ namespace ArbaMcp
                     P("conjunto_etiquetas_perfil", "string", "Conjunto de etiquetas de perfil del dibujo. Si falta, el de la configuración del dibujo; si no existe, error con la lista"),
                     P("estilo_vista", "string", "Estilo de vista de perfil del dibujo. Si falta, el de la configuración del dibujo; si no existe, error con la lista"),
                     P("conjunto_bandas", "string", "Conjunto de bandas de vista de perfil del dibujo. Si falta, el de la configuración del dibujo; si no existe, error con la lista"),
-                    P("punto_insercion", "json", "Esquina inferior izquierda de la vista: {\"x\": 1500, \"y\": 2000}. Si falta, se coloca a la derecha de lo dibujado y la respuesta devuelve el punto usado"),
+                    P("punto_insercion", "json", "Esquina inferior izquierda de la vista: {\"x\": 1500, \"y\": 2000}. Si falta, se coloca a la derecha del eje y de sus vistas de perfil y la respuesta devuelve el punto usado"),
                     P("simular", "boolean", "Con true comprueba alineamiento, superficie, nombres libres, estilos y conjuntos, calcula el punto de inserción y devuelve lo previsto sin tocar el dibujo (ni copia)")
                 },
                 Ejecutar = a => Escritura.Ejecutar(HerramientaCrearPerfilVista, a, ctx =>
@@ -296,7 +346,7 @@ namespace ArbaMcp
 
                     return Escritura.CrearObjeto(ctx, new Escritura.Creacion
                     {
-                        Accion = "Crear el perfil de terreno '" + nombrePerfil + "' del alineamiento '" + nombreAl + "' sobre la superficie '" + nombreSu + "' y su vista de perfil '" + nombreVista + "'" + (puntoAutomatico ? " a la derecha de lo dibujado" : " en el punto pedido"),
+                        Accion = "Crear el perfil de terreno '" + nombrePerfil + "' del alineamiento '" + nombreAl + "' sobre la superficie '" + nombreSu + "' y su vista de perfil '" + nombreVista + "'" + (puntoAutomatico ? " a la derecha del eje" : " en el punto pedido"),
                         Antes = tr =>
                         {
                             idAl = BuscarAlineamiento(tr, nombreAl);          // "No existe el alineamiento 'X'. Usa listar_alineamientos."
@@ -315,13 +365,8 @@ namespace ArbaMcp
                             idBandas = string.IsNullOrWhiteSpace(conjuntoBandas) ? ConjuntoBandasPorDefecto(tr, ctx.Avisos, out bandasUsadas) : BuscarConjuntoBandas(tr, conjuntoBandas.Trim());
                             idCapa = CapaParaPerfiles(tr, db, ctx.Avisos);
                             try { capaPerfil = ((LayerTableRecord)tr.GetObject(idCapa, OpenMode.ForRead)).Name; } catch { capaPerfil = null; }
-                            if (puntoPedido.HasValue) punto = puntoPedido.Value;
-                            else
-                            {
-                                var total = Extension2.Unir(Extension2.Unir(ExtensionDe(al), ExtensionDe(su)), ExtensionDibujo(db));
-                                punto = PerfilVista.PuntoAutomatico(total);
-                                ctx.Avisos.Add(PerfilVista.ExplicacionPuntoAutomatico(total.Value, punto));
-                            }
+                            // Sin punto pedido: a la derecha del eje y de sus vistas de perfil (1.14.1; antes, del dibujo entero)
+                            punto = puntoPedido ?? PuntoAutomaticoDelEje(tr, db, al, false, ctx.Avisos);
                             return new Dictionary<string, object> { ["alineamiento"] = al.Name, ["superficie"] = su.Name, ["perfil_existe"] = false, ["vista_existe"] = false };
                         },
                         Prevision = tr =>

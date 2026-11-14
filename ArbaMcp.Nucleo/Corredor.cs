@@ -178,6 +178,41 @@ namespace ArbaMcp.Nucleo
                + (superficie == null ? "sin objetivos de superficie" : "con '" + superficie + "' como objetivo de los taludes")
                + ", y reconstruirlo";
 
+        // ------------------------------------------------------------------ capa (1.14.1)
+        /// <summary>Lo que se añade a los avisos de capa: el corredor no cambia de capa y se puede cambiar a mano.</summary>
+        public const string ColaAvisoCapa = "el corredor se queda en la capa que le pone Civil 3D (en la 1.11.0 fue la capa 0). Cámbiala después en Propiedades del corredor si hace falta.";
+
+        /// <summary>
+        /// Aviso cuando la capa de corredores de la configuración del dibujo (Configuración del dibujo → Capas de objeto
+        /// → Corredor) no sirve: con 'motivo' (el error de la lectura) no se pudo leer; sin él, la capa configurada no
+        /// existe en el dibujo. En los dos casos el corredor no se mueve de capa (a diferencia del eje y el perfil, que
+        /// van a la capa actual).
+        /// </summary>
+        public static string AvisoCapaNoEncontrada(string nombreConfigurado, string motivo = null)
+        {
+            if (!string.IsNullOrWhiteSpace(motivo))
+                return "No se pudo leer la capa de corredores de la configuración del dibujo (" + motivo.Trim() + "); " + ColaAvisoCapa;
+            return "La capa de corredores de la configuración del dibujo (" + (string.IsNullOrWhiteSpace(nombreConfigurado) ? "sin nombre" : "'" + nombreConfigurado.Trim() + "'")
+                   + ") no existe en el dibujo; " + ColaAvisoCapa;
+        }
+
+        /// <summary>Aviso cuando la API no deja poner la capa al corredor recién creado (Entity.LayerId lanzó): el corredor se crea igual.</summary>
+        public static string AvisoCapaNoAplicada(string capa, string error)
+            => "No se pudo poner el corredor en la capa '" + capa + "' de la configuración del dibujo (Entity.LayerId: " + (error ?? "?").Trim() + "); " + ColaAvisoCapa;
+
+        /// <summary>
+        /// Comprobación de la capa releída tras crear: null si no había capa prevista (no se tocó) o si la releída es la
+        /// prevista (sin distinguir mayúsculas); si no, el aviso. No es un error: el corredor está bien creado y la capa
+        /// se puede cambiar a mano.
+        /// </summary>
+        public static string AvisoCapa(string prevista, string leida)
+        {
+            if (string.IsNullOrWhiteSpace(prevista)) return null;
+            if (!string.IsNullOrWhiteSpace(leida) && string.Equals(prevista.Trim(), leida.Trim(), StringComparison.OrdinalIgnoreCase)) return null;
+            return "El corredor quedó en la capa " + (string.IsNullOrWhiteSpace(leida) ? "(no legible)" : "'" + leida.Trim() + "'") + " y se pidió '" + prevista.Trim()
+                   + "', la de corredores de la configuración del dibujo. Cámbiala en Propiedades del corredor si hace falta (anótalo para la memoria técnica).";
+        }
+
         // ------------------------------------------------------------------ comprobación de lo releído
         /// <summary>Null si la región releída empieza y termina donde se pidió (±0,01); si no, el motivo.</summary>
         public static string MotivoRangoNoCoincide(double inicioPedido, double finPedido, double inicioLeido, double finLeido)

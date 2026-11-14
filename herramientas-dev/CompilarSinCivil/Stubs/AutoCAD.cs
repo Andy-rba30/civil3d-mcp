@@ -31,6 +31,17 @@ namespace Autodesk.AutoCAD.Geometry
         public Point2d Convert2d(Plane p) => new Point2d(X, Y);
     }
     public class Plane { }
+    // 1.13.0 (crear_secciones): vértices de una línea de muestreo nueva (SampleLine.Create)
+    public class Point2dCollection : IEnumerable
+    {
+        public Point2dCollection() { }
+        public Point2dCollection(int capacidad) { }
+        public Point2dCollection(Point2d[] puntos) { }
+        public int Count => 0;
+        public Point2d this[int i] => new Point2d();
+        public int Add(Point2d p) => 0;
+        public IEnumerator GetEnumerator() => new List<Point2d>().GetEnumerator();
+    }
     public class Point3dCollection : IEnumerable
     {
         public int Count => 0;
