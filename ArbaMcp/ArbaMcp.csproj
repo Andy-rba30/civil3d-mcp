@@ -7,12 +7,16 @@
     <OutputType>Library</OutputType>
     <AssemblyName>ArbaMcp</AssemblyName>
     <RootNamespace>ArbaMcp</RootNamespace>
-    <Version>1.15.1</Version>
+    <Version>1.17.2</Version>
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <UseWPF>true</UseWPF>
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <!-- 1.16.0: una biblioteca no copia las DLL de NuGet a bin\; Roslyn (ejecutar_codigo) tiene que estar ahí para que
+         instalar.ps1 lo lleve a Contents\roslyn. De sus traducciones solo hace falta la española. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <SatelliteResourceLanguages>es</SatelliteResourceLanguages>
   </PropertyGroup>
 
   <!-- Ajuste esta ruta si Civil 3D está instalado en otra carpeta -->
@@ -73,6 +77,14 @@
     <MakeDir Directories="$(CarpetaBundle)\Contents" ContinueOnError="true" />
     <Copy SourceFiles="$(MSBuildProjectDirectory)\Bundle\PackageContents.xml" DestinationFolder="$(CarpetaBundle)" ContinueOnError="true" />
     <Copy SourceFiles="$(TargetPath);$(TargetDir)$(TargetName).pdb;$(TargetDir)ArbaMcp.Nucleo.dll;$(TargetDir)ArbaMcp.Nucleo.pdb" DestinationFolder="$(CarpetaBundle)\Contents" ContinueOnError="true" />
+    <!-- 1.16.0: Roslyn (ejecutar_codigo) va en Contents\roslyn, nunca junto a ArbaMcp.dll, para que solo lo cargue su propio contexto -->
+    <ItemGroup>
+      <RoslynBundle Include="$(TargetDir)Microsoft.CodeAnalysis.dll;$(TargetDir)Microsoft.CodeAnalysis.CSharp.dll" />
+      <RoslynBundleEs Include="$(TargetDir)es\Microsoft.CodeAnalysis*.resources.dll" />
+    </ItemGroup>
+    <MakeDir Directories="$(CarpetaBundle)\Contents\roslyn\es" ContinueOnError="true" />
+    <Copy SourceFiles="@(RoslynBundle)" DestinationFolder="$(CarpetaBundle)\Contents\roslyn" ContinueOnError="true" />
+    <Copy SourceFiles="@(RoslynBundleEs)" DestinationFolder="$(CarpetaBundle)\Contents\roslyn\es" ContinueOnError="true" />
     <Message Importance="high" Text="ArbaMcp instalado en $(CarpetaBundle). Si Civil 3D estaba abierto, reinícialo." />
   </Target>
 

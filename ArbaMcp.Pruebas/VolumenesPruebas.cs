@@ -620,5 +620,210 @@ namespace ArbaMcp.Pruebas
             Assert.Equal(1, r.Metodos[IdentificacionSecciones.PorNombre]);
             Assert.Equal(5, IdentificacionSecciones.Orden.Count);
         }
+
+        // ---------------------------------------------------------------- recorte a las superficies (1.17.1)
+        /// <summary>Función «existe en x» que cuenta cuántas veces se le pregunta.</summary>
+        private sealed class Existe
+        {
+            private readonly Func<double, bool> f;
+            public int Llamadas;
+            public Existe(Func<double, bool> f) { this.f = f; }
+            public bool En(double x) { Llamadas++; return f(x); }
+        }
+
+        private static Func<double, bool> Entre(params double[] bordes)
+            => x => { for (int i = 0; i + 1 < bordes.Length; i += 2) if (x >= bordes[i] && x <= bordes[i + 1]) return true; return false; };
+
+        [Fact]
+        public void MuestrasConPuntosMediosYPasoMaximo()
+        {
+            var m = Volumenes.MuestrasRecorte(-10, 10, new[] { 0.0, 0.0, 50, double.NaN });
+            // −10, 0 y 10 (50 queda fuera), sus puntos medios (−5 y 5) y nada más: ningún hueco pasa de 5
+            Assert.Equal(new[] { -10.0, -5, 0, 5, 10 }, m);
+            var largo = Volumenes.MuestrasRecorte(0, 30, null);   // 0, 15 y 30, y cada hueco de 15 en tres de 5
+            Assert.Equal(new[] { 0.0, 5, 10, 15, 20, 25, 30 }, largo.Select(x => Math.Round(x, 9)));
+            Assert.Empty(Volumenes.MuestrasRecorte(1, 1, null));
+        }
+
+        [Fact]
+        public void TodoDentroNoSeRecorta()
+        {
+            var e = new Existe(x => true);
+            var r = Volumenes.Recortar(-30, 30, new[] { 0.0 }, e.En);
+            Assert.Single(r.Tramos);
+            Assert.Equal((-30.0, 30.0), (r.Tramos[0].Desde, r.Tramos[0].Hasta));
+            Assert.Equal(0, r.AnchoDescartado, 9);
+            Assert.False(r.Recortada);
+            Assert.Equal(e.Llamadas, r.PuntosProbados);   // sin bordes no hay bisección: solo las muestras
+            Assert.Equal(Volumenes.MuestrasRecorte(-30, 30, new[] { 0.0 }).Count, r.PuntosProbados);
+        }
+
+        [Fact]
+        public void BordesAfinadosHastaUnCentimetroDelLadoDeDentro()
+        {
+            var e = new Existe(Entre(-12.345, 14.4));
+            var r = Volumenes.Recortar(-30, 30, new[] { -3.9, 0, 3.6, 22.76 }, e.En);
+            Assert.Single(r.Tramos);
+            var t = r.Tramos[0];
+            Assert.InRange(t.Desde, -12.345, -12.345 + Volumenes.PrecisionRecorte);
+            Assert.InRange(t.Hasta, 14.4 - Volumenes.PrecisionRecorte, 14.4);
+            Assert.InRange(r.AnchoDescartado, 60 - 26.745, 60 - 26.745 + 2 * Volumenes.PrecisionRecorte);
+            Assert.True(r.Recortada);
+            Assert.Equal(e.Llamadas, r.PuntosProbados);   // cada desplazamiento se pregunta una vez
+            Assert.InRange(r.PuntosProbados, 1, 60);
+        }
+
+        [Fact]
+        public void VariosTramosSeparados()
+        {
+            // La Datum existe a los dos lados de un hueco (−5 a 3) y no más allá de ±20
+            var r = Volumenes.Recortar(-30, 30, null, Entre(-20, -5, 3, 20));
+            Assert.Equal(2, r.Tramos.Count);
+            Assert.InRange(r.Tramos[0].Desde, -20, -20 + 0.01);
+            Assert.InRange(r.Tramos[0].Hasta, -5 - 0.01, -5);
+            Assert.InRange(r.Tramos[1].Desde, 3, 3 + 0.01);
+            Assert.InRange(r.Tramos[1].Hasta, 20 - 0.01, 20);
+            Assert.InRange(r.AnchoValido, 32 - 0.04, 32);
+        }
+
+        [Fact]
+        public void NadaDentroOFuncionQueLanza()
+        {
+            var r = Volumenes.Recortar(-30, 30, new[] { 0.0 }, x => false);
+            Assert.Empty(r.Tramos);
+            Assert.Equal(60, r.AnchoDescartado, 9);
+            // Si la función lanza (FindElevationAtXY fuera de la TIN), ese punto cuenta como fuera
+            var l = Volumenes.Recortar(-10, 10, null, x => x < 0 ? throw new InvalidOperationException("fuera de la TIN") : true);
+            Assert.Single(l.Tramos);
+            Assert.InRange(l.Tramos[0].Desde, 0, 0.01);
+            Assert.Throws<ArgumentNullException>(() => Volumenes.Recortar(0, 1, null, null));
+        }
+
+        [Fact]
+        public void SinSolapeNoHayRecorte()
+            => Assert.Null(Volumenes.RecortarSeccion(P(-10, 100, -6, 100), P(-5, 100, 5, 100), x => true));
+
+        [Fact]
+        public void AreasSoloDentroDeLosTramosValidos()
+        {
+            // Terreno 2 m por encima de la Datum en todo el ancho: el corte es 2 × el ancho válido
+            var t = P(-30, 102, 30, 102);
+            var d = P(-30, 100, 30, 100);
+            Assert.Equal(120, Volumenes.Areas(t, d).Corte, 9);
+            Assert.Equal(120, Volumenes.Areas(t, d, null).Corte, 9);   // sin recorte, como hasta la 1.14.3
+            var uno = Volumenes.Areas(t, d, new[] { new TramoDesplazamientos(-10, 5) });
+            Assert.Equal(30, uno.Corte, 9);
+            Assert.Equal((-30.0, 30.0), (uno.Desde, uno.Hasta));        // Desde y Hasta siguen siendo el tramo común
+            var dos = Volumenes.Areas(t, d, new[] { new TramoDesplazamientos(-20, -5), new TramoDesplazamientos(3, 20) });
+            Assert.Equal(2 * (15 + 17), dos.Corte, 9);
+            var vacio = Volumenes.Areas(t, d, new TramoDesplazamientos[0]);
+            Assert.Equal((0.0, 0.0), (vacio.Corte, vacio.Relleno));
+        }
+
+        [Fact]
+        public void CruceDentroDeUnTramoValidoRecortado()
+        {
+            // Terreno de 101 a 99 sobre una Datum plana a 100, con la Datum solo de −2 a 5: corte 0,4 × 2 / 2, relleno 1 × 5 / 2
+            var a = Volumenes.Areas(P(-5, 101, 5, 99), P(-5, 100, 5, 100), new[] { new TramoDesplazamientos(-2, 5) });
+            Assert.Equal(0.4, a.Corte, 9);
+            Assert.Equal(2.5, a.Relleno, 9);
+        }
+
+        /// <summary>
+        /// La línea 0+000.00 de PRUEBA_1142.dwg (informe 1.14.3 del 14/11/2026, puntos_secciones): terreno con sus 3 puntos y
+        /// Datum con los 6 puntos conocidos (los 3 primeros y los 3 últimos) más los 3 centrales reconstruidos: bombeo del 2 %
+        /// con 99.55 en el eje (la cota medida) y 99.478 a ±3.6 (MinmumElevation). Dan las cotas que midió el informe en −5 y +5
+        /// (100.1045 y 99.5379) y las áreas sin recorte de su primera fila (5.1339 y 7.521).
+        /// </summary>
+        private static readonly List<Punto2> TerrenoLinea0 = P(-30, 100.6, 0, 100, 30, 99.4);
+        private static readonly List<Punto2> DatumLinea0 = P(-30, 100.7066, -3.9, 100.078, -3.6002, 99.9281, -3.6, 99.478, 0, 99.55, 3.6, 99.478,
+            14.0508, 99.925, 22.7597, 99.9224, 30, 99.9203);
+
+        [Fact]
+        public void CasoRealDeLaLinea0()
+        {
+            Assert.Equal(99.55, Volumenes.CotaEn(DatumLinea0, 0).Value, 3);
+            Assert.Equal(100.1045, Volumenes.CotaEn(DatumLinea0, -5).Value, 3);
+            Assert.Equal(99.5379, Volumenes.CotaEn(DatumLinea0, 5).Value, 3);
+
+            // Sin recorte salen las áreas de la fila 0+000.00 del informe 1.14.3
+            var sin = Volumenes.Areas(TerrenoLinea0, DatumLinea0);
+            Assert.InRange(sin.Corte, 5.1339 - 0.001, 5.1339 + 0.001);
+            Assert.InRange(sin.Relleno, 7.521 - 0.001, 7.521 + 0.001);
+            // En el informe FindElevationAtXY dio cota de la Datum en el eje y null a ±5 m: bordes supuestos a −3.75 y 3.75
+            var e = new Existe(Entre(-3.75, 3.75));
+            var r = Volumenes.RecortarSeccion(TerrenoLinea0, DatumLinea0, e.En);
+            Assert.Equal((-30.0, 30.0), (r.Desde, r.Hasta));
+            Assert.Single(r.Tramos);
+            Assert.InRange(r.Tramos[0].Desde, -3.75, -3.75 + 0.01);
+            Assert.InRange(r.Tramos[0].Hasta, 3.75 - 0.01, 3.75);
+            Assert.InRange(r.AnchoDescartado, 52.5, 52.52);
+            Assert.InRange(r.PuntosProbados, 1, 60);       // «unas decenas» por línea
+            Assert.Equal(e.Llamadas, r.PuntosProbados);
+
+            var con = Volumenes.Areas(TerrenoLinea0, DatumLinea0, r.Tramos);
+            Assert.True(con.Corte < sin.Corte && con.Relleno < sin.Relleno);
+            // Lo que queda es solo la calzada: el terreno (≈100) por encima de la Datum (≈99.5 a 99.9) y nada de relleno
+            double fuera = Volumenes.Areas(TerrenoLinea0, DatumLinea0, new[] { new TramoDesplazamientos(-30, -3.75), new TramoDesplazamientos(3.75, 30) }).Corte;
+            Assert.InRange(con.Corte - (sin.Corte - fuera), -0.02, 0.02);   // los bordes se afinan hasta 0,01 m
+            Assert.True(con.Relleno < 0.01);
+        }
+
+        [Fact]
+        public void SiSoloExisteEnElEjeElAreaEsCero()
+        {
+            var r = Volumenes.RecortarSeccion(TerrenoLinea0, DatumLinea0, x => Math.Abs(x) < 1e-12);
+            Assert.Empty(r.Tramos);   // un tramo de ancho 0 no cuenta
+            var a = Volumenes.Areas(TerrenoLinea0, DatumLinea0, r.Tramos);
+            Assert.Equal((0.0, 0.0), (a.Corte, a.Relleno));
+        }
+
+        [Fact]
+        public void ResumenDelRecorte()
+        {
+            RecorteSeccion R(double desde, double hasta, int puntos, params double[] tramos)
+            {
+                var r = new RecorteSeccion { Desde = desde, Hasta = hasta, PuntosProbados = puntos };
+                for (int i = 0; i + 1 < tramos.Length; i += 2) r.Tramos.Add(new TramoDesplazamientos(tramos[i], tramos[i + 1]));
+                return r;
+            }
+            var s = Volumenes.ResumirRecorte(new[]
+            {
+                R(-30, 30, 20, -30, 30),                 // sin recorte
+                R(-30, 30, 40, -10, 14),                 // descarta 36
+                R(-30, 30, 50, -20, -5, 3, 20),          // dos tramos, descarta 28
+                R(-30, 30, 30),                          // sin tramo válido, descarta 60
+                null
+            });
+            Assert.Equal(4, s.Lineas);
+            Assert.Equal(3, s.LineasRecortadas);
+            Assert.Equal(1, s.LineasSinTramoValido);
+            Assert.Equal(1, s.LineasConVariosTramos);
+            Assert.Equal(140, s.PuntosProbados);
+            Assert.Equal((36 + 28 + 60) / 3.0, s.AnchoMedioDescartado, 9);
+            Assert.Equal(60, s.AnchoMaximoDescartado, 9);
+            Assert.Equal(0, Volumenes.ResumirRecorte(null).AnchoMedioDescartado, 9);
+        }
+
+        [Fact]
+        public void TablaConRecorteDaElAnchoDescartadoYAvisaDeLasLineasSinTramo()
+        {
+            var vacio = new RecorteSeccion { Desde = -30, Hasta = 30 };
+            var parcial = new RecorteSeccion { Desde = -30, Hasta = 30 };
+            parcial.Tramos.Add(new TramoDesplazamientos(-10, 14));
+            var lineas = new List<SeccionLinea>
+            {
+                new SeccionLinea("0+000.00", 0, A(0, 0)) { Recorte = vacio },
+                new SeccionLinea("0+020.00", 20, A(10, 2)) { Recorte = parcial },
+                new SeccionLinea("0+040.00", 40, A(10, 2))
+            };
+            var t = Volumenes.Tabla(lineas, 1, 1);
+            Assert.Equal(60, t.Filas[0].AnchoDescartado.Value, 9);
+            Assert.Equal(36, t.Filas[1].AnchoDescartado.Value, 9);
+            Assert.Null(t.Filas[2].AnchoDescartado);
+            Assert.Equal(0, t.TramosSinVolumen);        // una línea sin tramo válido suma 0, no es un tramo sin volumen
+            Assert.Equal(100 + 200, t.Corte, 9);       // (0 + 10) / 2 × 20 + (10 + 10) / 2 × 20
+            Assert.Contains(t.Avisos, a => a.StartsWith("1 línea (de pk 0) no tiene ningún tramo en que existan las dos superficies"));
+        }
     }
 }

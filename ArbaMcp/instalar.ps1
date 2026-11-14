@@ -31,6 +31,23 @@ foreach ($archivo in @($dll.FullName, $nucleo)) {
     if (Test-Path $pdb) { Copy-Item $pdb (Join-Path $bundle "Contents") -Force }
 }
 
+# Desde 1.16.0 el compilador de ejecutar_codigo (Roslyn, Microsoft.CodeAnalysis 5.0.0 de NuGet) va en Contents\roslyn,
+# fuera de la carpeta de ArbaMcp.dll: asi solo lo carga su propio contexto y no choca con otras versiones del proceso
+$roslyn = Join-Path $bundle "Contents\roslyn"
+New-Item -ItemType Directory -Force -Path (Join-Path $roslyn "es") | Out-Null
+foreach ($n in @("Microsoft.CodeAnalysis.dll", "Microsoft.CodeAnalysis.CSharp.dll")) {
+    $f = Join-Path $dll.DirectoryName $n
+    if (-not (Test-Path $f)) { throw "No se encontro $n junto a ArbaMcp.dll. Fallo la restauracion de NuGet (Microsoft.CodeAnalysis.CSharp 5.0.0)?" }
+    Copy-Item $f $roslyn -Force
+    # Si alguna vez quedo junto a ArbaMcp.dll, se quita: el contexto general de Civil 3D no debe encontrarlo
+    $suelto = Join-Path $bundle "Contents\$n"
+    if (Test-Path $suelto) { Remove-Item $suelto -Force }
+}
+$es = Join-Path $dll.DirectoryName "es"
+if (Test-Path $es) {
+    Get-ChildItem $es -Filter "Microsoft.CodeAnalysis*.resources.dll" | ForEach-Object { Copy-Item $_.FullName (Join-Path $roslyn "es") -Force }
+}
+
 Write-Host ""
-Write-Host "Instalado en: $bundle (ArbaMcp.dll + ArbaMcp.Nucleo.dll)" -ForegroundColor Green
+Write-Host "Instalado en: $bundle (ArbaMcp.dll + ArbaMcp.Nucleo.dll + roslyn\ para ejecutar_codigo)" -ForegroundColor Green
 Write-Host "Abre Civil 3D: en la pestana ARBA aparecera el boton Conexion IA."
