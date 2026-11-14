@@ -41,6 +41,23 @@ como cualquier simulación (`Pendiente.Comprobar`, llamado desde `HiloPrincipal.
 y no abre el contexto de comando, que dejaba una entrada `EXECUTEFUNCTION` vacía en Deshacer. Todo sigue en el hilo
 principal y de uno en uno: la regla de no llamar a AutoCAD desde el servidor no cambia.
 
+**Desde 1.16.0 (`ejecutar_codigo`)**: es la única herramienta que ejecuta código que no está en el plugin, y lo hace en
+el hilo principal, que es donde tiene que estar para tocar el dibujo. Por eso un script puede **congelar** Civil 3D
+mientras corre. Lo que lo evita:
+
+- Un tiempo límite cooperativo de 60 s con revisiones que el compilador inserta en cada bucle, función y lambda.
+- La comprobación de la pila en esas revisiones: una recursión infinita da un error en vez de cerrar Civil 3D.
+- La lista blanca: no admite hilos, tareas, eventos, temporizadores, diálogos, entrada interactiva, código nativo ni
+  comandos, que son lo que podría tocar AutoCAD desde otro hilo o dejar código del script ejecutándose después.
+
+Lo que **no** se puede evitar: una sola llamada larga a la API (un `Rebuild` enorme) no se corta hasta que vuelve, y
+una operación que agote la memoria puede dejar Civil 3D inestable. Un script **no se puede detener a la fuerza**:
+.NET 10 no tiene `Thread.Abort`, y matar el hilo principal es cerrar Civil 3D; aunque se pudiera, cortarlo en mitad de
+una llamada a la API dejaría el dibujo a medio escribir. La herramienta viene desactivada (`ARBA_MCP_CODIGO`) y siempre
+hace copia de seguridad antes de ejecutar, también al simular. Si Civil 3D se queda congelado con un script, espera a
+que termine; si no termina, ciérralo desde el Administrador de tareas y vuelve a la copia (`backups\`). En el historial
+quedan la compilación (`ejecutar_codigo: compilado ...`) y el final de cada ejecución.
+
 ## 3. Cómo comprobar en tu equipo si el plugin era la causa
 
 Hazlo antes de instalar 1.2.2, con el mismo dibujo con el que falló (siempre sobre una copia).

@@ -60,18 +60,18 @@ Reglas:
 
 ### Pasos
 
-0. **Versión e instalación (decisivo).** Si `ping` ya da `1.17.0`, no reinstales. Si no, con Civil 3D cerrado, en
+0. **Versión e instalación (decisivo).** Si `ping` ya da `1.17.2`, no reinstales. Si no, con Civil 3D cerrado, en
    PowerShell desde la raíz del repo en la rama `tarea/3.2-recetas`:
    `powershell -ExecutionPolicy Bypass -File .\ArbaMcp\instalar.ps1`; en `PuenteMcp`, `uv sync`; reinicia el puente y
    el cliente MCP y abre Civil 3D con la copia del DWG. Después:
-   - `ping` con `args={"pedido":"comprueba que el plugin responde"}` → `"version": "1.17.0"`, `"hay_dibujo": true`. En
-     PowerShell: `curl.exe -s http://127.0.0.1:8765/ping` → `{"ok":true,"servidor":"ArbaMcp","version":"1.17.0"}`.
+   - `ping` con `args={"pedido":"comprueba que el plugin responde"}` → `"version": "1.17.2"`, `"hay_dibujo": true`. En
+     PowerShell: `curl.exe -s http://127.0.0.1:8765/ping` → `{"ok":true,"servidor":"ArbaMcp","version":"1.17.2"}`.
    - La lista de herramientas: **58**, con `ejecutar_codigo`, `buscar_api`, `guardar_receta` y `ejecutar_receta`.
      `guardar_receta` tiene `nombre`, `pedido` y `codigo` obligatorios y `aprobada_por_el_dueno` (por defecto `false`);
      `ejecutar_receta` tiene `nombre` obligatorio y `simular` (por defecto `true`).
    - PowerShell: `[Environment]::GetEnvironmentVariable('ARBA_MCP_CODIGO','User')` → `1` y
      `[Environment]::GetEnvironmentVariable('MEMORIA_FIRMA_DIR','User')` → `C:\Proyectos\memoria-firma`.
-   Si la versión no es exactamente `1.17.0`, faltan herramientas o `ARBA_MCP_CODIGO` no es `1`, **para aquí**.
+   Si la versión no es exactamente `1.17.2`, faltan herramientas o `ARBA_MCP_CODIGO` no es `1`, **para aquí**.
 
 1. **Estado inicial (no decisivo).** PowerShell:
    `Test-Path C:\Proyectos\memoria-firma\recetas\crear_capa_con_color.cs, C:\Proyectos\memoria-firma\recetas\crear_capa_con_color.yaml`
@@ -103,7 +103,7 @@ Reglas:
 
    Esperado: `"ok": true`, `"guardada": false`, `"reemplazaria": false`, `archivos_previstos` con
    `C:\Proyectos\memoria-firma\recetas\crear_capa_con_color.cs` y `.yaml`, `yaml` con `nombre`, `pedido`,
-   `parametros`, `version_civil3d: '2027'`, `version_conector: 1.17.0`, `fecha` de hoy y `veces_usada: 0`, `avisos: []`
+   `parametros`, `version_civil3d: '2027'`, `version_conector: 1.17.2`, `fecha` de hoy y `veces_usada: 0`, `avisos: []`
    y `siguiente_paso` que empieza por «No se guardó nada. Enséñale al dueño esta vista previa». PowerShell: el
    `Test-Path` del paso 1 sigue dando `False` y `False`. OK solo si no se escribió nada.
 
@@ -142,7 +142,7 @@ Reglas:
    **Díselo a Jose** (el recordatorio de L.2). PowerShell:
    `Get-Content C:\Proyectos\memoria-firma\recetas\crear_capa_con_color.yaml -Encoding UTF8` → empieza por
    `# Receta de código de civil3d-mcp` y trae `veces_usada: 0`, `ultima_vez: null`, `version_civil3d: '2027'`,
-   `version_conector: 1.17.0`, `fecha: '<hoy, AAAA-MM-DD>'` y `aprobacion:` con
+   `version_conector: 1.17.2`, `fecha: '<hoy, AAAA-MM-DD>'` y `aprobacion:` con
    `palabras_del_dueno: Sí, guárdala como receta`. `Get-Content ...\crear_capa_con_color.cs -Encoding UTF8` → el script
    del paso 2, idéntico. Anota `(Get-Item ...\crear_capa_con_color.yaml).LastWriteTime`. OK solo si están los dos
    archivos con esos campos.

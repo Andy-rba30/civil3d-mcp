@@ -21,7 +21,7 @@ from pydantic import create_model, Field
 import buscar_api as memoria_firma  # herramienta local del puente (1.5.0): busca en memoria-firma sin Civil 3D
 import recetas  # herramientas locales del puente (1.17.0): guardar_receta y ejecutar_receta
 
-__version__ = "1.17.0"
+__version__ = "1.17.2"
 
 CARPETA = os.path.dirname(os.path.abspath(__file__))
 

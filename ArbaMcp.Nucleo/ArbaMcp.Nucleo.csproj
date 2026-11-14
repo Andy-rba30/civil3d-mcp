@@ -11,7 +11,7 @@
     <OutputType>Library</OutputType>
     <AssemblyName>ArbaMcp.Nucleo</AssemblyName>
     <RootNamespace>ArbaMcp.Nucleo</RootNamespace>
-    <Version>1.17.0</Version>
+    <Version>1.17.2</Version>
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
@@ -19,6 +19,16 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="ArbaMcp.Pruebas" />
+  </ItemGroup>
+
+  <!--
+    Roslyn (1.16.0, ejecutar_codigo): compila y revisa los scripts del agente. Dentro de Civil 3D no se carga en el
+    contexto general: el plugin lo lleva a Contents\roslyn del bundle y lo carga en un contexto propio
+    (CargadorCompilador), con una segunda copia de este ensamblado, para no chocar con otras versiones del proceso.
+    Las DLL vienen de NuGet al compilar; nunca se suben al repositorio (.gitignore excluye *.dll).
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
   </ItemGroup>
 
 </Project>
