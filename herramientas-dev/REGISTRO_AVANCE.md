@@ -42,14 +42,44 @@ haya que probar. Usa Opus con esfuerzo extra alto en las sesiones hijas. Actuali
   dibujo de la prueba anterior si se va a reutilizar.
 - Cada informe de validación se sube a `herramientas-dev/informes/`. Una sesión de "hallazgos" (solo documentación)
   pasa lo aprendido a la tabla de miembros y a los "Hechos ya validados" de `CLAUDE.md`.
+- La conexión de GitHub del dueño **puede caducar** a mitad de sesión (14/11/2026, 15:37: `push` con 403 «GitHub
+  authentication required» en la orquestadora y en las hijas). Se le pide reconectar en claude.ai/connect-github; las
+  hijas guardan sus commits en local y suben después.
+- Las hijas se crean con `create_session` y `outcome_branch` (su rama `tarea/...`); presentan el plan y esperan el
+  mensaje de la orquestadora. Para una corrección pequeña tras un informe, la orquestadora la manda con el plan ya
+  aprobado en el mismo mensaje.
+- En el Prompt P, pedir **expresamente** que el agente guarde cada informe como archivo en
+  `herramientas-dev\informes\` (el 14/11 solo entregó resúmenes de la 1142 y la 115; se subieron como transcripción).
+- La evaluación parte siempre de una **copia nueva** de `C:\Proyectos\dibujos_prueba\PRUEBA_EVALUACION_BASE.dwg`
+  (plantilla métrica + ensamblaje, sin nada más; anotado en `ESTADO_PC.md`). Una copia reutilizada arrastra líneas de
+  muestreo y falla la tarea 7.
 
-## Estado actual (14/11/2026, tras la prueba de la ronda A)
+## Estado actual (14/11/2026, ronda A cerrada)
+
+**En `main`: versión 1.15.1, 54 herramientas, validada en Civil 3D 2027 el 14/11/2026.** La Etapa 2 está hecha: la
+evaluación dio **10 de 10 OK** (hito: la tarea 10, flujo completo, en 176 s frente a 130 min) y las validaciones 1142
+(salvo la tabla, corregida en la 1143), 1143 y 115 dieron OK. Fusionados el **#31** (`tarea/2.7-volumenes`, 1.14.3) y
+el **#35** (`tarea/2.9-tabla-pi`, 1.15.1); GitHub cerró como fusionados el #26, #27, #29 y #30, que iban dentro. Los
+ocho informes de la ronda A (112, 113, 114, 1141, flujo completo, 1142, 115 y 1143) están en
+`herramientas-dev/informes/`; el de la evaluación, en `memoria-firma/evaluacion/informes/informe_evaluacion_20261114_1150.yaml`.
+La hoja de ruta (sección 0) marca la Etapa 2 como hecha.
+
+### Siguiente paso
+1. **Sesión de hallazgos** (solo documentación): pasar la ronda A a la tabla de miembros (estados «por verificar» →
+   «ejecutado») y a los «Hechos ya validados» de `CLAUDE.md` (Ctrl+Z que no quita superficies de corredor ni de volumen;
+   `TopLinks`/`BottomLinks`; `SourceName` = «<corredor> <superficie>» y `SampleLine.GetSectionId` como camino bueno;
+   `LeftOffset`/`RightOffset` de una sección de superficie de corredor; unicidad de nombres de línea en todo el dibujo;
+   líneas y vistas en el espacio modelo; signo del neto; `listar_pis` y `PIPoint`).
+2. **Ronda B, Etapa 3**: 3.1 `ejecutar_codigo` primero (3.2 recetas depende de ella: `ejecutar_receta` reutiliza el
+   código). Una instalación al final para las dos.
+
+## Historial de la ronda A (14/11/2026)
 
 **En `main`**: versión **1.11.0**, validada. **Ronda A probada en la PC el 14/11/2026** sobre la rama
 **`tarea/2.7-volumenes`** (versión 1.14.1, 53 herramientas, commit `a502066`). Los PR #26, #27, #29, #30 y #31
 siguen **en borrador y sin fusionar**: quedan dos fallos que se corrigen en esa misma rama.
 
-### Resultado de la ronda A (resumen del agente instalador; los informes completos están en la PC, en
+### Primera prueba de la ronda A (resumen del agente instalador; los informes completos están en la PC, en
 `C:\Proyectos\civil3d-mcp\herramientas-dev\informes\informe_validacion_{112,113,114,1141,flujo_completo}_20261114.md`,
 y todavía **no están en el repositorio**: hay que pedírselos al dueño o al agente y subirlos)
 
@@ -62,7 +92,7 @@ y todavía **no están en el repositorio**: hay que pedírselos al dueño o al a
 | Flujo completo | OK salvo la tabla | 8 pasos con simulación previa y `aprobar_resultado`; **117 s frente a 130 min manuales**. `tabla_progresivas: null` por el mismo motivo de `SourceName` |
 | Evaluación (memoria-firma, 14/11 09:59) | **6 de 10 OK** (antes 3) | 4, 5 y 6 pasan a OK. Falla la 7 por el nombre de línea duplicado; la 8 por la tabla (el total sí sale); la 9 porque no hay herramienta para la tabla de PI del eje; la 10 por la 7 y la 8 |
 
-### En curso (14/11/2026, tarde; sesión orquestadora nueva)
+### Tarde del 14/11/2026: correcciones 1.14.2 y 1.14.3, `listar_pis` 1.15.0 y prueba corta (sesión orquestadora nueva)
 - **Informes de la ronda A**: el dueño pegó los cinco en la sesión (112, 113, 114, 1141 y flujo completo). Se suben a
   `herramientas-dev/informes/` junto con los de la prueba corta (lo pidió así); mientras, quedan en la rama
   `claude/charming-brown-70s7g3`. El de la evaluación ya está en `memoria-firma/evaluacion/informes/`.
@@ -129,24 +159,17 @@ y todavía **no están en el repositorio**: hay que pedírselos al dueño o al a
 - **Prueba corta prevista** (una instalación): VALIDACION_1142 → VALIDACION_115 → evaluación 5.2-D y 5.2-PC (su
   tarea 10 repite el flujo completo, así que no se repite VALIDACION_FLUJO_COMPLETO).
 
-### Siguiente paso (al retomar)
-1. **Corrección 1.14.2 en `tarea/2.7-volumenes`** (una sesión hija, plan aprobado por la orquestadora):
-   a) `crear_secciones`: nombres de línea únicos aunque ya haya otros grupos en el eje (por ejemplo, con el nombre del
-   grupo delante) y comprobación previa de nombres;
-   b) `calcular_volumenes`: identificar las secciones por `Section.SourceId` (o `CorridorSurfaceId`), no por
-   `SourceName`, y documentar el formato real de `SourceName`.
-   Opcional y propuesto (decidirlo al retomar): una herramienta de lectura de la **tabla de PI del eje** (tarea 9 de
-   la evaluación), como 1.15.0.
-2. **Prueba corta en la PC**: solo lo que falló (VALIDACION_113 paso 9, VALIDACION_114 tabla, paso 8 del flujo
-   completo) y repetir la evaluación (tareas 7, 8 y 10, y la 9 si se hace la herramienta).
-3. Si da OK: fusionar #31 (contiene #26, #27, #29 y #30; cerrar esos como incluidos), subir los seis informes,
-   sesión de hallazgos (la tabla de miembros y los "Hechos ya validados": los `_.UNDO 1` que no quitan superficies de
-   corredor ni de volumen, los valores `TopLinks`/`BottomLinks`, el formato de `SourceName` y el signo del neto) y
-   marcar la Etapa 2 como hecha en la hoja de ruta.
-4. Después: **Ronda B** (Etapa 3: 3.1 `ejecutar_codigo` y 3.2 recetas).
-
 ## Propuestas pendientes (no están en la hoja de ruta)
 
 - Deshacer propio para las superficies que Ctrl+Z no quita: TIN (1.7.0), superficies de corredor (1.12.0) y de volumen (1.14.0).
 - El caso "sin `frecuencia`" de VALIDACION_111: lo corta antes la validación del puente (Pydantic), no el plugin.
   Decidir si se cambia el guion.
+- Tabla por progresivas frente a la superficie de volumen: corte 16,6 %, relleno 4,1 % (informe 1143). Manda la
+  superficie; investigar si limitar las áreas al tramo donde existe la Datum (fuera de la TIN de la Datum la sección
+  sigue teniendo puntos hasta ±30 m).
+- Crear de verdad `memoria-firma/evaluacion/datos_prueba/` (`puntos_terreno.csv`, `eje_polilinea.dxf`,
+  `pvi_rasante.csv`): hoy solo tiene `.gitkeep`.
+- La evaluación marca OK comprobaciones manuales que no hace (curvas de la tarea 1, cálculo manual de la 8, informe de
+  Civil 3D de la 9): aclararlo en `tareas.yaml` o en el prompt de evaluación.
+- `crear_secciones`: comprobar si los nombres de **grupo** también deben ser únicos en todo el dibujo (propuesta de la
+  hija de la 1.14.2) y añadir en `datos.lineas[].secciones` el nombre de la superficie del dibujo junto a `SourceName`.
