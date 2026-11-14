@@ -274,7 +274,10 @@ namespace ArbaMcp.Nucleo
 
         private static string Formatear(Diagnostic d, IList<TextSpan> zonas, string[] lineas, bool conTexto = true)
         {
-            string texto = d.Id + " " + d.GetMessage(Espanol) + Pista(d.Id);
+            string mensaje = d.GetMessage(Espanol).TrimEnd();
+            string pista = Pista(d.Id);
+            if (pista.Length > 0 && mensaje.Length > 0 && char.IsLetterOrDigit(mensaje[mensaje.Length - 1])) mensaje += ".";   // "no existe en el contexto actual." (no "Se esperaba ;.")
+            string texto = d.Id + " " + mensaje + pista;
             if (!EnZonas(d.Location, zonas))
                 return "- (al final del código o en el envoltorio que añade el plugin) " + texto;
             var span = d.Location.GetMappedLineSpan();

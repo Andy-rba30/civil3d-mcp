@@ -33,6 +33,30 @@ namespace ArbaMcp.Pruebas
         }
 
         [Fact]
+        public void DosErrores_CadaUnoConSuLinea()
+        {
+            // El paso 8 de VALIDACION_116.md espera exactamente estos dos errores
+            var r = Scripts.Compilar("var x = 1\nreturn x + y;");
+            Assert.False(r.Ok);
+            Assert.Equal(2, r.Errores.Count);
+            Assert.Contains("Línea 1, columna 10: CS1002", r.Errores[0]);
+            Assert.Contains("Línea 2, columna 12: CS0103", r.Errores[1]);
+            Assert.Contains("'y'", r.Errores[1]);
+            Assert.Contains("CS1002 Se esperaba ; Pista:", r.Errores[0]);
+            Assert.Contains("contexto actual. Pista:", r.Errores[1]);
+        }
+
+        [Fact]
+        public void RedYTareas_DosBloqueos()
+        {
+            // El paso 6 de VALIDACION_116.md espera los dos bloqueos, cada uno en su línea
+            var r = Scripts.Compilar("var cliente = new System.Net.Http.HttpClient();\nreturn cliente.GetStringAsync(\"https://example.com\").Result;");
+            Assert.False(r.Ok);
+            Assert.Contains(r.Problemas, p => p.Categoria == CodigoReglas.Red && p.Linea == 1 && p.Mensaje.Contains("System.Net.Http.HttpClient"));
+            Assert.Contains(r.Problemas, p => p.Categoria == CodigoReglas.Hilos && p.Linea == 2);
+        }
+
+        [Fact]
         public void LosUsingDelPrincipioNoCambianLasLineas()
         {
             var r = Scripts.Compilar("using System.Text;\n\nvar sb = new StringBuilder();\nreturn sb.Length + zz;");

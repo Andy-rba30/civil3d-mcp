@@ -62,6 +62,17 @@ return new { suma = 1 + 2, lista = new[] { 1, 2, 3 }, texto = nombre, doble = F.
             Assert.NotNull(EjecucionScript.LineaDe(ex));
         }
 
+        [Fact]
+        public void BucleDeVariasLineas_SeCortaEnLaPrimeraLineaDelCuerpo()
+        {
+            // El paso 9 de VALIDACION_116.md espera "se detuvo en la línea 4": la revisión va delante de la primera sentencia del cuerpo
+            var r = Scripts.CompilarBien("long n = 0;\nwhile (true)\n{\n    n++;\n}");
+            OperationCanceledException ex;
+            using (CodigoVigilante.Iniciar(Corto))
+                ex = Assert.Throws<OperationCanceledException>(() => Scripts.Ejecutar(r, new FachadaPrueba()));
+            Assert.Equal(4, EjecucionScript.LineaDe(ex));
+        }
+
         [Theory]
         [InlineData("Func<int, int> f = null;\nf = x => f(x + 1);\nreturn f(0);")]
         [InlineData("int f(int x) => f(x + 1);\nreturn f(0);")]
