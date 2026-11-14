@@ -580,3 +580,26 @@ dentro de un `try` (si falla, la tabla sale igual y `diferencia_pi_civil3d` qued
 | propiedad | `AlignmentSubEntityArc.PIPoint` (`Point2d`), sobre la subentidad 0 de un `AlignmentArc` | 2027 | `listar_pis` (`diferencia_pi_civil3d`: distancia entre el PI calculado y este punto; aviso si pasa de 0,001) | confirmado en el catálogo (está en la subentidad, **no** en `AlignmentArc`); **por verificar** (paso 2: `diferencia_pi_civil3d` debe ser 0 en los dos PI; si sale `null`, la lectura falló: mira `leer_historial`) |
 | propiedad | `StartStation`, `EndStation` **por reflexión** (`Api.Leer`) en entidades que no son tangente ni curva (espirales, `AlignmentSCS`, `AlignmentSTS`...) | 2027 | `listar_pis` (rango del aviso `tipo no soportado todavía`) | sin miembro fijado al compilar; **por verificar** cuando haya un eje con espirales (el dibujo de prueba no tiene) |
 | — | `AlignmentCurve.StartPoint`, `EndPoint`, `AlignmentLine.Direction`, `AlignmentArc.ExternalTangent`, `.ExternalSecant`, `.ChordLength`, `.CenterPoint`, `.StartDirection`, `.EndDirection`, `AlignmentEntity.EntityBefore`/`EntityAfter`, `AlignmentSubEntityArc.PIStation`, `AlignmentSCS` | 2027 | — | en el catálogo pero **no se usan**: los puntos salen de `PointLocation` (ya ejecutado) y la progresiva del PI de `AlignmentArc.PIStation` (ya ejecutado). Las espirales no se tratan todavía: propuesta para otra sesión |
+
+## 1.17.1 (tabla por progresivas dentro de la Datum): escrita sin Civil 3D
+
+Escrita el 14/11/2026 sin Civil 3D y **sin el catálogo en la sesión de desarrollo** (compilada contra los sustitutos de
+`CompilarSinCivil`). Ninguna herramienta nueva y **ningún miembro nuevo de la API**: `calcular_volumenes` usa los mismos
+que la comprobación del supuesto de ejes de la 1.14.3, ahora también para decidir **dónde existe** cada superficie. Sale
+del informe 1.14.3 del 14/11/2026 (`informe_validacion_1143_20261114.md`): la tabla por progresivas salió con números,
+pero con corte `8407.0288` frente a `7211.3428` de la superficie de volumen sin ajustar (+16,58 %) y relleno `31144.4647`
+frente a `29907.859` (+4,13 %). En la línea 0+000.00 la sección de `Corredor 1 - Datum` tiene puntos de X = −30 a 30
+mientras su TIN no existe a ±5 m (`cota_superficie: null`): la superficie de volumen solo cuenta donde existen las dos
+superficies, y la tabla contaba todo el tramo común de las secciones. Desde 1.17.1 el área de cada línea se cuenta solo
+en los tramos en que existen la Datum y el terreno (`ArbaMcp.Nucleo.Volumenes.Recortar`, bordes por bisección hasta
+0,01 m). Con los 9 puntos de la Datum reconstruidos (los 6 del informe más un bombeo del 2 %: 99.55 en el eje y 99.478 a
+±3.6), las áreas sin recorte de esa línea salen las del informe (`5.1339` y `7.521`, prueba `CasoRealDeLaLinea0`). Decide
+la validación `herramientas-dev/VALIDACION_1171.md`, sobre `PRUEBA_1142.dwg` tal como está guardado.
+
+| Tipo | Miembro | Versión | Herramienta que lo usa | Estado |
+|---|---|---|---|---|
+| método | `Surface.FindElevationAtXY` **fuera de la TIN**: lanza (o da un valor no finito), y el plugin lo toma como «la superficie no existe ahí» | 2027 | `calcular_volumenes` (recorte de la tabla: `tabla_progresivas.recorte`, `puntos_secciones.tramo_valido`) | **ejecutado en Civil 3D 2027** (informe 1.14.3, paso 4, 14/11/2026): `cota_superficie: null` en la Datum a ±5 m de la línea 0+000.00 y `99.55` en el eje; como límite de existencia en todo el ancho de la línea (hasta ±30 m), **por verificar** (`VALIDACION_1171.md`, paso 4: `recorte.lineas_recortadas` mayor que 0) |
+| método | `Alignment.PointLocation(pk, desplazamiento, ref x, ref y)` con desplazamientos hasta el ancho de la línea (±30 m en `Eje 1 - Muestreo`) | 2027 | `calcular_volumenes` (punto de cada desplazamiento probado) | ejecutado en Civil 3D 2027 (1.2.2 `pk_a_punto`; 1.14.3 a 0 y ±5 m dentro de `calcular_volumenes`); hasta ±30 m, **por verificar** |
+| supuesto | Las líneas de muestreo son perpendiculares al eje: la X de cada punto de sección es el desplazamiento de `PointLocation` en la progresiva de la línea | 2027 | `calcular_volumenes` (recorte) | comprobado a 0 y ±5 m (informe 1.14.3, `cotas_comparadas` con diferencia 0); en todo el ancho, **por verificar** (las líneas de `crear_secciones` son perpendiculares; una línea girada a mano recortaría en el sitio equivocado) |
+| supuesto | La superficie de volumen TIN solo cuenta volumen donde existen la base y la comparación, así que el exceso de la tabla era el área fuera de la TIN de la Datum | 2027 | `calcular_volumenes` (`diferencia_con_superficie_pct`) | **por verificar** con `VALIDACION_1171.md`, paso 4: la diferencia debe bajar claramente de 16,58 % (corte) y 4,13 % (relleno); el porcentaje no depende de los factores |
+| tiempo | Unos 40 desplazamientos probados por línea (unos 1.700 en las 43 líneas de `Eje 1 - Muestreo`), cada uno con un `PointLocation` y uno o dos `FindElevationAtXY`, muchos fuera de la TIN (excepción) | 2027 | `calcular_volumenes` (`recorte.puntos_probados`, `ms`) | **por verificar** (`VALIDACION_1171.md`, paso 4: anotar `ms` frente a los `421 ms` de la 1.14.3) |
