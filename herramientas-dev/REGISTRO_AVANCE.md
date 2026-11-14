@@ -91,6 +91,19 @@ y todavía **no están en el repositorio**: hay que pedírselos al dueño o al a
 - **L.1 OK en la PC**: rama `tarea/2.9-tabla-pi`, commit `31ef86b`, compilación Release sin errores ni avisos,
   bundle 1.15.0 instalado, `dotnet test` 396/396, pytest del puente 84/84, puente reiniciado. Falta el Prompt P
   (VALIDACION_1142 → VALIDACION_115) y la evaluación (5.2-D y 5.2-PC).
+- **Prompt P (14/11, ~11:20 hora de la PC)**: **VALIDACION_115 OK** en todo (`listar_pis`: 2 PI con
+  `diferencia_pi_civil3d: 0`; `Eje 115` con el PI sin curva bien). **VALIDACION_1142**: `crear_secciones` **OK** (segundo
+  grupo con prefijo "Muestreo 100 "; las líneas y vistas son entidades del espacio modelo: 43/43) y la identificación de
+  secciones **OK** (terreno y Datum 43/43 por `SampleLine.GetSectionId`), pero la tabla por progresivas sigue sin números
+  por otro control: `supuesto_ejes.motivo` = un punto de la Datum con X = -30 fuera de `LeftOffset`/`RightOffset`
+  (-3.9 a 3.6). X = -30 es el ancho de la línea: `LeftOffset`/`RightOffset` no son los extremos de la sección de una
+  superficie de corredor. Totales correctos (corte 9014.1785, relleno 32898.6449). `PRUEBA_1142.dwg` quedó guardado.
+- **Corrección 1.14.3** pedida a la hija `session_011fq2pFW6xpNx7GkwSxLBXA` en `tarea/2.7-volumenes`: límite de X por el
+  ancho real de la línea; la comprobación decisiva pasa a ser la cota de la sección frente a la de la superficie (terreno
+  y Datum, en el eje y a cada lado); diagnóstico de los puntos; `VALIDACION_1143.md` muy corta. Después, la orquestadora
+  la fusiona en `tarea/2.9-tabla-pi` como **1.15.1**.
+- Se propuso al dueño correr **ya** la evaluación con la 1.15.0 instalada (la tarea 8 mide los totales, que ya salen
+  bien), para descubrir a la vez cualquier otro fallo; luego una instalación más, solo con VALIDACION_1143.
 - **Prueba corta prevista** (una instalación): VALIDACION_1142 → VALIDACION_115 → evaluación 5.2-D y 5.2-PC (su
   tarea 10 repite el flujo completo, así que no se repite VALIDACION_FLUJO_COMPLETO).
 
