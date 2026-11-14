@@ -108,6 +108,13 @@ Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a
   bisección 0,01 m, sin miembros nuevos) y de las curvas TIN (elige entre los estilos que dibujan curvas; catálogo:
   `SettingsSurface.Styles.SurfaceStyleId` y `SurfaceStyle.GetDisplayStylePlan(...)`.`Visible`; cambia una frase de
   `INSTRUCCIONES_AGENTE.md`).
+- **18:25-18:54 terminaron** la tabla de volúmenes (PR #39, `fea71e5`, 412 pruebas), las curvas TIN (PR #40, `4816b83`)
+  y la 3.1 `ejecutar_codigo` (PR #41, `57e5313`, 521 pruebas; Roslyn 5.0.0; bloquea además rutas asignadas a propiedades,
+  propiedades de `Database`, `UserConfigurationManager` y `Dispose` de documento/editor).
+- **Rama integrada `tarea/ronda-b`** (commit `977e80c`, versión **1.17.2**, 55 herramientas del plugin + 3 del puente):
+  `tarea/3.2-recetas` + `2.11` + `2.12` + `3.1`. Cuatro pruebas OK: dotnet 546/546, puente 166, CompilarSinCivil 0
+  errores, evaluador 21. `VALIDACION_116` y `117` ajustadas a `ping` 1.17.2. `INSTRUCCIONES_AGENTE.md` junta las reglas
+  de recetas (paso 2) y de `ejecutar_codigo` (pasos 3 y 4).
 - **Integración prevista de la ronda B**: `tarea/3.1` → `tarea/3.2` → + `tarea/2.11` + `tarea/2.12` en una sola rama
   (versión **1.17.2**). Orden en la PC: VALIDACION_116 → 117 → 1171 → 1172 → evaluación (5.2-D/PC).
 
