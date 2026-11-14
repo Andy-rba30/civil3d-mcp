@@ -77,6 +77,10 @@ y todavía **no están en el repositorio**: hay que pedírselos al dueño o al a
   - `session_011fq2pHJPZdM53xHeQdQSZ9`: **1.15.0 `listar_pis`** (tabla de PI del eje, tarea 9 de la evaluación) en
     `tarea/2.9-tabla-pi`, que parte de `tarea/2.7-volumenes`; con `VALIDACION_115.md`. La orquestadora fusionará
     `tarea/2.7-volumenes` (con la 1.14.2) en ella al final: **`tarea/2.9-tabla-pi` será la rama que instala el dueño**.
+- **Planes aprobados** por la orquestadora a las 15:26. La hija de `listar_pis` terminó a las 15:37 (commit local
+  `7f2b298`, 4 pruebas OK: dotnet 375/375, puente 84, CompilarSinCivil 0 errores, evaluador 21), pero **no pudo hacer
+  push**: GitHub responde 403 «GitHub authentication required» también a la orquestadora. **Bloqueado hasta que el
+  dueño reconecte GitHub** (claude.ai/connect-github); después, push y PR de cada hija.
 - **Prueba corta prevista** (una instalación): VALIDACION_1142 → VALIDACION_115 → evaluación 5.2-D y 5.2-PC (su
   tarea 10 repite el flujo completo, así que no se repite VALIDACION_FLUJO_COMPLETO).
 
