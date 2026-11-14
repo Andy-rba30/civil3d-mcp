@@ -64,14 +64,21 @@ ocho informes de la ronda A (112, 113, 114, 1141, flujo completo, 1142, 115 y 11
 `herramientas-dev/informes/`; el de la evaluación, en `memoria-firma/evaluacion/informes/informe_evaluacion_20261114_1150.yaml`.
 La hoja de ruta (sección 0) marca la Etapa 2 como hecha.
 
-### Siguiente paso
-1. **Sesión de hallazgos** (solo documentación): pasar la ronda A a la tabla de miembros (estados «por verificar» →
-   «ejecutado») y a los «Hechos ya validados» de `CLAUDE.md` (Ctrl+Z que no quita superficies de corredor ni de volumen;
-   `TopLinks`/`BottomLinks`; `SourceName` = «<corredor> <superficie>» y `SampleLine.GetSectionId` como camino bueno;
-   `LeftOffset`/`RightOffset` de una sección de superficie de corredor; unicidad de nombres de línea en todo el dibujo;
-   líneas y vistas en el espacio modelo; signo del neto; `listar_pis` y `PIPoint`).
-2. **Ronda B, Etapa 3**: 3.1 `ejecutar_codigo` primero (3.2 recetas depende de ella: `ejecutar_receta` reutiliza el
-   código). Una instalación al final para las dos.
+### En curso (14/11/2026, 17:46): hallazgos y ronda B lanzados
+Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a la orquestadora:
+- `session_011fq2pFR18Uv6gB9YEB9yQQ`: **hallazgos de la ronda A** (solo documentación) en
+  `tarea/2.10-hallazgos-ronda-a`: estados de la tabla de miembros 1.12.0 a 1.15.0 y «Hechos ya validados» de
+  `CLAUDE.md`. Se fusiona directamente (sin PC).
+- `session_011fq2pG9v3qYhNzDMFmn2n2`: **3.1 `ejecutar_codigo`** (1.16.0) en `tarea/3.1-ejecutar-codigo`, con
+  `VALIDACION_116.md`. Primero explica los riesgos.
+- `session_011fq2pGwzj6ddGgrG2wGrk3`: **3.2 recetas** (`guardar_receta`, `ejecutar_receta`, `buscar_api` con recetas
+  primero; 1.17.0) en `tarea/3.2-recetas`, con `VALIDACION_117.md` (después de la 116; quita `ARBA_MCP_CODIGO` al final).
+- **Interfaz fijada entre las dos** (para trabajar en paralelo): `ejecutar_codigo(codigo_csharp, simular=true,
+  parametros?, pedido)`; el script lee `Parametros` y su `return` llega en `resultado`; desactivada → error que empieza
+  por «ejecutar_codigo está desactivada».
+- Al terminar: la orquestadora fusiona `tarea/3.1-ejecutar-codigo` en `tarea/3.2-recetas` (versión 1.17.0), que será la
+  rama de la **única instalación de la ronda B**: VALIDACION_116 → VALIDACION_117 → evaluación 5.2-D/PC (sobre una copia
+  nueva de `PRUEBA_EVALUACION_BASE.dwg`).
 
 ## Historial de la ronda A (14/11/2026)
 
