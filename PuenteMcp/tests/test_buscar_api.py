@@ -390,3 +390,72 @@ def test_el_puente_devuelve_el_error_claro_sin_variable(puente, monkeypatch):
     assert texto.startswith("Error: Falta la variable de entorno MEMORIA_FIRMA_DIR")
     with pytest.raises(json.JSONDecodeError):
         json.loads(texto)   # es texto, no JSON como las herramientas del plugin
+
+
+# ---------------------------------------------------------------------------------------------- recetas de código (1.17.0)
+import recetas  # noqa: E402
+
+CODIGO_CAPA = ('var tabla = (LayerTable)tr.GetObject(db.LayerTableId, OpenMode.ForRead);\n'
+               'var nombre = Parametros["nombre_capa"].GetString();\nvar color = Parametros["color"].GetInt32();\n'
+               'return nombre;\n')
+PARAMETROS_CAPA = [{"nombre": "nombre_capa", "tipo": "string", "descripcion": "Nombre de la capa", "obligatorio": True},
+                   {"nombre": "color", "tipo": "number", "descripcion": "Color ACI", "por_defecto": 7}]
+
+
+def guardar_receta_capa(nombre="crear_capa_con_color", pedido="Crea la capa MCP Receta A con el color 3 (verde)"):
+    r = recetas.guardar(nombre, pedido, CODIGO_CAPA, PARAMETROS_CAPA, "Crea la capa si no existe.",
+                        aprobada_por_el_dueno=True, aprobacion_del_dueno="Sí, guárdala", version_conector="1.17.0")
+    assert r["guardada"] is True, r
+    return r
+
+
+def test_la_receta_de_codigo_sale_primero_y_dice_como_usarla(memoria):
+    guardar_receta_capa()
+    texto = buscar_api.buscar("capa con color", 5)
+    assert texto.startswith('buscar_api "capa con color" → 1 recetas, ')
+    lineas = seccion(texto, "RECETAS")
+    assert lineas[0] == "- crear_capa_con_color.yaml + crear_capa_con_color.cs: Crea la capa MCP Receta A con el color 3 (verde)"
+    assert lineas[1].strip() == ("receta de código: ejecutar_receta nombre=crear_capa_con_color (simular=true primero) · "
+                                 f"veces usada 0 · Civil 3D 2027 · {recetas._hoy()}")
+    assert lineas[2].strip() == "parámetros: nombre_capa (string, obligatorio), color (number, por defecto 7)"
+    assert lineas[3].strip() == "notas: Crea la capa si no existe."
+    assert "GetString" not in texto, "el código no se copia en la respuesta"
+    assert [l for l in texto.splitlines()[1:] if l][0].startswith("RECETAS (1)"), "las recetas van primero"
+
+
+def test_encuentra_la_receta_por_el_codigo_y_junto_a_las_md(memoria):
+    guardar_receta_capa()
+    assert "crear_capa_con_color.yaml" in elementos(buscar_api.buscar("LayerTable"), "RECETAS")[0]
+    texto = buscar_api.buscar("talud o capa", 10)
+    assert [l.split(":")[0] for l in elementos(texto, "RECETAS")] == [
+        "- crear_capa_con_color.yaml + crear_capa_con_color.cs", "- talud_interseccion.md"]
+
+
+def test_a_igual_coincidencia_va_primero_la_mas_usada(memoria):
+    guardar_receta_capa("capa_a", "Crea una capa")
+    guardar_receta_capa("capa_b", "Crea una capa")
+    assert elementos(buscar_api.buscar("capa"), "RECETAS")[0].startswith("- capa_a.yaml")
+    ruta_b = str(memoria / "recetas" / "capa_b.yaml")
+    recetas.anotar_uso(ruta_b)
+    recetas.anotar_uso(ruta_b)
+    lineas = seccion(buscar_api.buscar("capa"), "RECETAS")
+    assert lineas[0].startswith("- capa_b.yaml") and "veces usada 2" in lineas[1]
+
+
+def test_receta_sin_cs_lo_avisa_y_un_yaml_roto_se_salta(memoria):
+    (memoria / "recetas" / "huerfana.yaml").write_text("nombre: huerfana\npedido: Una capa huérfana\nparametros: []\n",
+                                                        encoding="utf-8")
+    (memoria / "recetas" / "rota.yaml").write_text("pedido: [capa sin cerrar\n", encoding="utf-8")
+    lineas = seccion(buscar_api.buscar("capa"), "RECETAS")
+    assert lineas[0] == "- huerfana.yaml + huerfana.cs: Una capa huérfana"
+    assert lineas[1].strip().startswith("AVISO: falta huerfana.cs")
+    assert not any("rota" in l for l in lineas)
+
+
+def test_comando_muestra_la_receta_de_codigo_primero(memoria):
+    guardar_receta_capa()
+    env = dict(os.environ, PYTHONIOENCODING="utf-8")
+    r = _comando(["buscar_api.py", "capa con color"], env)
+    assert r.returncode == 0, r.stderr
+    assert elementos(r.stdout, "RECETAS")[0].startswith("- crear_capa_con_color.yaml + crear_capa_con_color.cs: ")
+    assert r.stdout.splitlines()[2].startswith("RECETAS (1)")
