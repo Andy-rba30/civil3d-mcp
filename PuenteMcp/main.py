@@ -19,8 +19,9 @@ from mcp.server.mcpserver import MCPServer
 from pydantic import create_model, Field
 
 import buscar_api as memoria_firma  # herramienta local del puente (1.5.0): busca en memoria-firma sin Civil 3D
+import recetas  # herramientas locales del puente (1.17.0): guardar_receta y ejecutar_receta
 
-__version__ = "1.15.1"
+__version__ = "1.17.0"
 
 CARPETA = os.path.dirname(os.path.abspath(__file__))
 
@@ -236,12 +237,13 @@ def type_to_python(t: str):
 # ---------------------------------------------------------------------------------------------- herramientas locales
 # Herramientas que viven en el puente y no en el plugin: se registran al arrancar, están disponibles aunque Civil 3D
 # esté cerrado y la sincronización con GET /tools nunca las quita (no están en known_tools).
-HERRAMIENTAS_LOCALES = {"buscar_api"}
+HERRAMIENTAS_LOCALES = {"buscar_api", "guardar_receta", "ejecutar_receta"}
 
 
 async def buscar_api(consulta: str, limite: int = memoria_firma.LIMITE_POR_DEFECTO) -> str:
     """Busca en la memoria técnica de la firma (memoria-firma) antes de escribir código contra la API de Civil 3D:
-    primero las recetas (recetas/*.md), luego el glosario español → API (catalogo/glosario.yaml, con el estado
+    primero las recetas (recetas/*.md, procedimientos para seguir, y las recetas de código recetas/*.cs + *.yaml, que
+    se reutilizan con ejecutar_receta), luego el glosario español → API (catalogo/glosario.yaml, con el estado
     'confirmado' o 'por confirmar' de cada concepto) y después el catálogo de la API de Civil 3D 2027 (clases,
     métodos con firma y parámetros, propiedades, obsoletos). La consulta se amplía con el glosario antes de buscar.
     Funciona con Civil 3D cerrado. Los argumentos van directos (consulta, limite), no dentro de 'args'. Necesita la
@@ -251,6 +253,62 @@ async def buscar_api(consulta: str, limite: int = memoria_firma.LIMITE_POR_DEFEC
 
 
 mcp.add_tool(buscar_api)
+
+
+async def guardar_receta(nombre: str, pedido: str, codigo: str,
+                         parametros: typing.Union[list, str, None] = None, notas: str = "",
+                         aprobada_por_el_dueno: bool = False, aprobacion_del_dueno: str = "",
+                         reemplazar: bool = False) -> str:
+    """Guarda un script de ejecutar_codigo que ya funcionó como receta reutilizable de la memoria técnica:
+    MEMORIA_FIRMA_DIR\\recetas\\<nombre>.cs (el código tal cual) y <nombre>.yaml (pedido de ejemplo en español,
+    parámetros, versión de Civil 3D, fecha, veces_usada=0 y la aprobación del dueño). SOLO CON LA APROBACIÓN EXPLÍCITA
+    DEL DUEÑO: sin aprobada_por_el_dueno=true no escribe nada y devuelve la vista previa (guardada=false); enséñasela,
+    pregúntale si la guarda y, solo si responde que sí, repite la llamada con aprobada_por_el_dueno=true y sus palabras
+    literales en aprobacion_del_dueno. Nunca lo decidas tú ni inventes su respuesta. nombre: de 3 a 64 caracteres en
+    minúsculas, números y _ (crear_capa_con_color). pedido: lo que pidió el usuario, con sus palabras. parametros: lista
+    JSON [{"nombre": "nombre_capa", "tipo": "string", "descripcion": "Nombre de la capa", "obligatorio": true},
+    {"nombre": "color", "tipo": "number", "por_defecto": 7}] (tipos string, number, boolean, json); el script los lee de
+    Parametros. Rechaza rutas absolutas, nombres .dwg, nombres de obra (casos\\PROHIBIDOS.txt) y el token: pásalos como
+    parámetro. No sobrescribe una receta que ya existe salvo reemplazar=true, solo si el dueño pidió cambiarla.
+    Argumentos directos (no dentro de 'args'); funciona con Civil 3D cerrado; responde JSON. Al guardar devuelve el
+    recordatorio de correr L.2 para subir la receta a GitHub: díselo al dueño."""
+    def guardar() -> dict:
+        return recetas.guardar(nombre, pedido, codigo, parametros, notas, aprobada_por_el_dueno, aprobacion_del_dueno,
+                               reemplazar, token=_get_token(), version_conector=__version__)
+
+    return _a_texto(await anyio.to_thread.run_sync(guardar))
+
+
+async def ejecutar_receta(nombre: str, parametros: typing.Union[dict, str, None] = None, simular: bool = True,
+                          pedido: typing.Optional[str] = None) -> str:
+    """Reutiliza una receta de código de la memoria técnica (buscar_api la muestra en RECETAS como «receta de
+    código»): lee MEMORIA_FIRMA_DIR\\recetas\\<nombre>.cs y <nombre>.yaml, comprueba parametros contra los declarados
+    (objeto JSON con un valor por parámetro, {"nombre_capa": "Capa 1"}; los que faltan toman su por_defecto) y ejecuta
+    el código guardado con la herramienta ejecutar_codigo del plugin (tiene que estar activada). simular=true por
+    defecto: simula primero, enseña el resultado, confirma con el usuario y después repite con simular=false. Solo una
+    ejecución real (simular=false) que sale bien suma 1 a veces_usada; una simulación no suma. Devuelve la respuesta de
+    ejecutar_codigo (resultado, id_log, tiempos) más el bloque receta (nombre, parametros usados, veces_usada, sumada y
+    nota). Envía pedido con las palabras del usuario. Argumentos directos (no dentro de 'args'); responde JSON."""
+    inicio = time.perf_counter()
+
+    def ms() -> int:
+        return int((time.perf_counter() - inicio) * 1000)
+
+    try:
+        preparada = await anyio.to_thread.run_sync(lambda: recetas.preparar_ejecucion(nombre, parametros, simular, pedido))
+    except recetas.ErrorReceta as e:
+        return _a_texto({"ok": False, "error": str(e), "ms_puente": ms()})
+    args = preparada["args"]
+    respuesta = recetas.traducir_error(
+        await _ejecutar("ejecutar_codigo", args, _timeout_s("ejecutar_codigo", [{"name": "simular"}], args)))
+    bloque = await anyio.to_thread.run_sync(lambda: recetas.cerrar_ejecucion(preparada, respuesta))
+    salida = con_tiempos(respuesta, ms())
+    salida["receta"] = bloque
+    return _a_texto(salida)
+
+
+mcp.add_tool(guardar_receta)
+mcp.add_tool(ejecutar_receta)
 
 
 # ---------------------------------------------------------------------------------------------- registro dinámico

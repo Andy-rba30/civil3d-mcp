@@ -73,7 +73,8 @@ cada herramienta de forma dinámica, de modo que al añadir herramientas en C# n
 `timeout_s` según la herramienta: 30 s en lectura, 120 s en escritura y 300 s en `reconstruir_corredor`,
 `reconstruir_superficie`, `crear_superficies_corredor` (1.12.0), `crear_secciones` (1.13.0), `calcular_volumenes` (1.14.0), `exportar_landxml` y `exportar_imx`. Si un cliente llama a un nombre retirado, el puente
 responde con la sustituta (tabla `HERRAMIENTAS_RETIRADAS` de `main.py`; vacía en 1.3.0). Desde 1.5.0 el puente
-registra además **herramientas locales** propias (`HERRAMIENTAS_LOCALES` de `main.py`, hoy solo `buscar_api`) que no
+registra además **herramientas locales** propias (`HERRAMIENTAS_LOCALES` de `main.py`: `buscar_api` y, desde 1.17.0,
+`guardar_receta` y `ejecutar_receta`) que no
 vienen de `GET /tools`, están disponibles aunque el plugin no responda y nunca se quitan al sincronizar; si el
 plugin publicara una herramienta con el mismo nombre, el puente la ignora y avisa en consola (ver *Herramientas del
 puente*).
@@ -288,14 +289,20 @@ Si en tu instalación el comando de IMX tiene otro nombre, pásalo en `comando`.
 
 ## Herramientas del puente (desde 1.5.0)
 
-Viven en `PuenteMcp` (Python), no en el plugin: no pasan por `/execute`, no necesitan token ni Civil 3D abierto y
-no dejan rastro en `mcp_log.jsonl` ni en el historial del plugin (no tocan el dibujo). Sus argumentos van **directos**
-(no dentro de `args`) y devuelven **texto**, no JSON. `exportar_dataset` (1.6.0) es solo un **script**, no una
-herramienta MCP: se corre desde PowerShell (ver más abajo).
+Viven en `PuenteMcp` (Python), no en el plugin: no necesitan token (el puente lo pone cuando llama al plugin) y sus
+argumentos van **directos** (no dentro de `args`). `buscar_api` y `guardar_receta` no pasan por `/execute`, funcionan
+con Civil 3D cerrado y no dejan rastro en `mcp_log.jsonl` ni en el historial del plugin (no tocan el dibujo).
+`ejecutar_receta` (1.17.0) sí llama al plugin: ejecuta el código de la receta con `ejecutar_codigo` (1.16.0), así que
+esa llamada pasa por `/execute`, sigue las reglas de *Seguridad de escritura* de `ejecutar_codigo` y deja su línea en
+`mcp_log.jsonl` como cualquier llamada a `ejecutar_codigo`. `buscar_api` devuelve **texto**; `guardar_receta` y
+`ejecutar_receta` devuelven **JSON**. `exportar_dataset` (1.6.0) es solo un **script**, no una herramienta MCP: se
+corre desde PowerShell (ver más abajo).
 
 | Herramienta | Parámetros | Devuelve | Fuente |
 |---|---|---|---|
-| `buscar_api` | consulta* (texto libre, en español o con nombres de la API), limite (1 a 100, por defecto 10) | Texto compacto: cabecera con cuántas recetas, entradas del glosario y filas del catálogo; "Consulta ampliada con el glosario: ..."; **RECETAS** (archivo, título y primeras líneas), **GLOSARIO** (término, por qué coincidió, paso, sinónimos, cada concepto con `[confirmado]` o `[por confirmar]` y la nota) y **CATÁLOGO** (clase o enum con su base; método con `→ tipo de retorno`, `[estático]`, `firma:` y `parámetros:`; propiedad con tipo y lectura/escritura; `descripción:` si la hay y `OBSOLETO: mensaje` si aplica). Sin resultados: una línea "Sin resultados ..." con sugerencias. Falta algo: un texto que empieza por `Error:` y dice qué falta y cómo ponerlo | `PuenteMcp/buscar_api.py`; lee `MEMORIA_FIRMA_DIR` |
+| `buscar_api` | consulta* (texto libre, en español o con nombres de la API), limite (1 a 100, por defecto 10) | Texto compacto: cabecera con cuántas recetas, entradas del glosario y filas del catálogo; "Consulta ampliada con el glosario: ..."; **RECETAS** (archivo, título y primeras líneas; desde 1.17.0 también las recetas de código, ver *Recetas de código*), **GLOSARIO** (término, por qué coincidió, paso, sinónimos, cada concepto con `[confirmado]` o `[por confirmar]` y la nota) y **CATÁLOGO** (clase o enum con su base; método con `→ tipo de retorno`, `[estático]`, `firma:` y `parámetros:`; propiedad con tipo y lectura/escritura; `descripción:` si la hay y `OBSOLETO: mensaje` si aplica). Sin resultados: una línea "Sin resultados ..." con sugerencias. Falta algo: un texto que empieza por `Error:` y dice qué falta y cómo ponerlo | `PuenteMcp/buscar_api.py`; lee `MEMORIA_FIRMA_DIR` |
+| `guardar_receta` (1.17.0) | nombre* (3 a 64 caracteres en minúsculas, números y `_`), pedido* (el pedido de ejemplo en español, con las palabras del usuario), codigo* (el script de `ejecutar_codigo` tal cual), parametros (lista JSON de `{nombre, tipo, descripcion, obligatorio, por_defecto}`; tipos `string`, `number`, `boolean`, `json`), notas, aprobada_por_el_dueno (boolean, por defecto false), aprobacion_del_dueno (las palabras literales del dueño), reemplazar (boolean, por defecto false) | JSON. **Sin `aprobada_por_el_dueno=true` y `aprobacion_del_dueno` no escribe nada**: `{"ok":true,"guardada":false,"reemplazaria","archivos_previstos":{codigo,datos},"yaml","lineas_codigo","avisos","siguiente_paso"}`. Con las dos: `{"ok":true,"guardada":true,"reemplazada","archivos":{codigo,datos},"veces_usada","avisos","recordatorio"}`, con el recordatorio de correr L.2. Error: `{"ok":false,"guardada":false,"error"}` | `PuenteMcp/recetas.py`; escribe en `MEMORIA_FIRMA_DIR\recetas\` |
+| `ejecutar_receta` (1.17.0) | nombre*, parametros (objeto JSON con un valor por parámetro declarado; también como texto), simular (boolean, **por defecto true**), pedido | JSON: la respuesta de `ejecutar_codigo` tal cual (`resultado`, `simulado`, `id_log`, `ms`, `ms_espera`, `ms_ejecucion`, `ms_puente`...) más el bloque `receta`: `nombre`, `parametros` (los valores enviados, con los `por_defecto`), `veces_usada`, `sumada` y `nota` (y `aviso` si no se pudo anotar el uso). Error antes de llamar al plugin (receta o parámetros): `{"ok":false,"error","ms_puente"}` | `PuenteMcp/recetas.py` + `ejecutar_codigo` del plugin |
 
 `*` = obligatorio. `limite` cuenta el total de resultados con prioridad recetas > glosario > catálogo; dentro del
 catálogo van primero los nombres exactos que trae la consulta (`ProfilePVI`, `ProfilePVI Station`), luego los
@@ -304,8 +311,9 @@ conceptos del glosario y después lo que encuentra el índice de texto FTS5 (`bu
 **Variable `MEMORIA_FIRMA_DIR`**: carpeta del repositorio privado `memoria-firma`. Dentro se esperan
 `catalogo\catalogo_c3d2027.sqlite` (obligatorio; lo genera `herramientas-dev/ExtractorCatalogo`),
 `catalogo\glosario.yaml` (la fuente de verdad del glosario; si no existe se usa la tabla `glosario` del catálogo
-cuando tiene filas) y `recetas\*.md` (si la carpeta no existe, la búsqueda sigue sin recetas). Se pone como variable
-de usuario de Windows y se reinicia el puente:
+cuando tiene filas) y `recetas\*.md` y, desde 1.17.0, `recetas\*.cs` + `recetas\*.yaml` (si la carpeta no existe,
+la búsqueda sigue sin recetas). `guardar_receta` y `ejecutar_receta` solo necesitan la carpeta (no el catálogo);
+`guardar_receta` crea `recetas\` si no existe. Se pone como variable de usuario de Windows y se reinicia el puente:
 
 ```powershell
 [Environment]::SetEnvironmentVariable('MEMORIA_FIRMA_DIR','C:\Proyectos\memoria-firma','User')
@@ -324,6 +332,96 @@ Imprime el mismo texto que recibe el agente; código de salida 0 si pudo buscar 
 falta la memoria. Desde 1.14.1 escribe siempre en **UTF-8**, sea cual sea la página de códigos de la consola (en una
 consola Windows en cp1252 moría con `UnicodeEncodeError` al escribir la flecha `→` de la cabecera, como le pasaba a
 `exportar_dataset`); solo cambia el modo comando, no la herramienta MCP.
+
+### Recetas de código: `guardar_receta` y `ejecutar_receta` (desde 1.17.0)
+
+Una **receta de código** es un script de `ejecutar_codigo` que ya resolvió un caso y que el dueño aprobó guardar.
+Son dos archivos en `MEMORIA_FIRMA_DIR\recetas\`: `<nombre>.cs` (el script tal cual) y `<nombre>.yaml`:
+
+```yaml
+# Receta de código de civil3d-mcp, escrita por guardar_receta con la aprobación del dueño. El código está en
+# crear_capa_con_color.cs. ejecutar_receta suma veces_usada en cada ejecución real que sale bien: no lo cambies a mano.
+nombre: crear_capa_con_color
+pedido: Crea la capa MCP Receta A con el color 3 (verde)
+parametros:
+- nombre: nombre_capa
+  tipo: string
+  descripcion: Nombre de la capa
+  obligatorio: true
+- nombre: color
+  tipo: number
+  descripcion: Color ACI
+  obligatorio: false
+  por_defecto: 7
+notas: Crea la capa si no existe.
+codigo: crear_capa_con_color.cs
+version_civil3d: '2027'
+version_conector: 1.17.0
+fecha: '2026-11-14'
+veces_usada: 0
+ultima_vez: null
+aprobacion:
+  palabras_del_dueno: Sí, guárdala como receta
+  fecha: '2026-11-14'
+```
+
+**`guardar_receta`** (no toca el dibujo; funciona con Civil 3D cerrado):
+
+- **Aprobación del dueño**: sin `aprobada_por_el_dueno=true` (el booleano, no un texto) **y** sus palabras literales en
+  `aprobacion_del_dueno`, no escribe nada y devuelve la **vista previa** (`guardada: false`, el `.yaml` previsto en
+  `yaml`, `archivos_previstos` y `siguiente_paso`: «No se guardó nada. Enséñale al dueño esta vista previa y
+  pregúntale...»). Con `aprobada_por_el_dueno=true` y `aprobacion_del_dueno` vacío responde el error `Falta
+  'aprobacion_del_dueno': ...`. Las palabras quedan en `aprobacion.palabras_del_dueno` del `.yaml`.
+- **Nombre**: de 3 a 64 caracteres en minúsculas, números y `_`, empezando por letra o número; sin rutas, puntos,
+  espacios ni nombres reservados de Windows (`con`, `nul`, `com1`...). Error: `El nombre de receta '...' no vale: ...
+  (por ejemplo 'crear_capa_de_prueba')`.
+- **Receta que ya existe** (su `.cs` o su `.yaml`): error `Ya existe la receta '...' (<ruta>, veces_usada N). No se
+  sobrescribe sin decirlo: ...`, también en la vista previa. Con `reemplazar=true` la sustituye, conserva
+  `veces_usada`, `ultima_vez` y `fecha` y añade `actualizada`; la respuesta dice `reemplazada: true`.
+- **Datos que nunca entran** (regla 7 de `CLAUDE.md`), en el pedido, el código, las notas, las palabras del dueño y
+  los parámetros: el token del plugin, cualquier texto de 64 caracteres hexadecimales, una mención al archivo
+  `ArbaMcp\token` o a la cabecera `X-Arba-Token`, rutas absolutas (`C:\...`, `C:/...`, `\\servidor\...`), nombres
+  `.dwg` y los nombres de `casos\PROHIBIDOS.txt` de `memoria-firma`. El error dice qué campo y que se pase como
+  parámetro; nunca repite el token (`<oculto>`) ni el nombre prohibido. La extensión sola (`".dwg"`) y las URL sí se
+  admiten.
+- **Parámetros**: lista JSON (o texto con la lista) de objetos con `nombre` (minúsculas, números y `_`), `tipo`
+  (`string`, `number`, `boolean` o `json`), `descripcion`, `obligatorio` (por defecto true si no hay `por_defecto`) y
+  `por_defecto` (del tipo declarado; un parámetro obligatorio no lo lleva). Otras claves, tipos o nombres repetidos
+  son error. `avisos` dice qué parámetro no aparece en el código.
+- Escritura atómica (temporal y cambio de nombre), en UTF-8. El `.cs` se guarda tal cual.
+
+**`ejecutar_receta`**:
+
+1. Lee `<nombre>.cs` y `<nombre>.yaml`. Errores sin llamar al plugin: `No existe la receta '...' en <carpeta>. Usa
+   buscar_api para encontrarla. Recetas de código de la carpeta: ...`; `... no tiene su código (falta <nombre>.cs
+   ...)`; `... no tiene sus datos (falta <nombre>.yaml ...)`; `'...' es una receta de procedimiento (<nombre>.md), no
+   de código: ...`; `... tiene parámetros inválidos: ...`.
+2. Comprueba `parametros` contra los declarados: `La receta no tiene los parámetros: ...`, `Falta el parámetro
+   obligatorio '...'`, `El parámetro '...' debe ser number (llegó string)`, cada uno con la lista de parámetros de la
+   receta. Los que faltan toman su `por_defecto` (un opcional sin `por_defecto` no se envía). Sin llamar al plugin.
+3. Llama a `ejecutar_codigo` con este cuerpo (`parametros` viaja como **texto JSON**, igual que cualquier parámetro de
+   tipo `json` que el puente pasa al plugin; el plugin lo convierte con `Argumentos.Json`), y el `timeout_s` que el
+   puente elige para `ejecutar_codigo`:
+   `{"tool":"ejecutar_codigo","args":{"codigo_csharp":"<el .cs>","simular":true,"parametros":"{\"nombre_capa\": \"Capa B\", \"color\": 7}","pedido":"..."},"timeout_s":120}`
+4. **`veces_usada`** sube 1 (y `ultima_vez` pasa a la fecha de hoy) **solo** si se pidió `simular=false`, el plugin
+   respondió `ok` y su resultado no trae `simulado: true`. Una simulación, un error del plugin (también
+   `ejecutar_codigo está desactivada`) o Civil 3D cerrado no suman, y `receta.nota` lo dice. Si el plugin no conoce
+   `ejecutar_codigo`, el error empieza por `ejecutar_receta necesita la herramienta ejecutar_codigo del plugin
+   (1.16.0 o posterior)`. El contador vive en la PC: L.2 lo sube a GitHub.
+
+**Ejemplos** (los argumentos van directos; estas herramientas no tienen ruta HTTP propia, así que no hay `curl`):
+
+```json
+{"nombre": "crear_capa_con_color", "pedido": "Crea la capa MCP Receta A con el color 3 (verde)",
+ "codigo": "<el script que funcionó>", "parametros": "[{\"nombre\":\"nombre_capa\",\"tipo\":\"string\",\"obligatorio\":true},{\"nombre\":\"color\",\"tipo\":\"number\",\"por_defecto\":7}]"}
+{"nombre": "crear_capa_con_color", "pedido": "...", "codigo": "...", "parametros": "...",
+ "aprobada_por_el_dueno": true, "aprobacion_del_dueno": "Sí, guárdala como receta"}
+{"nombre": "crear_capa_con_color", "parametros": {"nombre_capa": "MCP Receta B", "color": 3}, "simular": true,
+ "pedido": "Necesito una capa nueva que se llame MCP Receta B, en verde"}
+```
+
+La primera es la vista previa de `guardar_receta`, la segunda guarda (solo tras el sí del dueño) y la tercera es
+`ejecutar_receta` simulada.
 
 ### `exportar_dataset` (script del puente, desde 1.6.0)
 
