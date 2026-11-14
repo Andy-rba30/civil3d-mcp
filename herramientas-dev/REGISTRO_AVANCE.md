@@ -115,6 +115,9 @@ Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a
   `tarea/3.2-recetas` + `2.11` + `2.12` + `3.1`. Cuatro pruebas OK: dotnet 546/546, puente 166, CompilarSinCivil 0
   errores, evaluador 21. `VALIDACION_116` y `117` ajustadas a `ping` 1.17.2. `INSTRUCCIONES_AGENTE.md` junta las reglas
   de recetas (paso 2) y de `ejecutar_codigo` (pasos 3 y 4).
+- **19:00 PR #42** (hallazgos + registro) fusionado en `main`; `main` fusionado en `tarea/ronda-b` (`470f722`, limpio).
+  **PR #43** en borrador: `tarea/ronda-b` → `main`, con «Para el agente instalador» y «Para Jose» de toda la ronda B.
+  **Aviso al dueño enviado: ronda B lista para probar** (L.1, P y la evaluación, más los datos de la evaluación).
 - **Integración prevista de la ronda B**: `tarea/3.1` → `tarea/3.2` → + `tarea/2.11` + `tarea/2.12` en una sola rama
   (versión **1.17.2**). Orden en la PC: VALIDACION_116 → 117 → 1171 → 1172 → evaluación (5.2-D/PC).
 
