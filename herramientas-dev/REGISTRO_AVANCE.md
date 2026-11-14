@@ -62,6 +62,24 @@ y todavía **no están en el repositorio**: hay que pedírselos al dueño o al a
 | Flujo completo | OK salvo la tabla | 8 pasos con simulación previa y `aprobar_resultado`; **117 s frente a 130 min manuales**. `tabla_progresivas: null` por el mismo motivo de `SourceName` |
 | Evaluación (memoria-firma, 14/11 09:59) | **6 de 10 OK** (antes 3) | 4, 5 y 6 pasan a OK. Falla la 7 por el nombre de línea duplicado; la 8 por la tabla (el total sí sale); la 9 porque no hay herramienta para la tabla de PI del eje; la 10 por la 7 y la 8 |
 
+### En curso (14/11/2026, tarde; sesión orquestadora nueva)
+- **Informes de la ronda A**: el dueño pegó los cinco en la sesión (112, 113, 114, 1141 y flujo completo). Se suben a
+  `herramientas-dev/informes/` junto con los de la prueba corta (lo pidió así); mientras, quedan en la rama
+  `claude/charming-brown-70s7g3`. El de la evaluación ya está en `memoria-firma/evaluacion/informes/`.
+- **Diagnóstico de la orquestadora** (catálogo consultado el 14/11/2026): `SeccionEsDe` ya comparaba
+  `Section.SourceId` con la TIN de la Datum, así que para una sección de superficie de corredor `SourceId` no es la
+  TIN; el catálogo tiene `SampleLine.GetSectionId(ObjectId)`, `Section.CorridorSurfaceId` y
+  `SectionSource.GetSectionIds()`, que se usan ahora en ese orden. La unicidad de nombres de línea de muestreo parece
+  ser de todo el dibujo (tarea 7 de la evaluación: el eje no tenía grupos y falló igual).
+- **Sesiones hijas lanzadas** (Opus, esfuerzo extra alto), en paralelo:
+  - `session_011fq2pFW6xpNx7GkwSxLBXA`: **corrección 1.14.2** en `tarea/2.7-volumenes` (PR #31), con
+    `VALIDACION_1142.md` corta (solo lo que falló).
+  - `session_011fq2pHJPZdM53xHeQdQSZ9`: **1.15.0 `listar_pis`** (tabla de PI del eje, tarea 9 de la evaluación) en
+    `tarea/2.9-tabla-pi`, que parte de `tarea/2.7-volumenes`; con `VALIDACION_115.md`. La orquestadora fusionará
+    `tarea/2.7-volumenes` (con la 1.14.2) en ella al final: **`tarea/2.9-tabla-pi` será la rama que instala el dueño**.
+- **Prueba corta prevista** (una instalación): VALIDACION_1142 → VALIDACION_115 → evaluación 5.2-D y 5.2-PC (su
+  tarea 10 repite el flujo completo, así que no se repite VALIDACION_FLUJO_COMPLETO).
+
 ### Siguiente paso (al retomar)
 1. **Corrección 1.14.2 en `tarea/2.7-volumenes`** (una sesión hija, plan aprobado por la orquestadora):
    a) `crear_secciones`: nombres de línea únicos aunque ya haya otros grupos en el eje (por ejemplo, con el nombre del
