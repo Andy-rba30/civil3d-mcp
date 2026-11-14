@@ -116,6 +116,16 @@ y todavía **no están en el repositorio**: hay que pedírselos al dueño o al a
   viven en la PC (pendiente: ¿subirlos a memoria-firma?).
 - **Siguiente en la PC**: evaluación con la 1.15.0 ya instalada (en curso) y después L.1 con `tarea/2.9-tabla-pi`
   (`b37b21a`) + VALIDACION_1143.
+- **Evaluación 5.2-D con la 1.15.0 (14/11, 11:50 hora de la PC): 10 de 10 OK** (antes 6 de 10). Hito de la Etapa 2
+  (tarea 10, flujo completo) alcanzado: 176 s frente a 130 min manuales. Dibujo base nuevo y limpio:
+  `PRUEBA_EVALUACION_BASE.dwg` (anotado en `ESTADO_PC.md`); corrida sobre la copia `PRUEBA_EVALUACION_20261114B.dwg` con
+  los mismos datos genéricos de la mañana (`puntos_prueba.csv`, polilínea 1000,2000 → 1600,2300 con R 60, PVI 0/100,
+  400/110 con curva de 40 m y final/105). Tarea 8: corte 7420.8346, relleno 32065.2314; tarea 9: `listar_pis` con
+  `diferencia_pi_civil3d: 0`. **Ojo**: el agente marcó OK la 1 (curvas 1 y 5 m), la 8 (comparación con un cálculo manual)
+  y la 9 (comparación con el informe de Civil 3D) sin esas comprobaciones manuales; anotarlo en la sesión de hallazgos.
+  Pendiente en la PC: 5.2-PC (guardar el YAML con `comparar` y `sincronizar_memoria.ps1`).
+- **Pendiente propuesto**: crear de verdad `memoria-firma/evaluacion/datos_prueba/` (`puntos_terreno.csv`,
+  `eje_polilinea.dxf`, `pvi_rasante.csv`): hoy solo tiene `.gitkeep` y el agente improvisa con datos equivalentes.
 - **Prueba corta prevista** (una instalación): VALIDACION_1142 → VALIDACION_115 → evaluación 5.2-D y 5.2-PC (su
   tarea 10 repite el flujo completo, así que no se repite VALIDACION_FLUJO_COMPLETO).
 
