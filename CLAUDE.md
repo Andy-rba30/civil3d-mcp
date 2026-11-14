@@ -224,7 +224,8 @@ Los prompts que no tocan Civil 3D (solo documentación, scripts de la nube o el 
   la validación siguiente) y valorar un deshacer propio, como `deshacer_objetivos`. El informe 1.10.0 aclara una parte:
   las rasantes creadas con `crear_rasante` **sí** se quitan con `_.UNDO 1` (13/11/2026, paso 10); el eje sigue sin
   probarse (el `Eje 1` de esa validación se conservó). El informe 1.11.0 añade que el corredor creado con
-  `crear_corredor` **también** se quita del dibujo con un `_.UNDO 1` (13/11/2026, paso 10).
+  `crear_corredor` **también** se quita del dibujo con un `_.UNDO 1` (13/11/2026, paso 10). Lo que se vio el 14/11/2026
+  está en el hecho «Qué quita `_.UNDO 1`», más abajo; siguen pendientes el eje y el deshacer propio.
 - Hasta la 1.10.0, `ejecutar_comando` recortaba los espacios finales del texto (`Trim`), así que un comando interactivo
   que necesita un espacio doble final para cerrar la entrada (por ejemplo `_.PLINE ...`) no terminaba; el agente lo
   resolvió con un archivo `.scr` (31/10/2026, informe 1.8.0, paso 0) y en la validación 1.10.0 la polilínea se dibujó a
@@ -243,10 +244,12 @@ Los prompts que no tocan Civil 3D (solo documentación, scripts de la nube o el 
   los radios pedidos (31/10/2026, informe 1.8.0, pasos 4 y 5), y la copia de seguridad se reutiliza entre escrituras
   seguidas si el archivo no cambió.
 - `Profile.CreateFromSurface` y `ProfileView.Create` en una misma transacción dejan **una** entrada de Deshacer, y la
-  asignación del perfil a `Profile1Id`/`Profile2Id` de las bandas funciona (31/10/2026, informe 1.9.0, pasos 4 y 6). El
-  punto de inserción automático usa la extensión del dibujo entera, así que en dibujos con contenido lejano la vista
-  puede quedar muy a la derecha (informe 1.9.0, paso 2: x ≈ 6 × 10^5 con un eje en x ≈ 1000..1600). Pendiente: decidir
-  si conviene usar solo la extensión del eje.
+  asignación del perfil a `Profile1Id`/`Profile2Id` de las bandas funciona (31/10/2026, informe 1.9.0, pasos 4 y 6).
+  Hasta la 1.14.0 el punto de inserción automático usaba la extensión del dibujo entera, así que en dibujos con
+  contenido lejano la vista quedaba muy a la derecha (informe 1.9.0, paso 2: x ≈ 6 × 10^5 con un eje en x ≈ 1000..1600).
+  Resuelto en la 1.14.1: usa solo el eje y sus vistas de perfil y de sección. Con un punto en x = 600000 en el dibujo,
+  la vista de perfil quedó en (1660, 2000) y las secciones en (2694, 2000), a la derecha de la vista de perfil y de las
+  43 vistas de sección ya existentes (14/11/2026, informe 1.14.1, pasos 6 y 7).
 - `Profile.CreateByLayout` más un `AddPVI` por PVI y una curva por PVI (`AddFreeSymmetricParabolaByPVIAndCurveLength` o
   `AddFreeCircularCurveByPVIAndLength`) en una misma transacción crean la rasante (tipo `FG`) con sus curvas y dejan
   **una** entrada de Deshacer (13/11/2026, informe 1.10.0, pasos 5, 7 y 9). A diferencia de la TIN, `_.UNDO 1` **sí**
@@ -271,8 +274,54 @@ Los prompts que no tocan Civil 3D (solo documentación, scripts de la nube o el 
   `BaselineRegionCollection.Add` (13/11/2026, informe 1.11.0, pasos 5 y 9).
 - En una región recién creada, los objetivos de superficie ya aparecen con `GetTargets()` **antes de la primera
   reconstrucción** (`camino_objetivos: "antes_de_reconstruir"`), y `Corridor.Rebuild()` funciona dentro de la
-  transacción que crea el corredor (una reconstrucción, `esta_desactualizado: false`). El corredor queda en la capa `0`
-  (13/11/2026, informe 1.11.0, pasos 5 y 9).
+  transacción que crea el corredor (una reconstrucción, `esta_desactualizado: false`). Hasta la 1.14.0 el corredor
+  quedaba en la capa `0` (13/11/2026, informe 1.11.0, pasos 5 y 9); desde la 1.14.1 queda en la capa de corredores de la
+  configuración del dibujo, `C-ROAD-CORR` (`SettingsObjectLayerType.Corridor`; 14/11/2026, informe 1.14.1, paso 5, y
+  flujo completo, paso 8).
 - Un `_.UNDO 1` después de `crear_corredor` **quita el corredor entero** (desaparece de `listar_corredores`), y entonces
   `deshacer_objetivos` sobre esa creación responde "No existe el corredor 'Corredor 2'. Corredores del dibujo: Corredor
   1." (13/11/2026, informe 1.11.0, paso 10).
+- Superficies Top y Datum de un corredor (`crear_superficies_corredor`): la corrección de voladizo tiene los valores
+  `None`, `TopLinks` y `BottomLinks`; la Top queda con `TopLinks` y la Datum con `BottomLinks`. El contorno «Extensión
+  del corredor» (`AddCorridorExtentsBoundary`) se puede añadir **antes** de `Rebuild()` y queda `OutsideBoundary`, y la
+  superficie nueva se construye sola (`IsBuild` = `true`) (14/11/2026, informe 1.12.0, paso 5 y preguntas 1, 3 y 4).
+  `guardar_dibujo` guarda el dibujo sin pulsar Ctrl+S (paso 11).
+- **Qué quita `_.UNDO 1`** (14/11/2026). **No** quita la superficie de volumen de `calcular_volumenes` (informe 1.14.0,
+  paso 12). **Sí** quita un contorno añadido con `agregar_contorno_superficie_corredor` (informe 1.14.1, paso 11) y el
+  corredor de `crear_corredor` (informe 1.14.1, paso 5). Tampoco se quitaron las superficies Top y Datum de
+  `crear_superficies_corredor` (informe 1.12.0, paso 10) ni el perfil de terreno de `crear_perfil_terreno_y_vista`
+  (informe 1.14.1, paso 8), pero en esos dos casos hubo un `_.ZOOM` entre la creación y el `_.UNDO 1`, que pudo ser lo
+  deshecho: hay que repetirlo sin el zoom.
+- Los nombres de las líneas de muestreo deben ser **únicos en todo el dibujo**, no solo en su eje: `SampleLine.Create`
+  rechaza uno repetido con `Sample line name should not duplicate.` y no crea nada (14/11/2026, informe 1.13.0, paso 9,
+  y la evaluación automática de ese día, con un eje sin grupos). Desde la 1.14.2, `crear_secciones` antepone el nombre
+  del grupo cuando hay choque y el segundo grupo se crea (informe 1.14.2, paso 6). Las líneas de muestreo y las vistas
+  de sección son entidades del espacio modelo (mismo paso, `datos.nombres`).
+- En las secciones de una **superficie de corredor**, `Section.SourceName` es `"<corredor> <superficie>"` (`Corredor 1
+  Corredor 1 - Datum`) y `Section.SourceId` **no** es la superficie TIN del dibujo (14/11/2026, informe 1.13.0, pregunta
+  2, e informe 1.14.0, paso 6), así que ni por nombre ni por id se encuentra. Lo que funciona es
+  `SampleLine.GetSectionId(id de la superficie TIN)`: 43 de 43 (informe 1.14.2, pasos 7 y 8). La fuente del grupo,
+  `SectionSource.SourceId`, sí abre la TIN (informe 1.13.0, paso 5).
+- Geometría de una sección (14/11/2026, informe 1.14.3, preguntas 1 y 2): `SectionPoint.Location` es (desplazamiento,
+  cota), con el desplazamiento negativo a la izquierda, comprobado con las cotas de las superficies (diferencia 0).
+  `LeftSwathWidth`/`RightSwathWidth` dan el ancho de la línea de muestreo (30/30). En una sección de superficie de
+  corredor, `LeftOffset`/`RightOffset` (−3,9 y 3,6) y `MinmumElevation`/`MaximumElevation` **no** son los extremos de
+  los puntos, que llegan de −30 a 30; en la del terreno sí coinciden.
+- Superficie de volumen (`TinVolumeSurface.GetVolumeProperties`): Civil 3D da el neto como **relleno − corte**
+  (`UnadjustedNetVolume`); el plugin da `neto` = corte − relleno (negativo = falta tierra). Los volúmenes ajustados son
+  exactamente los sin ajustar × factor (14/11/2026, informe 1.14.0, paso 6 y preguntas 1 y 2).
+- La tabla por progresivas de `calcular_volumenes` (áreas medias entre líneas de muestreo) no da lo mismo que la
+  superficie de volumen: en la prueba salió un 16,6 % más de corte y un 4,1 % más de relleno (14/11/2026, informe
+  1.14.3, paso 4). Es lo observado, no un fallo: **manda la superficie de volumen**.
+- `listar_pis`: `AlignmentEntity.SubEntityCount`, `AlignmentEntity[int]` y `AlignmentSubEntityArc.PIPoint` funcionan y
+  el PI de Civil 3D coincide con el calculado (`diferencia_pi_civil3d: 0` en las tres curvas); `Alignment.PointLocation`
+  en el final exacto de cada entidad da los PC y PT correctos (14/11/2026, informe 1.15.0, pasos 2 y 4).
+- Los intervalos de las curvas de nivel de `crear_superficie_tin` viven en el **estilo** de la superficie: con el estilo
+  por defecto (`Contours 5m and 25m (Background)`) no se aplican los 1 y 5 m pedidos (`aplicados: false`); la
+  herramienta lo avisa y propone un estilo con esos intervalos, como `Contours 1m and 5m (Design)` (14/11/2026, flujo
+  completo, paso 4).
+- **Flujo vial completo** (14/11/2026, flujo completo, con la 1.14.1): el agente hizo las 8 escrituras de la receta,
+  cada una con su simulación previa y su `aprobar_resultado`, en **117 s** frente a unos 130 min a mano (pasos 12 y 15).
+  La evaluación automática del mismo día dio **10 de 10** OK con la 1.15.0, pero el agente no hizo tres comprobaciones
+  manuales del banco: las curvas cada 1 y 5 m (tarea 1), el cálculo manual del volumen (tarea 8) y el informe de
+  alineamiento de Civil 3D (tarea 9).
