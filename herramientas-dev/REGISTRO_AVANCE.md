@@ -88,6 +88,9 @@ y todavía **no están en el repositorio**: hay que pedírselos al dueño o al a
   Cuatro pruebas OK: dotnet 396/396, puente 84, CompilarSinCivil 0 errores y 0 avisos, evaluador 21. El PR #35 dice
   "Para el agente instalador" y "Para Jose" de toda la prueba corta. **Orden de fusión cuando dé OK: #31 y luego #35.**
 - **Aviso al dueño enviado (15:46): prueba corta lista**, con L.1 y P sobre `tarea/2.9-tabla-pi`.
+- **L.1 OK en la PC**: rama `tarea/2.9-tabla-pi`, commit `31ef86b`, compilación Release sin errores ni avisos,
+  bundle 1.15.0 instalado, `dotnet test` 396/396, pytest del puente 84/84, puente reiniciado. Falta el Prompt P
+  (VALIDACION_1142 → VALIDACION_115) y la evaluación (5.2-D y 5.2-PC).
 - **Prueba corta prevista** (una instalación): VALIDACION_1142 → VALIDACION_115 → evaluación 5.2-D y 5.2-PC (su
   tarea 10 repite el flujo completo, así que no se repite VALIDACION_FLUJO_COMPLETO).
 
