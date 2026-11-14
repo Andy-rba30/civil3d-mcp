@@ -126,6 +126,7 @@ namespace ArbaMcp
         {
             public string Nombre;
             public double Pk;
+            public Civ.SampleLine Linea;
             public SeccionesLeidas Secciones;
         }
 
@@ -165,7 +166,7 @@ namespace ArbaMcp
             foreach (ObjectId idL in slg.GetSampleLineIds())
             {
                 if (!(tr.GetObject(idL, OpenMode.ForRead) is Civ.SampleLine sl)) continue;
-                lineas.Add(new LineaLeida { Nombre = Seguro(() => sl.Name, null), Pk = Seguro(() => sl.Station, double.NaN), Secciones = LeerSeccionesDeLinea(tr, sl, t, d) });
+                lineas.Add(new LineaLeida { Nombre = Seguro(() => sl.Name, null), Pk = Seguro(() => sl.Station, double.NaN), Linea = sl, Secciones = LeerSeccionesDeLinea(tr, sl, t, d) });
             }
             return lineas;
         }
@@ -251,10 +252,20 @@ namespace ArbaMcp
             };
         }
 
-        /// <summary>El bloque identificacion_secciones de un grupo leyendo todas sus líneas; nunca rompe la herramienta.</summary>
-        private static object DiagnosticoDeGrupo(Transaction tr, GrupoTabla g, SuperficieTabla t, SuperficieTabla d)
+        /// <summary>
+        /// Los bloques identificacion_secciones y, desde 1.14.3, la comprobación del supuesto de ejes (con puntos_secciones) de
+        /// un grupo, leyendo todas sus líneas; para la simulación. Nunca rompe la herramienta.
+        /// </summary>
+        private static object DiagnosticoDeGrupo(Transaction tr, GrupoTabla g, CivSurface terreno, CivSurface datum, SuperficieTabla t, SuperficieTabla d, out SupuestoEjes supuesto)
         {
-            try { return DiagnosticoIdentificacion(tr, g, LeerLineas(tr, g, t, d), t, d); }
+            supuesto = null;
+            try
+            {
+                var lineas = LeerLineas(tr, g, t, d);
+                try { supuesto = ComprobarSupuestoEjes(tr, g, lineas, terreno, datum, t, d); }
+                catch (Exception ex) { supuesto = new SupuestoEjes { Diagnostico = new { error = ex.Message } }; }
+                return DiagnosticoIdentificacion(tr, g, lineas, t, d);
+            }
             catch (Exception ex) { return new { grupo = g.Nombre, alineamiento = g.Eje, error = ex.Message }; }
         }
 
@@ -312,7 +323,7 @@ namespace ArbaMcp
             return null;
         }
 
-        /// <summary>Puntos de una sección: X = desplazamiento, Y = cota (supuesto que comprueba MotivoPuntosNoValidos y la cota del terreno en el eje).</summary>
+        /// <summary>Puntos de una sección: X = desplazamiento, Y = cota (supuesto que comprueba ComprobarSupuestoEjes).</summary>
         private static List<Punto2> PuntosSeccion(Civ.Section s)
         {
             var l = new List<Punto2>();
@@ -325,27 +336,143 @@ namespace ArbaMcp
             return l;
         }
 
+        /// <summary>Diferencia entre los puntos y Section.LeftOffset/RightOffset/MinmumElevation/MaximumElevation: desde 1.14.3 solo diagnóstico (aviso).</summary>
         private static string MotivoSeccion(Civ.Section s, List<Punto2> puntos, string nombre)
             => Volumenes.MotivoPuntosNoValidos(puntos,
                 Seguro(() => (double?)s.LeftOffset, null), Seguro(() => (double?)s.RightOffset, null),
                 Seguro(() => (double?)s.MinmumElevation, null), Seguro(() => (double?)s.MaximumElevation, null), nombre);
 
-        /// <summary>
-        /// Lee las secciones de cada línea del grupo y calcula sus áreas (ArbaMcp.Nucleo.Volumenes.Areas). Comprueba el
-        /// supuesto de ejes de SectionPoint.Location: los puntos dentro de los desplazamientos y cotas de su sección y, en
-        /// la primera línea en que se puede, la cota de la sección del terreno en el eje igual (±0,01) a la de la
-        /// superficie (Surface.FindElevationAtXY en Alignment.PointLocation(pk, 0)). Si no se cumple, 'motivo' lo dice y
-        /// la tabla no da números.
-        /// </summary>
-        private static List<SeccionLinea> SeccionesDelGrupo(Transaction tr, GrupoTabla g, CivSurface terreno, SuperficieTabla t, SuperficieTabla d,
-            out string motivo, out int comprobadas, out object identificacion)
+        /// <summary>Resultado de la comprobación del supuesto de ejes de un grupo (1.14.3).</summary>
+        private sealed class SupuestoEjes
         {
-            motivo = null;
-            comprobadas = 0;
-            string nT = t.Nombre, nD = d.Nombre;
+            public string Motivo;
+            public int Comprobadas;
+            /// <summary>Bloque puntos_secciones (memoria técnica).</summary>
+            public object Diagnostico;
+            public List<string> Avisos = new List<string>();
+        }
+
+        /// <summary>Cota de la superficie en (pk, desplazamiento) del eje; null si el punto o la cota no se pueden leer (fuera de la TIN, FindElevationAtXY lanza).</summary>
+        private static double? CotaSuperficieEn(CivAlignment al, CivSurface su, double pk, double desplazamiento)
+        {
+            try
+            {
+                double x = 0, y = 0;
+                al.PointLocation(pk, desplazamiento, ref x, ref y);
+                return su.FindElevationAtXY(x, y);
+            }
+            catch { return null; }
+        }
+
+        private static object PuntoXY(Punto2 p) => new { x = N(p.X), y = N(p.Y) };
+
+        /// <summary>Lo que dice Civil 3D de una sección y sus puntos, para puntos_secciones.</summary>
+        private static object DescribirPuntosSeccion(Civ.Section s, List<Punto2> p, string superficie)
+            => new
+            {
+                superficie,
+                left_offset = Opt(Seguro(() => (double?)s.LeftOffset, null)),
+                right_offset = Opt(Seguro(() => (double?)s.RightOffset, null)),
+                left_swath_width = Opt(Seguro(() => (double?)s.LeftSwathWidth, null)),
+                right_swath_width = Opt(Seguro(() => (double?)s.RightSwathWidth, null)),
+                minmum_elevation = Opt(Seguro(() => (double?)s.MinmumElevation, null)),
+                maximum_elevation = Opt(Seguro(() => (double?)s.MaximumElevation, null)),
+                numero_puntos = p.Count,
+                primeros = p.Take(3).Select(PuntoXY).ToList(),
+                ultimos = p.Skip(Math.Max(0, p.Count - 3)).Select(PuntoXY).ToList()
+            };
+
+        /// <summary>
+        /// Comprueba el supuesto de ejes de SectionPoint.Location (X = desplazamiento, Y = cota) en las líneas del grupo
+        /// (desde 1.14.3). Bloquea la tabla (Motivo): un punto fuera del ancho real de su línea de muestreo (sus vértices con
+        /// Alignment.StationOffset, como AnchosLinea de crear_secciones) o, en la primera línea en que se puede, una cota de
+        /// la sección del terreno o de la Datum distinta (±0,01) de la de su superficie (Surface.FindElevationAtXY en
+        /// Alignment.PointLocation) en el eje y a cada lado (Volumenes.DesplazamientosDeComprobacion), lo que comprueba
+        /// también el signo izquierda/derecha. Section.LeftOffset/RightOffset y las cotas mínima/máxima ya no bloquean: si
+        /// no cuadran, aviso. Diagnostico: el bloque puntos_secciones de la línea comprobada (o de la primera con las dos
+        /// secciones). Solo lectura.
+        /// </summary>
+        private static SupuestoEjes ComprobarSupuestoEjes(Transaction tr, GrupoTabla g, List<LineaLeida> lineas, CivSurface terreno, CivSurface datum, SuperficieTabla t, SuperficieTabla d)
+        {
+            var r = new SupuestoEjes();
             var al = (CivAlignment)tr.GetObject(g.IdEje, OpenMode.ForRead);
+            bool avisoOffsets = false;
+            foreach (var l in lineas.Where(x => !double.IsNaN(x.Pk)).OrderBy(x => x.Pk))
+            {
+                var st = l.Secciones.Terreno;
+                var sd = l.Secciones.Datum;
+                if (st == null || sd == null) continue;
+                var pt = PuntosSeccion(st);
+                var pd = PuntosSeccion(sd);
+                var (izq, der) = l.Linea == null ? ((double?)null, (double?)null) : AnchosLinea(al, l.Linea);
+
+                if (!avisoOffsets)
+                {
+                    string dif = MotivoSeccion(st, pt, t.Nombre) ?? MotivoSeccion(sd, pd, d.Nombre);
+                    if (dif != null)
+                    {
+                        avisoOffsets = true;
+                        r.Avisos.Add("En la línea '" + l.Nombre + "' " + dif + " (Section.LeftOffset/RightOffset y las cotas mínima y máxima): no bloquea la tabla, se anota en puntos_secciones para miembros_por_verificar_civil3d.md.");
+                    }
+                }
+
+                var comparaciones = new List<ComparacionCota>();
+                string fuera = Volumenes.MotivoFueraDeLaLinea(pt, izq, der, t.Nombre) ?? Volumenes.MotivoFueraDeLaLinea(pd, izq, der, d.Nombre);
+                if (fuera == null && r.Comprobadas == 0)
+                {
+                    var areas = Volumenes.Areas(pt, pd);
+                    if (areas != null)
+                        foreach (double o in Volumenes.DesplazamientosDeComprobacion(areas.Desde, areas.Hasta))
+                        {
+                            comparaciones.Add(new ComparacionCota(t.Nombre, o, Volumenes.CotaEn(pt, o), CotaSuperficieEn(al, terreno, l.Pk, o)));
+                            comparaciones.Add(new ComparacionCota(d.Nombre, o, Volumenes.CotaEn(pd, o), CotaSuperficieEn(al, datum, l.Pk, o)));
+                        }
+                }
+                bool completa = Volumenes.ComprobacionCompleta(comparaciones, t.Nombre, d.Nombre);
+                if (fuera != null || completa || r.Diagnostico == null)
+                    r.Diagnostico = new
+                    {
+                        linea = l.Nombre,
+                        pk = N(l.Pk),
+                        ancho_linea = new { izquierdo = Opt(izq), derecho = Opt(der) },
+                        terreno = DescribirPuntosSeccion(st, pt, t.Nombre),
+                        datum = DescribirPuntosSeccion(sd, pd, d.Nombre),
+                        cotas_comparadas = comparaciones.Select(c => new
+                        {
+                            superficie = c.Superficie,
+                            desplazamiento = N(c.Desplazamiento),
+                            cota_seccion = Opt(c.CotaSeccion),
+                            cota_superficie = Opt(c.CotaSuperficie),
+                            diferencia = Opt(c.Diferencia)
+                        }).ToList(),
+                        comprobacion_completa = completa
+                    };
+                if (fuera != null)
+                {
+                    r.Motivo = "en la línea '" + l.Nombre + "' (pk " + N(l.Pk) + ") " + fuera;
+                    break;
+                }
+                if (completa)
+                {
+                    r.Comprobadas = 1;
+                    r.Motivo = Volumenes.MotivoCotasNoCoinciden(comparaciones, l.Nombre, l.Pk);
+                    if (r.Motivo != null) break;
+                }
+            }
+            return r;
+        }
+
+        /// <summary>
+        /// Lee las secciones de cada línea del grupo, comprueba el supuesto de ejes (ComprobarSupuestoEjes; si no se cumple,
+        /// 'supuesto.Motivo' lo dice y la tabla no da números) y calcula sus áreas (ArbaMcp.Nucleo.Volumenes.Areas).
+        /// </summary>
+        private static List<SeccionLinea> SeccionesDelGrupo(Transaction tr, GrupoTabla g, CivSurface terreno, CivSurface datum, SuperficieTabla t, SuperficieTabla d,
+            out SupuestoEjes supuesto, out object identificacion)
+        {
+            string nT = t.Nombre, nD = d.Nombre;
             var leidas = LeerLineas(tr, g, t, d);
             identificacion = DiagnosticoIdentificacion(tr, g, leidas, t, d);
+            supuesto = ComprobarSupuestoEjes(tr, g, leidas, terreno, datum, t, d);
             var lineas = new List<SeccionLinea>();
             foreach (var l in leidas)
             {
@@ -358,28 +485,7 @@ namespace ArbaMcp
                     lineas.Add(new SeccionLinea(nombre, pk, null, "falta la sección de " + (st == null ? "'" + nT + "'" : "") + (st == null && sd == null ? " y de " : "") + (sd == null ? "'" + nD + "'" : "")));
                     continue;
                 }
-                var pt = PuntosSeccion(st);
-                var pd = PuntosSeccion(sd);
-                if (motivo == null) motivo = MotivoSeccion(st, pt, nT) ?? MotivoSeccion(sd, pd, nD);
-                if (motivo == null && comprobadas == 0)
-                {
-                    double? cotaSeccion = Volumenes.CotaEn(pt, 0);
-                    if (cotaSeccion.HasValue)
-                    {
-                        try
-                        {
-                            double x = 0, y = 0;
-                            al.PointLocation(pk, 0, ref x, ref y);
-                            double cotaSuperficie = terreno.FindElevationAtXY(x, y);
-                            comprobadas++;
-                            if (Math.Abs(cotaSuperficie - cotaSeccion.Value) > 0.01)
-                                motivo = "en la línea '" + nombre + "' (pk " + N(pk) + ") la sección de '" + nT + "' da cota " + N(cotaSeccion.Value) + " en el eje y la superficie da " + N(cotaSuperficie)
-                                    + ": SectionPoint.Location no es (desplazamiento, cota)";
-                        }
-                        catch (Exception ex) { Historial.Registrar(HerramientaCalcularVolumenes + ": no se pudo comprobar la cota del terreno en " + nombre + ": " + ex.Message); }
-                    }
-                }
-                var areas = Volumenes.Areas(pt, pd);
+                var areas = Volumenes.Areas(PuntosSeccion(st), PuntosSeccion(sd));
                 lineas.Add(new SeccionLinea(nombre, pk, areas, areas == null ? "las secciones de '" + nT + "' y '" + nD + "' no se solapan" : null));
             }
             return lineas;
@@ -477,6 +583,9 @@ namespace ArbaMcp
                     // Superficies cuya sección se busca en las líneas y bloque identificacion_secciones (1.14.2)
                     SuperficieTabla supT = null, supD = null;
                     object identificacionAntes = null, identificacionDespues = null;
+                    // Comprobación del supuesto de ejes y bloque puntos_secciones (1.14.3): la de la simulación y la de la escritura
+                    SupuestoEjes supuestoAntes = null;
+                    object puntosDespues = null;
                     var avisosTabla = new List<string>();
 
                     Escritura.Creacion creacion = null;
@@ -529,7 +638,13 @@ namespace ArbaMcp
                             if (conTabla)
                             {
                                 grupo = ElegirGrupoTabla(tr, grupoPedido, ejesCorredor, supT, supD, avisosTabla, out GrupoTabla paraDiagnostico);
-                                if (paraDiagnostico != null) identificacionAntes = DiagnosticoDeGrupo(tr, paraDiagnostico, supT, supD);
+                                if (paraDiagnostico != null) identificacionAntes = DiagnosticoDeGrupo(tr, paraDiagnostico, terreno, datum, supT, supD, out supuestoAntes);
+                                if (ctx.Simular && supuestoAntes != null)
+                                {
+                                    ctx.Avisos.AddRange(supuestoAntes.Avisos);
+                                    if (grupo != null && supuestoAntes.Motivo != null)
+                                        ctx.Avisos.Add("La tabla por progresivas saldrá sin números: " + supuestoAntes.Motivo + ". Mira puntos_secciones; los totales de la superficie de volumen no dependen de esto.");
+                                }
                             }
                             else if (!string.IsNullOrWhiteSpace(grupoPedido)) ctx.Avisos.Add("Con tabla_progresivas=false no se calcula la tabla: 'grupo_muestreo' no se usa.");
                             ctx.Avisos.AddRange(avisosTabla);
@@ -555,7 +670,12 @@ namespace ArbaMcp
                                 ["grupo_muestreo"] = grupo?.Nombre,
                                 ["lineas_tabla"] = grupo?.Lineas ?? 0,
                                 // La simulación no devuelve 'datos': el diagnóstico va en 'despues' (1.14.2)
-                                ["identificacion_secciones"] = ctx.Simular ? identificacionAntes : null
+                                ["identificacion_secciones"] = ctx.Simular ? identificacionAntes : null,
+                                // 1.14.3: lo que dirá la tabla del supuesto de ejes y los puntos de las secciones, ya en la simulación
+                                ["supuesto_ejes"] = ctx.Simular && supuestoAntes != null
+                                    ? new { comprobado = supuestoAntes.Motivo == null && supuestoAntes.Comprobadas > 0, lineas_comprobadas_con_la_superficie = supuestoAntes.Comprobadas, motivo = supuestoAntes.Motivo }
+                                    : null,
+                                ["puntos_secciones"] = ctx.Simular ? supuestoAntes?.Diagnostico : null
                             };
                         },
                         Esperado = new Dictionary<string, object>
@@ -634,7 +754,12 @@ namespace ArbaMcp
                                 try
                                 {
                                     var terreno = (CivSurface)tr.GetObject(idTerreno, OpenMode.ForRead);
-                                    var lineas = SeccionesDelGrupo(tr, grupo, terreno, supT, supD, out string motivo, out int comprobadas, out identificacionDespues);
+                                    var datumSu = (CivSurface)tr.GetObject(idDatum, OpenMode.ForRead);
+                                    var lineas = SeccionesDelGrupo(tr, grupo, terreno, datumSu, supT, supD, out SupuestoEjes supuesto, out identificacionDespues);
+                                    string motivo = supuesto.Motivo;
+                                    int comprobadas = supuesto.Comprobadas;
+                                    puntosDespues = supuesto.Diagnostico;
+                                    avisosTabla.AddRange(supuesto.Avisos);
                                     TablaVolumenes t = null;
                                     if (motivo != null)
                                         avisosTabla.Add("La tabla por progresivas sale sin números: " + motivo + ". Anótalo en miembros_por_verificar_civil3d.md (SectionPoint.Location) para corregir la herramienta; los totales de la superficie de volumen no dependen de esto.");
@@ -643,7 +768,7 @@ namespace ArbaMcp
                                         t = Volumenes.Tabla(lineas, esponjamiento, compactacion);
                                         avisosTabla.AddRange(t.Avisos);
                                         if (comprobadas == 0)
-                                            avisosTabla.Add("No se pudo comprobar con la superficie '" + e.Terreno + "' que los puntos de sección son (desplazamiento, cota): ninguna línea tenía sección del terreno en el eje. Revisa la tabla con las vistas de sección.");
+                                            avisosTabla.Add("No se pudo comprobar con las superficies '" + e.Terreno + "' y '" + e.Datum + "' que los puntos de sección son (desplazamiento, cota): en ninguna línea se pudieron comparar las cotas de las dos secciones con las de sus superficies (mira puntos_secciones). Revisa la tabla con las vistas de sección.");
                                     }
                                     tabla = TablaComoRespuesta(grupo, t, motivo, comprobadas, resumen);
                                     if (t != null && resumen != null)
@@ -729,7 +854,8 @@ namespace ArbaMcp
                             triangulos,
                             extension,
                             tabla_progresivas = tabla,
-                            identificacion_secciones = identificacionDespues ?? identificacionAntes
+                            identificacion_secciones = identificacionDespues ?? identificacionAntes,
+                            puntos_secciones = puntosDespues ?? supuestoAntes?.Diagnostico
                         }
                     };
                     return Escritura.CrearObjeto(ctx, creacion);

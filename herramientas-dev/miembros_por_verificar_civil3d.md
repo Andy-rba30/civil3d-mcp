@@ -534,6 +534,30 @@ validación `herramientas-dev/VALIDACION_1142.md`. Ninguna herramienta nueva. Sa
 | propiedad | Recorrido de **todos** los ejes: `CivilDocument.GetAlignmentIds()` → `Alignment.GetSampleLineGroupIds()` → `SampleLineGroup.GetSampleLineIds()` → `SampleLine.Name`, y `SampleLine.GetSectionViewIds()` → `SectionView.Name` | 2027 | `crear_secciones` (nombres que ya existen, también con `simular=true`) | cada miembro, ejecutado (1.13.0: `listar_lineas_muestreo` y `crear_secciones`, paso 5); el recorrido de todos los ejes para los nombres, por verificar (`datos.nombres.leidos.lineas_por_ejes`, `vistas_por_ejes`) |
 | método | `Autodesk.AutoCAD.Runtime.RXObject.GetClass(typeof(SampleLine))` y `(typeof(SectionView))` + `ObjectId.ObjectClass.IsDerivedFrom` sobre las entidades del espacio modelo | AutoCAD 2027 | `crear_secciones` (nombres de líneas y vistas que no cuelgan de ningún eje) | el patrón ya lo usa `crear_alineamiento_desde_polilinea` para buscar polilíneas por capa (1.8.0); con estos tipos de Civil 3D, **por verificar** si las líneas y las vistas son entidades del espacio modelo (`datos.nombres.leidos.lineas_en_espacio_modelo` y `vistas_en_espacio_modelo` mayores que 0) |
 
+## 1.14.3 (corrección: supuesto de ejes de la tabla por progresivas de `calcular_volumenes`): escrita sin Civil 3D
+
+Escrita el 14/11/2026 sin Civil 3D y **sin el catálogo en la sesión de desarrollo** (compilada contra los sustitutos de
+`CompilarSinCivil`). Decide la validación `herramientas-dev/VALIDACION_1143.md`, sobre `PRUEBA_1142.dwg` tal como lo
+dejó guardado la 1.14.2. Ninguna herramienta nueva. Sale del informe 1.14.2 del 14/11/2026 (rama integrada
+`tarea/2.9-tabla-pi`, 1.15.0), paso 8: con la sección de la Datum ya encontrada, la tabla salió con `numeros: false` y
+`motivo: "un punto de la sección de 'Corredor 1 - Datum' tiene X = -30, fuera de los desplazamientos de la sección (-3.9
+a 3.6)"`. X = −30 es justo el ancho izquierdo de la línea (30/30): todo apunta a que X **sí** es el desplazamiento y a que
+`Section.LeftOffset`/`RightOffset` **no** son los extremos de los puntos de la sección de una superficie de corredor (en el
+terreno no saltó). Desde 1.14.3 bloquean la tabla solo el ancho real de la línea (sus vértices con
+`Alignment.StationOffset`) y la comparación de cotas de las dos secciones con sus superficies (`FindElevationAtXY` en
+`PointLocation`, en el eje y a cada lado); `LeftOffset`/`RightOffset` y las cotas mínima y máxima quedan como diagnóstico
+en `datos.puntos_secciones`: anota aquí lo que salga.
+
+| Tipo | Miembro | Versión | Herramienta que lo usa | Estado |
+|---|---|---|---|---|
+| propiedad | `Section.LeftOffset`, `Section.RightOffset` en la sección de una superficie de corredor | 2027 | `calcular_volumenes` (solo diagnóstico desde 1.14.3: `puntos_secciones.datum.left_offset`/`right_offset` y aviso) | **ejecutado en Civil 3D 2027** (informe 1.14.2, paso 8, 14/11/2026): `-3.9` y `3.6` en `Corredor 1 - Datum` con puntos de la sección hasta X = −30 en una línea de 30/30, así que **no** son los extremos de los puntos; qué miden, **por verificar** (¿el ancho de la calzada?). En la sección del terreno no hubo diferencia |
+| propiedad | `Section.LeftSwathWidth`, `Section.RightSwathWidth` (`double`) | 2027 | `calcular_volumenes` (solo diagnóstico: `puntos_secciones.terreno`/`datum.left_swath_width`/`right_swath_width`) | confirmados en el catálogo (consulta de la orquestadora, 13/11/2026; sección 1.14.0, entonces sin usar); qué valen, **por verificar** (¿el ancho de la línea, 30/30?) |
+| propiedad | `Section.MinmumElevation`, `Section.MaximumElevation` | 2027 | `calcular_volumenes` (solo diagnóstico desde 1.14.3) | ejecutados (1.14.0, sin error); si son las cotas extremas de los puntos, por verificar (`puntos_secciones`) |
+| método | `SampleLine.GetSectionId(ObjectId)` con el id de la superficie del dibujo (el de `CivilDocument.GetSurfaceIds` o `CorridorSurface.SurfaceId`) | 2027 | `calcular_volumenes` (intento 1 de la identificación de secciones) | **ejecutado en Civil 3D 2027** (informe 1.14.2, pasos 7 y 8, 14/11/2026): devuelve la sección de esa superficie en la línea, **43 de 43** para `Terreno` y **43 de 43** para `Corredor 1 - Datum` (`identificacion_secciones.*.metodos`), también para la superficie de corredor; los demás intentos no hicieron falta |
+| propiedad | `SampleLine.Vertices` + `Alignment.StationOffset` como ancho real de la línea en `calcular_volumenes` | 2027 | `calcular_volumenes` (límite de X de los puntos de sección, `puntos_secciones.ancho_linea`) | ejecutados en Civil 3D 2027 (1.13.0, `crear_secciones`: 30/30 y 10/25 releídos); en `calcular_volumenes`, por verificar |
+| método | `Surface.FindElevationAtXY` sobre la superficie TIN de una superficie de corredor (`Corredor 1 - Datum`) en `Alignment.PointLocation(pk, desplazamiento)` | 2027 | `calcular_volumenes` (comparación de cotas de la sección de la Datum, `puntos_secciones.cotas_comparadas`) | ejecutado en Civil 3D 2027 por `cota_superficie` (informe 1.14.0, paso 8: `109.0011` en el PK 400); dentro de `calcular_volumenes`, por verificar |
+| supuesto | `SectionPoint.Location`: X = desplazamiento (negativo a la izquierda), Y = cota | 2027 | `calcular_volumenes` (tabla por progresivas) | **por verificar** con `VALIDACION_1143.md` (`supuesto_ejes.comprobado: true` y `cotas_comparadas` con diferencias de 0); el informe 1.14.2 ya apunta a que X es el desplazamiento (−30 en una línea de 30 m a la izquierda) |
+
 ## 1.15.0 (`listar_pis`: tabla de PI de un alineamiento existente): escrita sin compilar
 
 Escrita el 14/11/2026 sin Civil 3D y **sin el catálogo en la sesión de desarrollo** (`buscar_api` respondió `Falta la

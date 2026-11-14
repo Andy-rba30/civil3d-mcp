@@ -477,6 +477,8 @@ namespace Autodesk.Civil.DatabaseServices
         public ObjectId SourceId => ObjectId.Null; public string SourceName => ""; public ObjectId SampleLineId => ObjectId.Null;
         // 1.14.2 (calcular_volumenes, identificación de secciones): confirmados en el catálogo (consulta de la orquestadora, 14/11/2026); el catálogo no da los valores de SectionSourceType
         public ObjectId CorridorSurfaceId => ObjectId.Null; public SectionSourceType SourceType => default;
+        // 1.14.3 (calcular_volumenes, diagnóstico puntos_secciones): confirmados en el catálogo (consulta de la orquestadora, 13/11/2026); por verificar
+        public double LeftSwathWidth => 0; public double RightSwathWidth => 0;
         // 1.14.0 (calcular_volumenes, tabla por progresivas): confirmado en el catálogo (consulta de la orquestadora, 13/11/2026)
         public SectionPointCollection SectionPoints => new SectionPointCollection();
         public double LeftOffset => 0; public double RightOffset => 0;
