@@ -21,7 +21,7 @@ ejecuta en el contexto que la herramienta declara en `Herramienta.Contexto`:
 
 | Contexto | Qué hace | Espera a que Civil 3D esté libre | Herramientas |
 |---|---|---|---|
-| `Documento` (por defecto) | Contexto de comando del dibujo activo (`DocumentManager.ExecuteInCommandContextAsync`): la herramienta corre como un comando más, con el documento bloqueado y los gráficos actualizados al terminar. AutoCAD la anota como **una entrada `Executefunction` del menú Deshacer** (validado el 28/09/2026) | Sí | Todas las de escritura del dibujo, y `listar_lineas_muestreo` (abre el grupo para escritura con `fuentes=true`) |
+| `Documento` (por defecto) | Contexto de comando del dibujo activo (`DocumentManager.ExecuteInCommandContextAsync`): la herramienta corre como un comando más, con el documento bloqueado y los gráficos actualizados al terminar. AutoCAD la anota como **una entrada `Executefunction` del menú Deshacer** (validado el 28/09/2026) | Sí | Todas las de escritura del dibujo, y `listar_lineas_muestreo` (abre el grupo para escritura con `fuentes=true`); desde 1.16.0, `ejecutar_codigo` también al simular (necesita bloqueo de escritura; ver *Ejecución de código*) |
 | `Aplicacion` | Contexto de aplicación en el hilo principal. Las lecturas y las simulaciones bloquean el dibujo **en modo lectura** (`DocumentLockMode.Read`): un bloqueo de escritura fuera de un comando deja un `Grupo de comandos` en el menú Deshacer aunque no cambie nada (validado el 28/09/2026 con la 1.3.0); el de lectura no lo deja (validado el 28/09/2026 con la 1.3.1: ni las lecturas ni las simulaciones dejan entrada) | Sí | Desde 1.3.0, todas las de solo lectura (`listar_*`, `estado_corredor`, `punto_a_pk`, `pk_a_punto`, `cota_superficie`, `extension_superficie`, `interseccion_ejes`); desde 1.3.1, también cualquier herramienta de escritura llamada con `simular=true`; desde 1.10.1, la comprobación previa de cada escritura real (ver *Seguridad de escritura*, regla 1); `abrir_dibujo`, el envío de `ejecutar_comando` y de las exportaciones |
 | `Inmediato` | Contexto de aplicación, sin esperar y por delante de los demás trabajos | No | `ping`, `leer_historial`, `leer_log`, `aprobar_resultado` (1.6.0), `leer_variable`, `capturar_pantalla`, los ESC de `ejecutar_comando` |
 
@@ -82,13 +82,13 @@ puente*).
 
 Toda herramienta de escritura pasa por `Escritura.Ejecutar` (`Escritura.cs`), que aplica estas reglas antes y después del cambio:
 
-1. **Comprobaciones previas**: responde error, sin tocar nada, si `CMDACTIVE > 0` (hay un comando activo), si el dibujo está en solo lectura o si el mismo archivo está abierto más de una vez en Civil 3D. **Desde 1.10.1, comprobación previa por simulación**: antes de entregar una escritura real al contexto de comando, el hilo principal ejecuta la misma herramienta con `simular=true` en contexto de aplicación (bloqueo de lectura, sin copia, sin entrada de Deshacer), en el mismo turno y sin otro trabajo en medio. Si la simulación falla, la llamada responde ese mismo error (`ok=false`, el mismo texto que daría la escritura) **sin abrir el contexto de comando**, sin empezar la copia de seguridad y sin dejar entrada en el menú Deshacer; el historial lo anota con `MCP ✗ <herramienta> no se ejecutó: falló la comprobación previa (simulación); sin contexto de comando, sin copia y sin entrada en Deshacer: <error>`. Si pasa, su resultado se descarta (no aparece en la respuesta ni en el registro) y la escritura sigue como siempre. Aplica a toda herramienta síncrona de contexto `Documento` que declare `simular`; no a `ejecutar_comando` ni a `exportar_*` (asíncronas) ni a `listar_lineas_muestreo` (no declara `simular`). Los errores que solo aparecen al escribir (copia fallida, fallo de la API al crear, verificación antes/después) siguen ocurriendo dentro del contexto de comando y pueden dejar su entrada en Deshacer. Coste: cada escritura real hace antes su simulación (milisegundos en casi todas; `crear_superficie_tin` desde archivo lee el archivo dos veces).
+1. **Comprobaciones previas**: responde error, sin tocar nada, si `CMDACTIVE > 0` (hay un comando activo), si el dibujo está en solo lectura o si el mismo archivo está abierto más de una vez en Civil 3D. **Desde 1.10.1, comprobación previa por simulación**: antes de entregar una escritura real al contexto de comando, el hilo principal ejecuta la misma herramienta con `simular=true` en contexto de aplicación (bloqueo de lectura, sin copia, sin entrada de Deshacer), en el mismo turno y sin otro trabajo en medio. Si la simulación falla, la llamada responde ese mismo error (`ok=false`, el mismo texto que daría la escritura) **sin abrir el contexto de comando**, sin empezar la copia de seguridad y sin dejar entrada en el menú Deshacer; el historial lo anota con `MCP ✗ <herramienta> no se ejecutó: falló la comprobación previa (simulación); sin contexto de comando, sin copia y sin entrada en Deshacer: <error>`. Si pasa, su resultado se descarta (no aparece en la respuesta ni en el registro) y la escritura sigue como siempre. Aplica a toda herramienta síncrona de contexto `Documento` que declare `simular`; no a `ejecutar_comando`, a `exportar_*` ni, desde 1.16.0, a `ejecutar_codigo` (asíncronas; ver *Ejecución de código*) ni a `listar_lineas_muestreo` (no declara `simular`). Los errores que solo aparecen al escribir (copia fallida, fallo de la API al crear, verificación antes/después) siguen ocurriendo dentro del contexto de comando y pueden dejar su entrada en Deshacer. Coste: cada escritura real hace antes su simulación (milisegundos en casi todas; `crear_superficie_tin` desde archivo lee el archivo dos veces).
 2. **Copia de seguridad antes de cada escritura real (desde 1.3.0, como en Revit)**: si el dibujo está guardado en disco, se copia el `.dwg` **de disco** con `File.Copy` en un hilo aparte, iniciado al entrar en la herramienta y esperado justo antes de tocar el dibujo, a `<carpeta del dwg>\backups\<nombre>_<yyyyMMdd_HHmmss>_<herramienta>.dwg`. Si el `.dwg` no cambió de fecha ni de tamaño desde la copia anterior (y esa copia sigue en disco) se reutiliza sin copiar. **La copia refleja el último guardado en disco, no el estado en memoria** (la respuesta lo dice en `copia.nota`; para conservar el estado actual, `guardar_dibujo` o `guardar_copia` antes). Un dibujo sin guardar en disco sigue usando `SaveAs(ruta, false, DwgVersion.Current, SecurityParameters)` en `%LOCALAPPDATA%\ArbaMcp\backups` y la respuesta lo indica (`copia.metodo: "SaveAs"`). Se conservan las últimas 20 copias de cada dibujo. **Nunca se escribe sin copia terminada**: si la copia falla, la herramienta responde error sin tocar el dibujo. `guardar_copia` no cambia (SaveAs a mano con el sufijo que indiques).
 3. **Registro por llamada**: cada escritura añade una línea a `<carpeta del dwg>\mcp_log.jsonl` y otra al historial (`leer_historial`). `leer_log` devuelve las últimas líneas ya interpretadas. Un lote es una sola línea. **Desde 1.6.0 se registra toda llamada, también las lecturas**, con `id`, `pedido` y `version` (ver *Registro de llamadas* más abajo).
 4. **Verificación antes/después**: tras escribir, la herramienta vuelve a leer el objeto y responde `{"simulado":false,"cambios":[...],"antes":{...},"despues":{...},"copia":{...},"datos":...,"avisos":...}` con los campos que cambiaron. `copia` es un objeto: `ruta`, `metodo` (`copia_de_disco` | `SaveAs`), `reutilizada`, `ms` (lo que tardó la copia; 0 si se reutilizó), `espera_ms` (lo que la escritura esperó a que terminara), `refleja_guardado_de` (fecha del último guardado del `.dwg`; `null` con SaveAs), `bytes`, `estado` y `nota`. Si el dibujo no refleja el cambio pedido, responde `ok=false` con la explicación (y el estado leído) y **no reintenta**.
 5. **Nada se borra ni se recrea**: ninguna herramienta elimina regiones, líneas base, ensamblajes ni superficies, ni usa `Erase()`.
-6. **`simular`** (boolean, por defecto `false`): con `true` responde `{"simulado":true,"accion":"...","antes":{...},"despues":{...}}` con lo que haría, sin tocar el dibujo (tampoco hace copia; sí registra la llamada en el log).
-7. **Una entrada de Deshacer por herramienta, y deshacer propio para los objetivos**: cada escritura (también un lote) corre como un pseudocomando y AutoCAD la anota como una sola entrada `Executefunction` del menú Deshacer, con todas sus transacciones (validado en Civil 3D 2027 el 28/09/2026; no hacen falta marcas de deshacer). AutoCAD anota esa entrada aunque la herramienta falle sin cambiar nada (informe 1.10.0, pasos 8 y 10: un `crear_rasante` con nombre repetido dejó una entrada vacía y luego hizo falta un `_.UNDO 1` de más); desde 1.10.1 la comprobación previa de la regla 1 evita esa entrada en los errores que se detectan leyendo. Las lecturas y las simulaciones no dejan entrada (contexto `Aplicacion` con bloqueo de lectura, validado con la 1.3.1). `_.UNDO 1` revierte las frecuencias, pero **Civil 3D no deshace los cambios de objetivos**: ni tras `SetTargets` ni tras cambiarlos en Propiedades de corredor, `_.UNDO 1` y Ctrl+Z retiran la entrada del menú y el objetivo sigue en el valor nuevo (validado con la 1.3.2, pasos 9 y 9b, con un cambio hecho desde el propio cuadro de Civil 3D). Por eso, desde 1.3.3, cada escritura de objetivos (`asignar_objetivo`, `asignar_objetivos`, `asignar_objetivos_superficie` y, desde 1.11.0, `crear_corredor`, cuyo `antes` es "ninguno" porque el corredor es nuevo) guarda en memoria lo que había antes y devuelve un bloque `restaurar` (`herramienta: deshacer_objetivos`, `args.id`, `antes` por objetivo); **`deshacer_objetivos`** reaplica ese estado tras comprobar que cada objetivo sigue como lo dejó la escritura (si no, va a `fallidos` salvo `forzar=true`). Validado en Civil 3D 2027 el 28/09/2026 (`VALIDACION_13` 1.3.3, pasos 9, 9b y 14; las dos suites de `probar_servidor.py` en `TODO OK`). La pila (50 entradas por dibujo, `Restauraciones.cs`) vive hasta cerrar Civil 3D; si se perdió, `antes` sirve para reasignar a mano.
+6. **`simular`** (boolean, por defecto `false`): con `true` responde `{"simulado":true,"accion":"...","antes":{...},"despues":{...}}` con lo que haría, sin tocar el dibujo (tampoco hace copia; sí registra la llamada en el log). **Excepción desde 1.16.0**: `ejecutar_codigo` simula por defecto (`simular` vale `true` si no se pasa), y su simulación ejecuta el script de verdad dentro de una transacción que se aborta, así que **sí hace copia de seguridad** y corre en contexto `Documento` (ver *Ejecución de código*).
+7. **Una entrada de Deshacer por herramienta, y deshacer propio para los objetivos**: cada escritura (también un lote) corre como un pseudocomando y AutoCAD la anota como una sola entrada `Executefunction` del menú Deshacer, con todas sus transacciones (validado en Civil 3D 2027 el 28/09/2026; no hacen falta marcas de deshacer). AutoCAD anota esa entrada aunque la herramienta falle sin cambiar nada (informe 1.10.0, pasos 8 y 10: un `crear_rasante` con nombre repetido dejó una entrada vacía y luego hizo falta un `_.UNDO 1` de más); desde 1.10.1 la comprobación previa de la regla 1 evita esa entrada en los errores que se detectan leyendo. Las lecturas y las simulaciones no dejan entrada (contexto `Aplicacion` con bloqueo de lectura, validado con la 1.3.1); la excepción es la simulación de `ejecutar_codigo` (1.16.0), que corre en contexto `Documento` con bloqueo de escritura y puede dejar una entrada `Executefunction` vacía, que no deshace nada. `_.UNDO 1` revierte las frecuencias, pero **Civil 3D no deshace los cambios de objetivos**: ni tras `SetTargets` ni tras cambiarlos en Propiedades de corredor, `_.UNDO 1` y Ctrl+Z retiran la entrada del menú y el objetivo sigue en el valor nuevo (validado con la 1.3.2, pasos 9 y 9b, con un cambio hecho desde el propio cuadro de Civil 3D). Por eso, desde 1.3.3, cada escritura de objetivos (`asignar_objetivo`, `asignar_objetivos`, `asignar_objetivos_superficie` y, desde 1.11.0, `crear_corredor`, cuyo `antes` es "ninguno" porque el corredor es nuevo) guarda en memoria lo que había antes y devuelve un bloque `restaurar` (`herramienta: deshacer_objetivos`, `args.id`, `antes` por objetivo); **`deshacer_objetivos`** reaplica ese estado tras comprobar que cada objetivo sigue como lo dejó la escritura (si no, va a `fallidos` salvo `forzar=true`). Validado en Civil 3D 2027 el 28/09/2026 (`VALIDACION_13` 1.3.3, pasos 9, 9b y 14; las dos suites de `probar_servidor.py` en `TODO OK`). La pila (50 entradas por dibujo, `Restauraciones.cs`) vive hasta cerrar Civil 3D; si se perdió, `antes` sirve para reasignar a mano.
 
 8. **Creación de objetos nuevos (desde 1.7.0)**: las herramientas que crean un objeto (`crear_superficie_tin` desde 1.7.0, `crear_alineamiento_desde_polilinea` desde 1.8.0, `crear_perfil_terreno_y_vista` desde 1.9.0, que crea **dos** objetos, perfil y vista, dentro de la misma transacción: si el segundo falla, la transacción se descarta y el primero tampoco queda; `crear_rasante` desde 1.10.0, que crea el perfil de diseño con todos sus PVI y curvas en la misma transacción; `crear_corredor` desde 1.11.0, que crea el corredor con su línea base y su región, pone frecuencias y objetivos y lo reconstruye en la misma transacción, y usa el añadido `AlConfirmar` de `Escritura.Creacion` para apilar la restauración de objetivos justo después de confirmar) pasan por `Escritura.CrearObjeto` con los mismos pasos: `Antes` comprueba que el nombre está libre y que existen el origen, el estilo y el formato (si algo falta, error **sin tocar nada**), la simulación se hace con bloqueo de lectura, la copia debe estar terminada antes de crear, la creación es una sola transacción (una entrada `Executefunction` de Deshacer), y después se relee el objeto nuevo y se verifica (`existe=true` y la comprobación propia de cada herramienta, por ejemplo `puntos > 0`); si no cumple, error sin reintentar. Ninguna herramienta de creación borra ni sustituye un objeto existente del mismo nombre.
 
@@ -271,6 +271,120 @@ curl.exe -X POST $u @h -d '{"tool":"aprobar_resultado","args":{"id_log":"2026103
 #   → {"ok":true,"tool":"aprobar_resultado","id_log":"20261031-143620-b4c5d6","result":{"id":"20261031-143620-0f1e2d","id_log":"20261031-143501-a3f9c2","aprobado":true,"comentario":"correcto","herramienta":"listar_superficies","hora_llamada":"2026-10-31 14:35:01","pedido":"lista las superficies","llamada_ok":true,"ruta":"C:\\Proyectos\\mcp_log.jsonl"}}
 ```
 
+## Ejecución de código: `ejecutar_codigo` (desde 1.16.0)
+
+El último paso antes de `ejecutar_comando`: compila un fragmento de C# con Roslyn dentro del plugin y lo ejecuta en
+Civil 3D. **Desactivada por defecto**: solo funciona si la variable de entorno `ARBA_MCP_CODIGO` vale exactamente `1`
+cuando arranca Civil 3D (variable de usuario de Windows; hay que reiniciar Civil 3D). Si no, sigue apareciendo en
+`GET /tools` y responde `ok=false` con «ejecutar_codigo está desactivada: ...» sin compilar ni tocar nada: sin copia y
+sin entrada en Deshacer (la llamada sí queda en `mcp_log.jsonl`, como todas).
+
+| Herramienta | Parámetros | Devuelve |
+|---|---|---|
+| `ejecutar_codigo` (1.16.0) | codigo_csharp*, simular (boolean, **por defecto `true`**), parametros (json: un objeto, como texto o ya estructurado; el script lo lee como `Parametros`, de solo lectura) | La respuesta estándar de escritura (`simulado`, `accion` o `mensaje`, `cambios`, `antes`/`despues` con `objetos_creados`, `objetos_modificados` y `objetos_borrados`, `copia`, `avisos`) más `datos` (`objetos`: `creados`, `modificados` y `borrados` con `handle`, `tipo`, `nombre` y `capa`, hasta 200 por lista, `temporales` y `recortado`; `mensajes` de `F.Escribir`; `archivos`: `leidos`, `escritos`, `no_escritos_por_simulacion` y `carpeta`; `compilacion`: `ms`, `de_cache`, `lineas` y `roslyn`; `ms_espera`, `ms_script`, `revisiones`, `tiempo_limite_s` y `eventos_bd`) y **`resultado`**: lo que el script devuelve con `return`, convertido a JSON (`ObjectId` → handle, `Point3d` → `{x,y,z}`, un objeto de AutoCAD → `{tipo, handle, nombre, capa}`; hasta 8 niveles, 1000 elementos por lista y 100 000 caracteres por texto, con aviso si se recorta). API: Roslyn (`Microsoft.CodeAnalysis.CSharp` 5.0.0, de NuGet), `Transaction.GetAllObjects()`, `DBObject.IsNewObject`/`IsModified`/`IsErased`, `ObjectId.IsValid`/`IsErased`, `TransactionManager.TopTransaction` y, como apoyo, los eventos `Database.ObjectAppended`/`ObjectModified`/`ObjectErased` |
+
+**El script** es el cuerpo de un método `object Ejecutar(Fachada F, JsonElement Parametros)`: sentencias, variables y
+funciones locales, sin declarar clases ni métodos; puede empezar con `using`. Using por defecto: `System`,
+`System.Collections.Generic`, `System.Linq`, `System.Text`, `System.Globalization`, `Autodesk.AutoCAD.ApplicationServices`,
+`Autodesk.AutoCAD.DatabaseServices` y `Autodesk.AutoCAD.Geometry`, más los alias `Civ` = `Autodesk.Civil.DatabaseServices`
+(`Civ.Alignment`, `Civ.Surface`: con un using normal, `Entity`, `DBObject` y `Surface` serían ambiguos) y `AcApp` =
+`Autodesk.AutoCAD.ApplicationServices.Application`. La **Fachada `F`** (`Fachada.cs`) tiene lo básico:
+
+- Dibujo: `F.Doc`, `F.Db`, `F.Tr` (la transacción del script), `F.Civil` (`CivilApplication.ActiveDocument`), `F.Simulando` y `F.Parametros`.
+- Búsqueda por nombre, con los mismos errores que las herramientas («No existe ... Usa listar_...»): `F.Alineamiento(nombre)`, `F.Perfil(eje, nombre)`, `F.Superficie`, `F.Corredor`, `F.Ensamblaje`, `F.Capa` y `F.Bloque`.
+- Objetos: `F.Abrir<T>(id, escribir)`, `F.Agregar(entidad)` (al espacio modelo) y `F.EspacioModelo()`.
+- Mensajes y parámetros: `F.Escribir(texto)` (hasta 200, salen en `datos.mensajes`), `F.Texto`, `F.Numero` y `F.Booleano(nombre, porDefecto)`.
+- Archivos, solo en la **carpeta permitida** `%LOCALAPPDATA%\ArbaMcp\scripts` y con nombres relativos (sin `..`, sin unidad, sin `CON`/`NUL`...): `F.LeerTexto(nombre)`, `F.EscribirTexto(nombre, texto)`, `F.ListarArchivos()` y `F.CarpetaPermitida`. Lo escrito se guarda al final, solo si el script termina bien y no es una simulación.
+
+**Cómo corre** (`Herramientas.Codigo.cs`; sin Civil 3D, `ArbaMcp.Nucleo/Codigo*.cs`):
+
+1. **Activación y compilación en el hilo del servidor**, sin tocar la API de AutoCAD. El código se envuelve con
+   directivas `#line` para que los errores digan la línea del agente; se comprueba que queda entero dentro del método
+   (unas llaves que lo cierran antes de tiempo, o una clase nueva, no compilan) y se revisa la **lista blanca**. Si algo
+   falla: `ok=false` con «ejecutar_codigo: el código no se puede ejecutar (...). No se ejecutó nada: sin copia de
+   seguridad, sin contexto de comando y sin entrada en Deshacer.» y una línea por problema
+   (`Línea N, columna M: [bloqueado: categoría] ...` o `Línea N, columna M: CSxxxx ...`, con el texto de la línea, una
+   marca `^` y una pista). Los avisos de miembro obsoleto (CS0618) van a `avisos`. Las últimas 32 compilaciones se
+   guardan por el texto del código (`de_cache`).
+2. **Lista blanca** (`CodigoReglas`, revisada por `CodigoRevisor` con el árbol sintáctico y el modelo semántico de
+   Roslyn): solo lo básico de System (números, textos, fechas, colecciones, LINQ, `StringBuilder`, JSON, `Path`,
+   `Stopwatch`) y la API de AutoCAD y Civil 3D. **No compila**, y el error dice la categoría: red (`System.Net`,
+   `GetRemoteFile`), procesos (`Process`, COM `Autodesk.AutoCAD.Interop`), archivos (`File`, `Directory`, flujos, y todo
+   miembro de la API con un parámetro de archivo o ruta, `SaveAs(fileName)`, `AddPointFile(pointFilePath)`..., o asignar una ruta a una propiedad, `RasterImageDef.SourceFileName`, `BlockTableRecord.PathName`),
+   reflexión (`GetMethod`, `Assembly`, `Activator`, `dynamic`, expresiones), hilos (`Thread`, `Task`, `async`/`await`,
+   `lock`, PLINQ), código nativo (`unsafe`, punteros, `DllImport`, `Marshal`, un `IntPtr` que no sea `IntPtr.Zero`),
+   el proceso (`Environment` salvo `NewLine`, `AppDomain`, `GC`, `Console`, `Quit`), ventanas y entrada interactiva
+   (`ShowAlertDialog`, `Editor.Get*`, `Autodesk.AutoCAD.Windows`, `Autodesk.Windows`, `System.Windows`), eventos
+   (cualquier `+=` a un evento), comandos (`SendStringToExecute`, `Editor.Command`, `Application.Invoke` de LISP),
+   la transacción (`StartOpenCloseTransaction`, `TopTransaction`, `ObjectId.Open`), documentos (abrir, cerrar,
+   guardar, cambiar el dibujo activo), variables de sistema y del dibujo (`SetSystemVariable`, asignar propiedades de `Database` como `Clayer`, el perfil `UserConfigurationManager`: abortar la transacción no las deshace), el plugin (de ArbaMcp solo `F`) y la
+   regla del proyecto (`Remove`/`RemoveAt` de regiones, líneas base y superficies de corredor). También `goto`,
+   atributos, `#line` y los nombres que empiezan por `__arba`.
+3. **Ejecución en el hilo principal**, en contexto `Documento` (una entrada `Executefunction` de Deshacer) y con el
+   dibujo bloqueado, por `Escritura.Ejecutar`: comprobaciones previas y **copia de seguridad terminada antes de
+   ejecutar nada, también al simular**. El script corre en una transacción anidada (`F.Tr`) dentro de una del plugin
+   que el script no ve: si el script confirma, aborta o abre sus propias transacciones (lo normal en el código de
+   ejemplo de AutoCAD), el plugin puede deshacerlo todo al simular; las que deje abiertas se abortan con aviso. El
+   ensamblado del script se carga en un `AssemblyLoadContext` **coleccionable** propio que se descarga al terminar.
+   Si Civil 3D sigue ocupado 30 s, se descarta sin ejecutarse («ejecutar_codigo no se ejecutó: Civil 3D siguió
+   ocupado ...»).
+4. **Tiempo límite cooperativo de 60 s** (`CodigoVigilante`, con un `CancellationToken`): lo revisa cada ayuda de `F`
+   y una llamada que el compilador inserta al principio del script y de **cada bucle, función local y lambda** (sin
+   cambiar los números de línea). Esa revisión también mira la pila: una recursión infinita da un error en vez de
+   cerrar Civil 3D. **Por qué no se puede detener un script a la fuerza**: .NET 10 no tiene `Thread.Abort`; el script
+   tiene que correr en el hilo principal de AutoCAD, el único que puede tocar el dibujo, y matar ese hilo es cerrar
+   Civil 3D; y aunque se pudiera, cortarlo a mitad de una llamada a la API dejaría el dibujo a medio escribir, con
+   transacciones y bloqueos abiertos. Tampoco puede ir a otro proceso: necesita el dibujo que está en memoria. Así que
+   el script se detiene solo, en la siguiente revisión. Lo que no se puede cortar: una sola llamada larga a la API (un
+   `Rebuild` enorme) hasta que vuelve, o una operación que agote la memoria; la protección final es la copia.
+5. **Qué cambió**: `Transaction.GetAllObjects()` de la transacción del plugin con `IsNewObject`, `IsModified` e
+   `IsErased` (camino principal) y, como apoyo, los eventos `ObjectAppended`, `ObjectModified` y `ObjectErased` de la
+   base de datos (cada uno en su `try`, con baja segura; si no están, `datos.eventos_bd` lo dice y la herramienta
+   sigue). Un objeto creado y borrado en el mismo script cuenta como `temporales`.
+6. **Simulación** (`simular=true`, por defecto): se aborta la transacción y se comprueba que lo creado ya no está. La
+   respuesta avisa siempre que **la simulación no es garantía total con objetos de Civil 3D** y que la protección
+   real es la copia; si algo creado sigue en el dibujo tras abortar, lo lista con «ATENCIÓN: ...». Los archivos de
+   `F.EscribirTexto` no se escriben (`no_escritos_por_simulacion`).
+7. **Escritura real** (`simular=false`): se confirma, se vuelve a leer en una transacción nueva y se comprueba que lo
+   creado existe y lo borrado está borrado; si no cuadra, error sin reintentar.
+8. **Regla del proyecto**: si el script borra una superficie, un corredor o un ensamblaje, se detiene en la siguiente
+   revisión, se aborta todo y responde «Regla del proyecto: el script borró ...».
+9. **Errores del script** (en tiempo de ejecución): «El script falló en la línea N: Tipo: mensaje. No se aplicó nada:
+   la transacción se abortó. Copia de seguridad: ...»; por tiempo, «El script superó el tiempo límite de 60 s y se
+   detuvo en la línea N ...» (`TimeoutException`).
+
+**Roslyn dentro de Civil 3D**: las DLL (`Microsoft.CodeAnalysis.dll`, `Microsoft.CodeAnalysis.CSharp.dll` y sus
+traducciones en `es\`) vienen de NuGet al compilar y `instalar.ps1` las deja en `Contents\roslyn` del bundle, **nunca
+junto a `ArbaMcp.dll`** (no van al repositorio). El plugin las carga en un contexto de carga propio
+(`ArbaMcp.Compilador`) con una segunda copia de `ArbaMcp.Nucleo.dll` (`CargadorCompilador`), de modo que otra versión
+de Roslyn que traigan AutoCAD, Dynamo u otro plugin no estorbe ni se vea estorbada. El script se compila contra las
+DLL del runtime, las de Autodesk ya cargadas desde la carpeta de AutoCAD, `ArbaMcp.dll` y `ArbaMcp.Nucleo.dll`.
+
+**Excepciones documentadas a las reglas de escritura**:
+
+- **Copia también al simular** (regla 2; regla 4.2 y 4.3 de `CLAUDE.md`): lo pide el prompt 3.1, porque una
+  simulación de un script ejecuta el código de verdad y se aborta.
+- **La simulación corre en contexto `Documento`** con bloqueo de escritura (para que el script pueda escribir antes de
+  abortar) y **puede dejar una entrada `Executefunction` vacía** en Deshacer (regla 7).
+- **Sin comprobación previa por simulación** (regla 1): es asíncrona, como `ejecutar_comando`. Ensayarla sería
+  ejecutar el script dos veces (el doble de tiempo y de efectos que una transacción abortada puede no deshacer), y la
+  comprobación previa corre con bloqueo de lectura, donde cualquier script que escriba fallaría. Lo que buscaba esa
+  comprobación (errores sin entrada vacía en Deshacer) ya lo da el paso 1: los errores de compilación y de lista blanca
+  se responden antes de tocar Civil 3D.
+- Como herramienta asíncrona, `ms_espera` y `ms_ejecucion` del sobre van en `null`; los tiempos están en `datos`.
+
+**Tiempos**: 60 s de script, hasta 30 s esperando a que Civil 3D quede libre y la compilación (la primera, unos
+segundos; las repetidas salen de la caché) quedan por debajo de los 120 s que el puente da a las escrituras, así que
+`ejecutar_codigo` no está en `HERRAMIENTAS_LARGAS` y el puente no cambia.
+
+```powershell
+# 1.16.0: ejecutar_codigo (desactivada por defecto: ARBA_MCP_CODIGO=1 y reiniciar Civil 3D). Sin 'simular' es una simulación.
+curl.exe -X POST $u @h -d '{"tool":"ejecutar_codigo","args":{"codigo_csharp":"var l = new Line(new Point3d(0,0,0), new Point3d(100,0,0)); F.Agregar(l); return new { largo = l.Length, capa = l.Layer };","pedido":"dibuja una línea de prueba de 100 m"}}'
+#   → {"ok":true,"tool":"ejecutar_codigo",...,"result":{"simulado":true,"herramienta":"ejecutar_codigo","accion":"Ejecutar un script de 1 línea(s) en simulación: ...","cambios":["objetos_creados","objetos_modificados"],...,"copia":{...},"datos":{"objetos":{"creados":[{"handle":"2A3","tipo":"Line","nombre":null,"capa":"0"}],...}},"resultado":{"largo":100,"capa":"0"}}}
+curl.exe -X POST $u @h -d '{"tool":"ejecutar_codigo","args":{"codigo_csharp":"var l = new Line(new Point3d(0,0,0), new Point3d(100,0,0)); F.Agregar(l); return new { largo = l.Length, capa = l.Layer };","simular":false}}'
+curl.exe -X POST $u @h -d '{"tool":"ejecutar_codigo","args":{"codigo_csharp":"var al = F.Abrir<Civ.Alignment>(F.Alineamiento(F.Texto(\"eje\"))); return new { al.Name, al.Length };","parametros":"{\"eje\":\"Eje 1\"}"}}'
+```
+
 ## Exportación (excepción: por comando, no por API)
 
 Civil 3D no expone en `Autodesk.Civil.DatabaseServices` una API de exportación a LandXML ni a IMX. Estas dos
@@ -427,7 +541,7 @@ Sin token responde 401 (salvo `GET /ping`); con cabecera `Origin`, 403; `POST` s
 
 | Qué | Dónde | Cómo | Necesita Civil 3D |
 |---|---|---|---|
-| Núcleo del plugin (autorización, argumentos, verificación, copias, cola, lotes, reflexión) | `ArbaMcp.Pruebas` (xUnit) | `dotnet test ArbaMcp.Pruebas` | No |
+| Núcleo del plugin (autorización, argumentos, verificación, copias, cola, lotes, reflexión; desde 1.16.0 la lista blanca, la compilación, el tiempo límite y la ejecución aislada de `ejecutar_codigo`, con una biblioteca falsa de Autodesk) | `ArbaMcp.Pruebas` (xUnit) | `dotnet test ArbaMcp.Pruebas` | No |
 | Puente (registro dinámico, timeouts, 401, JSON, `ms_puente`, `/ping`, retiradas; desde 1.5.0 `buscar_api` con un catálogo y un glosario de ejemplo, nunca los reales; desde 1.6.0 `id_log` y `exportar_dataset` con registros de ejemplo con rutas y obras falsas) | `PuenteMcp/tests` (pytest) | `cd PuenteMcp; uv run --frozen pytest -q` (o `.venv\Scripts\python -m pytest`) | No (servidor falso) |
 | Compilación del plugin contra sustitutos de la API | `herramientas-dev/CompilarSinCivil` | `dotnet build herramientas-dev/CompilarSinCivil` | No (solo nombres y tipos) |
 | Humo en el programa real | `ArbaMcp/pruebas/probar_servidor.py` | sin argumentos (seguridad, `ejecutar_comando`, "Civil 3D ocupado"); `--dwg RUTA.dwg` (lectura, `simular`, copia nueva o reutilizada, `mcp_log.jsonl`, `deshacer_objetivos`; desde 1.3.2 la suite base sabe que `GET /ping` es público y que la copia puede reutilizarse; desde 1.3.3 la prueba 6 usa `deshacer_objetivos` y nunca una superficie de corredor); `--fase 13` (lo nuevo de 1.3.x: `/ping` sin token, 401 agrupados, `ms_espera`, `ms_puente`, lotes, `deshacer_objetivos` sobre el lote, `_.UNDO 1` sobre las frecuencias, `copia.reutilizada`, rechazo de la superficie del propio corredor); `--fase todo` | Sí |
