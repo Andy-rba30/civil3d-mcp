@@ -7,7 +7,7 @@ prompt.
 
 ---
 
-## 0. Avance (actualizado el 13/11/2026, tras la 1.11.0)
+## 0. Avance (actualizado el 14/11/2026, tras la 1.15.1: Etapa 2 hecha)
 
 Leyenda: ✅ hecho y verificado · 🟡 hecho, falta comprobar algo · ⬜ pendiente · ❓ no se puede comprobar desde
 civil3d-mcp (vive en `memoria-firma` o en la PC).
@@ -26,13 +26,14 @@ civil3d-mcp (vive en `memoria-firma` o en la PC).
 | Etapa 2 | 2.2 `crear_alineamiento_desde_polilinea` | ✅ | 1.8.0, informe del 31/10/2026 |
 | Etapa 2 | 2.3 `crear_perfil_terreno_y_vista` | ✅ | 1.9.0, informe del 31/10/2026 |
 | Etapa 2 | 2.4 `crear_rasante` | ✅ | 1.10.0, informe del 13/11/2026 (PR #19) |
-| Etapa 2 | 5.2-D y 5.2-PC tras cada herramienta | 🟡 | Evaluación del 31/10/2026 con la 1.9.0: tareas 1 a 3 OK, 4 a 10 FALLO. **Falta la evaluación con la 1.11.0** (deberían pasar la 4, la rasante, y la 5, el corredor) |
+| Etapa 2 | 5.2-D y 5.2-PC tras cada herramienta | ✅ | Evaluación del 14/11/2026 (11:50) con la 1.15.0: **10 de 10 OK** (`memoria-firma/evaluacion/informes/informe_evaluacion_20261114_1150.yaml`; antes, 6 de 10 a las 09:59 y 3 de 10 el 31/10). Tres comprobaciones manuales del banco no se hicieron (curvas de la tarea 1, cálculo manual de la 8, informe de Civil 3D de la 9) |
 | Etapa 2 | 2.5 `crear_corredor`, parte A (corredor, región, frecuencia, objetivos) | ✅ | 1.11.0, informe del 13/11/2026 (PR #23) |
-| Etapa 2 | **2.5 parte B: superficies de corredor «Top» y «Datum»** | ⬜ **siguiente** | — |
-| Etapa 2 | 2.6 `crear_secciones` | ⬜ | — |
-| Etapa 2 | 2.7 `calcular_volumenes` | ⬜ | — |
-| Etapa 2 | 2.8 Receta "flujo vial completo" | ⬜ | Hito de la Etapa 2: la tarea 10 (flujo completo) da OK |
-| Etapa 3 | 3.1 `ejecutar_codigo` · 3.2 Recetas · 3.3 Promoción (mensual) | ⬜ | — |
+| Etapa 2 | 2.5 parte B: superficies de corredor «Top» y «Datum» | ✅ | 1.12.0 `crear_superficies_corredor`, informe del 14/11/2026 (PR #26) |
+| Etapa 2 | 2.6 `crear_secciones` | ✅ | 1.13.0 y correcciones 1.14.1 y 1.14.2 (nombres de línea únicos), informes 113 y 1142 del 14/11/2026 (PR #27 y #31) |
+| Etapa 2 | 2.7 `calcular_volumenes` | ✅ | 1.14.0 y correcciones 1.14.2 y 1.14.3 (tabla por progresivas), informes 114, 1142 y 1143 del 14/11/2026 (PR #31) |
+| Etapa 2 | 2.8 Receta "flujo vial completo" | ✅ | Receta 2b de `INSTRUCCIONES_AGENTE.md` (PR #29); informe del flujo completo del 14/11/2026 (117 s frente a 130 min). **Hito de la Etapa 2 cumplido**: la tarea 10 da OK (evaluación del 14/11/2026) |
+| Etapa 2 | Extra: `listar_pis` (tabla de PI del eje, tarea 9 de la evaluación) | ✅ | 1.15.0, informe 115 del 14/11/2026 (PR #35); en `main` como 1.15.1 |
+| Etapa 3 | 3.1 `ejecutar_codigo` · 3.2 Recetas · 3.3 Promoción (mensual) | ⬜ **siguiente (ronda B)** | — |
 | Etapa 4 | 4.1 Tablas DG-2018 · 4.2 `verificar_norma` · 4.3 Norma en el alineamiento | ⬜ | — |
 | Continuo | F · L.2 · 5.2 | ❓ | Viven en `memoria-firma` y en la PC |
 
@@ -43,15 +44,18 @@ la 4.1 no necesita la PC). El estado al día de ramas, PR y sesiones está en `h
 **Pendientes que no están en la hoja de ruta** (salieron de las validaciones; ver los hechos validados de `CLAUDE.md`).
 Resueltos en la 1.10.1 (validada el 13/11/2026, PR #22): `ejecutar_comando` conserva los espacios finales, un error
 de escritura ya no deja una entrada vacía en Deshacer, `ping` da tres cifras y los errores de estilo listan los nombres.
+Resueltos en la 1.14.1 (validada el 14/11/2026): el punto de inserción automático usa la extensión del eje y de sus
+vistas, el corredor va a la capa de la configuración (`C-ROAD-CORR`) y `buscar_api.py` funciona en cp1252.
 Siguen abiertos:
 
-- Ctrl+Z no quita la superficie TIN (informe 1.7.0, paso 10); en cambio, sí quita las rasantes (informe 1.10.0).
-- El punto de inserción automático de la vista de perfil usa la extensión de todo el dibujo (informe 1.9.0, paso 2).
-- La tabla de miembros y los hechos validados de `CLAUDE.md` aún no recogen las validaciones 1.10.1 y 1.11.0 (solo
-  documentación).
-- El corredor se crea en la capa `0` (informe 1.11.0, pregunta 5): valorar usar la capa de la configuración de Civil 3D.
-- `buscar_api.py` en modo comando puede fallar en una consola Windows cp1252, como le pasaba a `exportar_dataset`
-  (propuesta del PR #23).
+- Ctrl+Z no quita la superficie TIN (informe 1.7.0), ni las superficies de corredor (informe 1.12.0), ni la superficie de
+  volumen (informe 1.14.0); en cambio, sí quita las rasantes (1.10.0), el corredor (1.11.0) y un contorno (1.14.1).
+  Valorar un deshacer propio, como `deshacer_objetivos`.
+- La tabla de miembros y los hechos validados de `CLAUDE.md` aún no recogen las validaciones 1.10.1 a 1.15.1 (sesión de
+  hallazgos, solo documentación).
+- La tabla por progresivas de `calcular_volumenes` difiere de la superficie de volumen (corte 16,6 %, relleno 4,1 % en
+  la 1143): manda la superficie; investigar si conviene limitar las áreas al tramo donde existe la Datum.
+- `memoria-firma/evaluacion/datos_prueba/` está vacío: los datos de la evaluación se improvisan con equivalentes.
 
 ---
 
