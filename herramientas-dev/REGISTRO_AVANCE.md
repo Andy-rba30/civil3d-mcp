@@ -79,6 +79,21 @@ Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a
 - Al terminar: la orquestadora fusiona `tarea/3.1-ejecutar-codigo` en `tarea/3.2-recetas` (versión 1.17.0), que será la
   rama de la **única instalación de la ronda B**: VALIDACION_116 → VALIDACION_117 → evaluación 5.2-D/PC (sobre una copia
   nueva de `PRUEBA_EVALUACION_BASE.dwg`).
+- **18:00, el dueño sale unas horas y pide adelantar todo lo que no necesite su PC.** Se lanzan además dos mejoras
+  pequeñas que entran en la misma instalación de la ronda B (sin tocar versión: la pone la orquestadora al integrar):
+  - `session_011fq2pHySa8d4fvCQEix3Gm`: **tabla por progresivas solo donde existe la Datum** (`calcular_volumenes`,
+    será la 1.17.1) en `tarea/2.11-tabla-volumen-datum`, con `VALIDACION_1171.md` sobre `PRUEBA_1142.dwg`.
+  - `session_011fq2pFZ4ZspM3F9GeCq9e2`: **`crear_superficie_tin` elige un estilo con las curvas pedidas** (1 y 5 m; será
+    la 1.17.2) en `tarea/2.12-curvas-estilo-tin`, con `VALIDACION_1172.md`.
+  - Planes aprobados a las 17:58: hallazgos (sin cambiar títulos de las secciones: párrafo «Validada el 14/11/2026») y
+    3.2 (herramientas del puente; `parametros` con la misma forma que los `json` del plugin). La 3.1 aún prepara el suyo.
+- **Datos de la evaluación**: `add_repo` de memoria-firma con permiso de escritura lo deniega el clasificador. Se
+  prepararon `puntos_terreno.csv`, `eje_polilinea.dxf`, `pvi_rasante.csv` y `LEEME.md` (sintéticos) para que el agente
+  instalador los cree en `C:\Proyectos\memoria-firma\evaluacion\datos_prueba\` y los suba con L.2.
+- Etapa 4 bloqueada hasta que el dueño suba el PDF de la DG-2018 a `memoria-firma/normas/fuentes/` (hoy solo `.gitkeep`)
+  y prepare los 5 casos calculados a mano.
+- **Integración prevista de la ronda B**: `tarea/3.1` → `tarea/3.2` → + `tarea/2.11` + `tarea/2.12` en una sola rama
+  (versión **1.17.2**). Orden en la PC: VALIDACION_116 → 117 → 1171 → 1172 → evaluación (5.2-D/PC).
 
 ## Historial de la ronda A (14/11/2026)
 
