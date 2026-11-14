@@ -208,5 +208,239 @@ namespace ArbaMcp.Pruebas
             Assert.Equal(2, e.N);
             Assert.Equal(-1, e.MinX); Assert.Equal(1, e.MaxX); Assert.Equal(2, e.MinY); Assert.Equal(5, e.MaxY); Assert.Equal(0, e.MinZ); Assert.Equal(3, e.MaxZ);
         }
+
+        // ------------------------------------------------------------------ 1.17.2: estilo elegido por sus curvas
+        private static EstiloCurvas Est(string nombre, double? menor, double? mayor, bool? menorVisible = true, bool? mayorVisible = true)
+            => new EstiloCurvas { Nombre = nombre, Menor = menor, Mayor = mayor, MenorVisible = menorVisible, MayorVisible = mayorVisible };
+
+        /// <summary>Los estilos de superficie del dibujo de prueba (informe 1.14, paso 5.7) con intervalos plausibles.</summary>
+        private static List<EstiloCurvas> EstilosPlantilla() => new List<EstiloCurvas>
+        {
+            Est("Contours 5m and 25m (Background)", 5, 25),
+            Est("Border Only", 1, 5, false, false),
+            Est("Contours 2m and 10m (Background)", 2, 10),
+            Est("Contours and Triangles", 1, 5),
+            Est("Contours 5m and 25m (Design)", 5, 25),
+            Est("Elevation Banding 1m Interval (2D)", 1, 5, false, false),
+            Est("Contours 1m and 5m (Background)", 1, 5),
+            Est("_No Display", 1, 5, false, false),
+            Est("Contours 2m and 10m (Design)", 2, 10),
+            Est("Contours 1m and 5m (Design)", 1, 5)
+        };
+
+        [Fact]
+        public void IntervalosCoincidenConToleranciaDeUnMilimetro()
+        {
+            Assert.Equal(0.001, SuperficieTin.ToleranciaIntervalos);
+            Assert.True(SuperficieTin.IntervaloCoincide(1, 1));
+            Assert.True(SuperficieTin.IntervaloCoincide(1, 1.0009));
+            Assert.True(SuperficieTin.IntervaloCoincide(1, 0.999));
+            Assert.False(SuperficieTin.IntervaloCoincide(1, 1.002));
+            Assert.False(SuperficieTin.IntervaloCoincide(1, null));
+            Assert.True(SuperficieTin.Coinciden(1, 5, 1.0005, 4.9995));
+            Assert.False(SuperficieTin.Coinciden(1, 5, 1, 25));
+            Assert.True(SuperficieTin.Coinciden(1, null, 1, 25), "el intervalo que no se pide no se compara");
+            Assert.True(SuperficieTin.Coinciden(null, 5, 2, 5));
+            Assert.False(SuperficieTin.Coinciden(null, null, 1, 5), "sin intervalos pedidos no hay nada que coincida");
+        }
+
+        [Fact]
+        public void FamiliaEsElUltimoParentesisDelNombre()
+        {
+            Assert.Equal("background", SuperficieTin.Familia("Contours 5m and 25m (Background)"));
+            Assert.Equal("design", SuperficieTin.Familia(" Contours 1m and 5m (Design) "));
+            Assert.Equal("2d", SuperficieTin.Familia("Elevation Banding (2D)"));
+            Assert.Null(SuperficieTin.Familia("Contours and Triangles"));
+            Assert.Null(SuperficieTin.Familia("Raro (abierto"));
+            Assert.Null(SuperficieTin.Familia("Vacío ()"));
+            Assert.Null(SuperficieTin.Familia(null));
+        }
+
+        [Fact]
+        public void SinIntervalosPedidosNoHayEleccion()
+        {
+            Assert.Null(SuperficieTin.ElegirEstilo(EstilosPlantilla(), null, null, null, "Contours 5m and 25m (Background)"));
+            Assert.Null(SuperficieTin.ElegirEstilo(EstilosPlantilla(), null, null, "Border Only", null));
+        }
+
+        [Fact]
+        public void SinEstiloEligeElDeLaFamiliaDelEstiloPorDefecto()
+        {
+            var r = SuperficieTin.ElegirEstilo(EstilosPlantilla(), 1, 5, null, "Contours 5m and 25m (Background)");
+            Assert.Equal(EleccionEstilo.Automatica, r.Eleccion);
+            Assert.Equal("Contours 1m and 5m (Background)", r.Estilo);
+            Assert.Equal(new[] { "Contours 1m and 5m (Design)", "Contours and Triangles" }, r.OtrosQueCoinciden);
+            Assert.Equal(new[] { "Border Only", "Elevation Banding 1m Interval (2D)", "_No Display" }, r.DescartadosSinCurvasVisibles);
+            Assert.Contains("aplicados sin 'estilo'", r.Motivo);
+            Assert.Contains("misma familia («Background»)", r.Motivo);
+            Assert.Contains("'Contours 5m and 25m (Background)'", r.Motivo);
+            Assert.Contains("También coinciden: 'Contours 1m and 5m (Design)', 'Contours and Triangles'", r.Motivo);
+            Assert.Contains("descartados", r.Motivo);
+            Assert.Contains("No se modificó ni se creó ningún estilo", r.Motivo);
+            Assert.DoesNotContain("compruébalo en pantalla", r.Motivo);
+
+            var d = SuperficieTin.ElegirEstilo(EstilosPlantilla(), 1, 5, null, "Contours 5m and 25m (Design)");
+            Assert.Equal("Contours 1m and 5m (Design)", d.Estilo);
+            Assert.Contains("(«Design»)", d.Motivo);
+        }
+
+        [Fact]
+        public void SinEstiloPorDefectoLegibleSeTomaElPrimeroPorOrdenAlfabetico()
+        {
+            var r = SuperficieTin.ElegirEstilo(EstilosPlantilla(), 1, 5, null, null);
+            Assert.Equal("Contours 1m and 5m (Background)", r.Estilo);
+            Assert.Contains("no se pudo leer el estilo por defecto", r.Motivo);
+            Assert.Contains("orden alfabético", r.Motivo);
+
+            // El por defecto no tiene familia: alfabético, y se dice
+            var s = SuperficieTin.ElegirEstilo(EstilosPlantilla(), 1, 5, null, "Standard");
+            Assert.Equal("Contours 1m and 5m (Background)", s.Estilo);
+            Assert.Contains("ninguno es de la familia del estilo por defecto del dibujo 'Standard'", s.Motivo);
+        }
+
+        [Fact]
+        public void ElEstiloPorDefectoGanaSiYaTieneLosIntervalos()
+        {
+            var r = SuperficieTin.ElegirEstilo(EstilosPlantilla(), 1, 5, null, "contours 1m and 5m (design)");
+            Assert.Equal(EleccionEstilo.Automatica, r.Eleccion);
+            Assert.Equal("Contours 1m and 5m (Design)", r.Estilo);
+            Assert.Contains("además es el estilo por defecto", r.Motivo);
+        }
+
+        [Fact]
+        public void UnSoloEstiloQueCoincideSeUsaSinDesempate()
+        {
+            var r = SuperficieTin.ElegirEstilo(EstilosPlantilla(), 2, 10, null, "Contours 2m and 10m (Design)");
+            Assert.Equal("Contours 2m and 10m (Design)", r.Estilo);
+            var solo = SuperficieTin.ElegirEstilo(new List<EstiloCurvas> { Est("Curvas 0.5 y 2.5", 0.5, 2.5) }, 0.5, 2.5, null, "Otro");
+            Assert.Equal("Curvas 0.5 y 2.5", solo.Estilo);
+            Assert.Contains("el único del dibujo con esos intervalos", solo.Motivo);
+            Assert.Empty(solo.OtrosQueCoinciden);
+            Assert.True(SuperficieTin.Aplicados(0.5, 2.5, solo.Usado));
+        }
+
+        [Fact]
+        public void LosEstilosQueOcultanLasCurvasNuncaSeEligen()
+        {
+            // Border Only va antes por orden alfabético, pero no dibuja curvas: no se elige
+            var estilos = new List<EstiloCurvas> { Est("Border Only", 1, 5, false, false), Est("Curvas 1 y 5", 1, 5) };
+            var r = SuperficieTin.ElegirEstilo(estilos, 1, 5, null, null);
+            Assert.Equal("Curvas 1 y 5", r.Estilo);
+            Assert.Equal(new[] { "Border Only" }, r.DescartadosSinCurvasVisibles);
+
+            // Solo la mayor oculta y se pide la mayor: descartado; se pide solo la menor: vale
+            var soloMenores = new List<EstiloCurvas> { Est("Solo menores", 1, 5, true, false) };
+            Assert.Equal(EleccionEstilo.PorDefecto, SuperficieTin.ElegirEstilo(soloMenores, 1, 5, null, null).Eleccion);
+            Assert.Equal("Solo menores", SuperficieTin.ElegirEstilo(soloMenores, 1, null, null, null).Estilo);
+        }
+
+        [Fact]
+        public void LaVisibilidadDesconocidaVaDetrasYSeAvisa()
+        {
+            var estilos = new List<EstiloCurvas> { Est("A curvas", 1, 5, null, null), Est("B curvas", 1, 5) };
+            var r = SuperficieTin.ElegirEstilo(estilos, 1, 5, null, null);
+            Assert.Equal("B curvas", r.Estilo);
+            Assert.Equal(new[] { "A curvas" }, r.OtrosQueCoinciden);
+
+            var desconocidos = new List<EstiloCurvas> { Est("A curvas", 1, 5, null, null) };
+            var d = SuperficieTin.ElegirEstilo(desconocidos, 1, 5, null, null);
+            Assert.Equal("A curvas", d.Estilo);
+            Assert.Contains("compruébalo en pantalla", d.Motivo);
+            Assert.Null(SuperficieTin.CurvasVisibles(d.Usado, 1, 5));
+            Assert.True(SuperficieTin.Aplicados(1, 5, d.Usado), "desconocida no impide aplicar; se avisa");
+        }
+
+        [Fact]
+        public void SinNingunEstiloQueCoincidaSeQuedaElPorDefectoComoAntes()
+        {
+            var r = SuperficieTin.ElegirEstilo(EstilosPlantilla(), 0.37, 3.7, null, "Contours 5m and 25m (Background)");
+            Assert.Equal(EleccionEstilo.PorDefecto, r.Eleccion);
+            Assert.Null(r.Estilo);
+            Assert.Equal("Contours 5m and 25m (Background)", r.Usado.Nombre);
+            Assert.Contains("Intervalos de curvas pedidos (menor 0.37 y mayor 3.7) sin aplicar", r.Motivo);
+            Assert.Contains("no modifica ni crea estilos", r.Motivo);
+            Assert.Contains("El estilo 'Contours 5m and 25m (Background)' tiene menor 5 y mayor 25", r.Motivo);
+            Assert.Contains("Ningún estilo de superficie del dibujo tiene esos intervalos", r.Motivo);
+            Assert.False(SuperficieTin.Aplicados(0.37, 3.7, r.Usado));
+
+            // Estilo por defecto que no se pudo leer: el aviso sale igual, sin intervalos del estilo
+            var s = SuperficieTin.ElegirEstilo(EstilosPlantilla(), 0.37, 3.7, null, null);
+            Assert.Null(s.Usado);
+            Assert.Contains("sin aplicar", s.Motivo);
+            Assert.DoesNotContain("tiene menor", s.Motivo);
+
+            // Solo coinciden estilos que ocultan las curvas: se dicen como descartados
+            var t = SuperficieTin.ElegirEstilo(new List<EstiloCurvas> { Est("Border Only", 1, 5, false, false) }, 1, 5, null, null);
+            Assert.Equal(EleccionEstilo.PorDefecto, t.Eleccion);
+            Assert.Contains("(descartados): 'Border Only'", t.Motivo);
+        }
+
+        [Fact]
+        public void ElEstiloIndicadoSeRespetaSiempre()
+        {
+            var r = SuperficieTin.ElegirEstilo(EstilosPlantilla(), 1, 5, "contours 5m and 25m (background)", "Contours 5m and 25m (Background)");
+            Assert.Equal(EleccionEstilo.Indicada, r.Eleccion);
+            Assert.Equal("Contours 5m and 25m (Background)", r.Estilo);
+            Assert.Contains("sin aplicar", r.Motivo);
+            Assert.Contains("El estilo 'Contours 5m and 25m (Background)' tiene menor 5 y mayor 25", r.Motivo);
+            Assert.Contains("Estilos del dibujo con esos intervalos: 'Contours 1m and 5m (Background)', 'Contours 1m and 5m (Design)', 'Contours and Triangles'", r.Motivo);
+            Assert.Contains("El estilo indicado se respeta y no se cambia", r.Motivo);
+            Assert.False(SuperficieTin.Aplicados(1, 5, r.Usado));
+
+            var ok = SuperficieTin.ElegirEstilo(EstilosPlantilla(), 1, 5, "Contours 1m and 5m (Design)", "Contours 5m and 25m (Background)");
+            Assert.Equal(EleccionEstilo.Indicada, ok.Eleccion);
+            Assert.Contains("ya coinciden", ok.Motivo);
+            Assert.True(SuperficieTin.Aplicados(1, 5, ok.Usado));
+            Assert.Equal(new[] { "Contours 1m and 5m (Background)", "Contours and Triangles" }, ok.OtrosQueCoinciden);
+
+            var oculto = SuperficieTin.ElegirEstilo(EstilosPlantilla(), 1, 5, "Border Only", null);
+            Assert.Equal("Border Only", oculto.Estilo);
+            Assert.Contains("no dibuja esas curvas en planta", oculto.Motivo);
+            Assert.False(SuperficieTin.Aplicados(1, 5, oculto.Usado));
+        }
+
+        [Fact]
+        public void ResumenDeIntervalosParaLaRespuesta()
+        {
+            var r = SuperficieTin.ElegirEstilo(EstilosPlantilla(), 1, 5, null, "Contours 5m and 25m (Background)");
+            var d = SuperficieTin.ResumenIntervalos(1, 5, r, r.Usado);
+            Assert.Equal(1.0, d["pedido_menor"]);
+            Assert.Equal(5.0, d["pedido_mayor"]);
+            Assert.Equal(true, d["aplicados"]);
+            Assert.Equal("Contours 1m and 5m (Background)", d["estilo"]);
+            Assert.Equal("automatica", d["eleccion"]);
+            Assert.Equal(r.Motivo, d["motivo"]);
+            Assert.Equal(1.0, d["estilo_menor"]);
+            Assert.Equal(5.0, d["estilo_mayor"]);
+            Assert.Equal(true, d["curvas_visibles"]);
+            Assert.Equal(0.001, d["tolerancia"]);
+            Assert.Equal("SurfaceStyle.ContourStyle (estilo de superficie)", d["donde_viven"]);
+            Assert.Equal(2, ((List<string>)d["otros_que_coinciden"]).Count);
+            Assert.Equal(3, ((List<string>)d["descartados_sin_curvas_visibles"]).Count);
+
+            // Sin intervalos pedidos: el bloque de siempre, aplicados=false
+            var sin = SuperficieTin.ResumenIntervalos(null, null, null, Est("Contours 5m and 25m (Background)", 5, 25));
+            Assert.Equal(false, sin["aplicados"]);
+            Assert.Null(sin["pedido_menor"]);
+            Assert.Null(sin["eleccion"]);
+            Assert.Null(sin["curvas_visibles"]);
+            Assert.Equal(5.0, sin["estilo_menor"]);
+
+            // Estilo releído desconocido (null): aplicados=false
+            Assert.Equal(false, SuperficieTin.ResumenIntervalos(1, 5, r, null)["aplicados"]);
+        }
+
+        [Fact]
+        public void AvisoDeIntervalosConToleranciaYAlternativas()
+        {
+            Assert.Contains("ya coinciden", SuperficieTin.AvisoIntervalos(1, 5, "Casi", 1.0004, 5.0008));
+            Assert.Contains("sin aplicar", SuperficieTin.AvisoIntervalos(1, 5, "Lejos", 1.01, 5));
+            string conAlternativas = SuperficieTin.AvisoIntervalos(1, 5, "Estándar", 2, 10, new List<string> { "Curvas 1 y 5" }, null);
+            Assert.Contains("Estilos del dibujo con esos intervalos: 'Curvas 1 y 5'", conAlternativas);
+            string sinNinguno = SuperficieTin.AvisoIntervalos(1, 5, "Estándar", 2, 10, new List<string>(), new List<string> { "Border Only" });
+            Assert.Contains("Ningún estilo de superficie del dibujo tiene esos intervalos", sinNinguno);
+            Assert.Contains("(descartados): 'Border Only'", sinNinguno);
+            Assert.DoesNotContain("elige con 'estilo'", sinNinguno);
+        }
     }
 }
