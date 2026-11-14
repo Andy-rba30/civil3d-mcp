@@ -557,3 +557,26 @@ en `datos.puntos_secciones`: anota aquí lo que salga.
 | propiedad | `SampleLine.Vertices` + `Alignment.StationOffset` como ancho real de la línea en `calcular_volumenes` | 2027 | `calcular_volumenes` (límite de X de los puntos de sección, `puntos_secciones.ancho_linea`) | ejecutados en Civil 3D 2027 (1.13.0, `crear_secciones`: 30/30 y 10/25 releídos); en `calcular_volumenes`, por verificar |
 | método | `Surface.FindElevationAtXY` sobre la superficie TIN de una superficie de corredor (`Corredor 1 - Datum`) en `Alignment.PointLocation(pk, desplazamiento)` | 2027 | `calcular_volumenes` (comparación de cotas de la sección de la Datum, `puntos_secciones.cotas_comparadas`) | ejecutado en Civil 3D 2027 por `cota_superficie` (informe 1.14.0, paso 8: `109.0011` en el PK 400); dentro de `calcular_volumenes`, por verificar |
 | supuesto | `SectionPoint.Location`: X = desplazamiento (negativo a la izquierda), Y = cota | 2027 | `calcular_volumenes` (tabla por progresivas) | **por verificar** con `VALIDACION_1143.md` (`supuesto_ejes.comprobado: true` y `cotas_comparadas` con diferencias de 0); el informe 1.14.2 ya apunta a que X es el desplazamiento (−30 en una línea de 30 m a la izquierda) |
+
+## 1.15.0 (`listar_pis`: tabla de PI de un alineamiento existente): escrita sin compilar
+
+Escrita el 14/11/2026 sin Civil 3D y **sin el catálogo en la sesión de desarrollo** (`buscar_api` respondió `Falta la
+variable de entorno MEMORIA_FIRMA_DIR`): lo que dice el catálogo lo consultó la **sesión orquestadora** el 14/11/2026.
+Es una herramienta de **lectura** (contexto de aplicación, bloqueo de lectura, sin copia ni entrada en Deshacer). Casi
+todo lo que usa ya se ejecutó en Civil 3D 2027; lo nuevo es solo la **comprobación** del PI con el punto que da Civil 3D,
+dentro de un `try` (si falla, la tabla sale igual y `diferencia_pi_civil3d` queda `null`). El cálculo de la tabla está en
+`ArbaMcp.Nucleo.TablaPi` y se prueba sin Civil 3D. Decide la validación `herramientas-dev/VALIDACION_115.md` (después de
+`VALIDACION_1142.md`, sobre `PRUEBA_1142.dwg`).
+
+| Tipo | Miembro | Versión | Herramienta que lo usa | Estado |
+|---|---|---|---|---|
+| propiedad | `Alignment.Entities` (`AlignmentEntityCollection`): `Count`, `GetEntityByOrder(int)`; tipos distinguidos con `is AlignmentArc` / `is AlignmentLine` | 2027 | `listar_pis` (entidades del eje en orden) | ejecutado en Civil 3D 2027 (1.8.0, `crear_alineamiento_desde_polilinea`); en esta herramienta, sobre un eje con dos curvas y sobre uno con un PI sin curva, **por verificar** (pasos 2 y 4 de `VALIDACION_115.md`) |
+| propiedad | `AlignmentArc.Radius`, `.Delta` (radianes), `.PIStation`, `.Clockwise`; `AlignmentCurve.StartStation`, `.EndStation` | 2027 | `listar_pis` (radio, deflexión, giro, progresiva del PI, PC, PT y longitud = PT − PC) | ejecutado en Civil 3D 2027 (1.8.0, 31/10/2026, paso 4: radio 80, Δ 90°, `PIStation` 300 y 565,6637, PC/PT 220/345,6637 y 485,6637/611,3274) |
+| método | `Alignment.PointLocation(pk, 0, ref x, ref y)` en las progresivas de inicio y fin de cada entidad y del eje | 2027 | `listar_pis` (PC, PT, extremos de las tangentes; el PI de una curva se calcula desde PC y PT) | ejecutado en Civil 3D 2027 (1.2.2, `pk_a_punto`); en el **final exacto** de una entidad y del eje, **por verificar** (paso 2: `fin` debe dar 1600, 2300) |
+| propiedad | `Alignment.Length`, `StartingStation`, `EndingStation` | 2027 | `listar_pis` (`longitud`, `inicio`, `fin`) | ejecutado en Civil 3D 2027 (1.8.0) |
+| propiedad | `CivilDocument.Settings.DrawingSettings.UnitZoneSettings.DrawingUnits` | 2027 | `listar_pis` (`unidades`) | ejecutado en Civil 3D 2027 (1.4.0, `extension_superficie`: `Meters`) |
+| propiedad | `AlignmentEntity.SubEntityCount` (int) | 2027 | `listar_pis` (comprobación del PI) | confirmado en el catálogo (consulta de la orquestadora, 14/11/2026); **por verificar** |
+| indexador | `AlignmentEntity[int]` → `AlignmentSubEntity` | 2027 | `listar_pis` (primera subentidad de cada curva) | confirmado en el catálogo; **por verificar** |
+| propiedad | `AlignmentSubEntityArc.PIPoint` (`Point2d`), sobre la subentidad 0 de un `AlignmentArc` | 2027 | `listar_pis` (`diferencia_pi_civil3d`: distancia entre el PI calculado y este punto; aviso si pasa de 0,001) | confirmado en el catálogo (está en la subentidad, **no** en `AlignmentArc`); **por verificar** (paso 2: `diferencia_pi_civil3d` debe ser 0 en los dos PI; si sale `null`, la lectura falló: mira `leer_historial`) |
+| propiedad | `StartStation`, `EndStation` **por reflexión** (`Api.Leer`) en entidades que no son tangente ni curva (espirales, `AlignmentSCS`, `AlignmentSTS`...) | 2027 | `listar_pis` (rango del aviso `tipo no soportado todavía`) | sin miembro fijado al compilar; **por verificar** cuando haya un eje con espirales (el dibujo de prueba no tiene) |
+| — | `AlignmentCurve.StartPoint`, `EndPoint`, `AlignmentLine.Direction`, `AlignmentArc.ExternalTangent`, `.ExternalSecant`, `.ChordLength`, `.CenterPoint`, `.StartDirection`, `.EndDirection`, `AlignmentEntity.EntityBefore`/`EntityAfter`, `AlignmentSubEntityArc.PIStation`, `AlignmentSCS` | 2027 | — | en el catálogo pero **no se usan**: los puntos salen de `PointLocation` (ya ejecutado) y la progresiva del PI de `AlignmentArc.PIStation` (ya ejecutado). Las espirales no se tratan todavía: propuesta para otra sesión |

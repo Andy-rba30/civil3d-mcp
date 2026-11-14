@@ -89,6 +89,7 @@ Es la **única receta** de este archivo, porque es el flujo principal (las demá
 | Código de enlace / de punto | Link code / Point code |
 | Línea característica | `FeatureLine` (o `CorridorFeatureLine` dentro del corredor) |
 | Eje / alineamiento | `Alignment` |
+| Tabla de PI (progresiva, radio, longitud de curva, PC y PT de cada PI) | `listar_pis` |
 | Rasante | Perfil de diseño (FG, `Profile` tipo `FG`) |
 | Terreno natural | Perfil de superficie (EG) / superficie TIN |
 | Superficie de volumen, corte, relleno, neto | `TinVolumeSurface` (Cut, Fill, Net volume) |

@@ -232,7 +232,15 @@ namespace Autodesk.Civil.DatabaseServices
     public enum AlignmentEntityType { Line, Arc, Spiral }
     public enum CurveParamType { Radius, Length }
     public enum CurveType { Compound, Reverse }
-    public class AlignmentEntity { public int EntityId => 0; public AlignmentEntityType EntityType => AlignmentEntityType.Line; }
+    public class AlignmentEntity
+    {
+        public int EntityId => 0; public AlignmentEntityType EntityType => AlignmentEntityType.Line;
+        // 1.15.0 (listar_pis): subentidades, para leer el PI que da Civil 3D
+        public int SubEntityCount => 0;
+        public AlignmentSubEntity this[int i] => new AlignmentSubEntity();
+    }
+    public class AlignmentSubEntity { }
+    public class AlignmentSubEntityArc : AlignmentSubEntity { public Point2d PIPoint => new Point2d(); }
     public class AlignmentCurve : AlignmentEntity { public double StartStation => 0; public double EndStation => 0; public double Length { get; set; } }
     public class AlignmentLine : AlignmentCurve { }
     public class AlignmentArc : AlignmentCurve { public double Radius { get; set; } public double Delta { get; set; } public double PIStation => 0; public bool Clockwise => false; }
