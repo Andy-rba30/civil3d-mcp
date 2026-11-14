@@ -112,6 +112,131 @@ namespace ArbaMcp.Nucleo
         public List<string> Avisos = new List<string>();
     }
 
+    /// <summary>Una sección de una línea de muestreo tal como la lee el plugin. Los ids van como texto (el handle); null si no se pudieron leer.</summary>
+    public sealed class SeccionCandidata
+    {
+        /// <summary>Id de la propia sección (lo que da SampleLine.GetSectionIds).</summary>
+        public string Clave;
+        /// <summary>Section.SourceId.</summary>
+        public string FuenteId;
+        /// <summary>Section.CorridorSurfaceId.</summary>
+        public string SuperficieCorredorId;
+        /// <summary>Section.SourceName.</summary>
+        public string NombreFuente;
+        public SeccionCandidata() { }
+        public SeccionCandidata(string clave, string fuenteId, string superficieCorredorId, string nombreFuente)
+        {
+            Clave = clave; FuenteId = fuenteId; SuperficieCorredorId = superficieCorredorId; NombreFuente = nombreFuente;
+        }
+    }
+
+    /// <summary>La superficie cuya sección se busca: id de la superficie del dibujo (handle), su nombre y el corredor que la genera (null si no es de corredor).</summary>
+    public sealed class SuperficieBuscada
+    {
+        public string Id;
+        public string Nombre;
+        public string Corredor;
+        public SuperficieBuscada() { }
+        public SuperficieBuscada(string id, string nombre, string corredor = null) { Id = id; Nombre = nombre; Corredor = corredor; }
+    }
+
+    /// <summary>Qué sección de la línea es la de la superficie (índice en la lista de candidatas; −1 si ninguna) y con qué intento se encontró.</summary>
+    public sealed class SeccionIdentificada
+    {
+        public int Indice = -1;
+        public string Metodo;
+        public bool Encontrada => Indice >= 0;
+    }
+
+    /// <summary>Cuántas líneas de un grupo se identificaron con cada intento y cuántas no tienen sección de la superficie.</summary>
+    public sealed class RecuentoIdentificacion
+    {
+        public Dictionary<string, int> Metodos = new Dictionary<string, int>();
+        public int Lineas, SinSeccion;
+
+        public void Anotar(SeccionIdentificada s)
+        {
+            Lineas++;
+            if (s == null || !s.Encontrada) { SinSeccion++; return; }
+            Metodos[s.Metodo] = Metodos.TryGetValue(s.Metodo, out int n) ? n + 1 : 1;
+        }
+    }
+
+    /// <summary>
+    /// Qué sección de una línea de muestreo es la de una superficie (calcular_volumenes, desde 1.14.2). Hasta la 1.14.1 se
+    /// buscaba solo por Section.SourceId o por el nombre exacto, y la Datum no se encontraba: en sus secciones SourceId no
+    /// es la superficie del dibujo y SourceName es "&lt;corredor&gt; &lt;superficie&gt;" ("Corredor 1 Corredor 1 - Datum",
+    /// informe 1.14.0 del 14/11/2026, paso 6). Orden de intentos, el primero que encuentra gana: 1) la sección que
+    /// devuelve SampleLine.GetSectionId(id de la superficie), si es de la línea; 2) Section.CorridorSurfaceId igual al id;
+    /// 3) Section.SourceId igual al id; 4) SourceName igual al nombre de la superficie; 5) SourceName igual a
+    /// "&lt;corredor&gt; &lt;superficie&gt;". Los nombres se comparan enteros (sin mayúsculas ni espacios de más), nunca por
+    /// "contiene", para no confundir la sección del corredor ("Corredor 1"), la de la Top o "Terreno 2" con la buscada.
+    /// </summary>
+    public static class IdentificacionSecciones
+    {
+        public const string PorGetSectionId = "SampleLine.GetSectionId";
+        public const string PorCorridorSurfaceId = "Section.CorridorSurfaceId";
+        public const string PorSourceId = "Section.SourceId";
+        public const string PorNombre = "Section.SourceName";
+        public const string PorNombreConCorredor = "Section.SourceName (<corredor> <superficie>)";
+        public static readonly IReadOnlyList<string> Orden = new[] { PorGetSectionId, PorCorridorSurfaceId, PorSourceId, PorNombre, PorNombreConCorredor };
+
+        /// <summary>
+        /// Sección de 'superficie' entre las de la línea. 'claveDeGetSectionId': el id que devolvió
+        /// SampleLine.GetSectionId para esa superficie (null si no devolvió nada o lanzó); solo cuenta si es una de las
+        /// secciones de la línea. 'excluidas': índices que ya son de otra superficie (no se pueden repetir).
+        /// </summary>
+        public static SeccionIdentificada Identificar(IList<SeccionCandidata> secciones, SuperficieBuscada superficie, string claveDeGetSectionId, ICollection<int> excluidas = null)
+        {
+            var r = new SeccionIdentificada();
+            var l = secciones ?? new List<SeccionCandidata>();
+            if (superficie == null) return r;
+            bool Libre(int i) => l[i] != null && (excluidas == null || !excluidas.Contains(i));
+            int Buscar(Func<SeccionCandidata, bool> cumple)
+            {
+                for (int i = 0; i < l.Count; i++) if (Libre(i) && cumple(l[i])) return i;
+                return -1;
+            }
+            var intentos = new (string metodo, Func<SeccionCandidata, bool> cumple)[]
+            {
+                (PorGetSectionId, s => MismoId(s.Clave, claveDeGetSectionId)),
+                (PorCorridorSurfaceId, s => MismoId(s.SuperficieCorredorId, superficie.Id)),
+                (PorSourceId, s => MismoId(s.FuenteId, superficie.Id)),
+                (PorNombre, s => NombreCoincide(s.NombreFuente, superficie.Nombre)),
+                (PorNombreConCorredor, s => NombreConCorredorCoincide(s.NombreFuente, superficie.Corredor, superficie.Nombre))
+            };
+            foreach (var (metodo, cumple) in intentos)
+            {
+                int i = Buscar(cumple);
+                if (i >= 0) { r.Indice = i; r.Metodo = metodo; return r; }
+            }
+            return r;
+        }
+
+        /// <summary>Las secciones del terreno y de la Datum de una línea: primero el terreno y luego la Datum, que nunca puede quedarse con la del terreno.</summary>
+        public static (SeccionIdentificada terreno, SeccionIdentificada datum) IdentificarLasDos(IList<SeccionCandidata> secciones,
+            SuperficieBuscada terreno, string claveTerreno, SuperficieBuscada datum, string claveDatum)
+        {
+            var t = Identificar(secciones, terreno, claveTerreno);
+            var d = Identificar(secciones, datum, claveDatum, t.Encontrada ? new[] { t.Indice } : null);
+            return (t, d);
+        }
+
+        /// <summary>True si el nombre de la fuente de la sección es el de la superficie (entero, sin mayúsculas ni espacios de más).</summary>
+        public static bool NombreCoincide(string nombreFuente, string superficie)
+            => !string.IsNullOrWhiteSpace(nombreFuente) && !string.IsNullOrWhiteSpace(superficie)
+               && string.Equals(Normalizar(nombreFuente), Normalizar(superficie), StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>True si el nombre de la fuente es "&lt;corredor&gt; &lt;superficie&gt;" (el formato observado en las secciones de una superficie de corredor).</summary>
+        public static bool NombreConCorredorCoincide(string nombreFuente, string corredor, string superficie)
+            => !string.IsNullOrWhiteSpace(corredor) && NombreCoincide(nombreFuente, string.IsNullOrWhiteSpace(superficie) ? null : corredor.Trim() + " " + superficie.Trim());
+
+        private static bool MismoId(string a, string b)
+            => !string.IsNullOrWhiteSpace(a) && !string.IsNullOrWhiteSpace(b) && string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
+
+        private static string Normalizar(string s) => string.Join(" ", s.Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
+    }
+
     /// <summary>
     /// Lógica de calcular_volumenes (1.14.0) que no depende de Civil 3D: elección del terreno, del Datum, del corredor y
     /// del nombre de la superficie de volumen (con errores claros si falta o sobra alguno), validación de los factores

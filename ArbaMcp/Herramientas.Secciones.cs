@@ -40,6 +40,95 @@ namespace ArbaMcp
             return ObjectId.Null;
         }
 
+        /// <summary>Nombres de las líneas de muestreo y de las vistas de sección que ya hay en el dibujo (1.14.2), con dónde está cada uno y de cuántos salió cada lectura.</summary>
+        private sealed class NombresDelDibujo
+        {
+            public Dictionary<string, string> Lineas = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<string, string> Vistas = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            public int LineasPorEjes, VistasPorEjes, LineasEspacioModelo, VistasEspacioModelo, LineasSoloEspacioModelo, VistasSoloEspacioModelo;
+            public List<string> Errores = new List<string>();
+        }
+
+        private static bool AnotarNombre(Dictionary<string, string> d, string nombre, string donde)
+        {
+            if (string.IsNullOrWhiteSpace(nombre)) return false;
+            string n = nombre.Trim();
+            if (d.ContainsKey(n)) return false;
+            d[n] = donde;
+            return true;
+        }
+
+        /// <summary>
+        /// Nombres de todas las líneas de muestreo y vistas de sección del dibujo (desde 1.14.2): Civil 3D no deja repetir
+        /// el nombre de una línea en todo el dibujo, aunque sea de otro grupo o de otro eje (informe 1.13.0 del 14/11/2026,
+        /// paso 9; la evaluación de esa ronda falló igual con un eje sin grupos). Dos lecturas, cada una protegida: a) todos
+        /// los ejes (CivilDocument.GetAlignmentIds) → sus grupos (GetSampleLineGroupIds) → sus líneas (GetSampleLineIds,
+        /// SampleLine.Name) → sus vistas (GetSectionViewIds, SectionView.Name); b) el espacio modelo, las entidades
+        /// SampleLine y SectionView (RXObject.GetClass + ObjectId.ObjectClass.IsDerivedFrom, como las polilíneas), por si
+        /// hay líneas que no cuelgan de ningún eje. Los recuentos van a datos.nombres (si las líneas están en el espacio
+        /// modelo es un dato por verificar).
+        /// </summary>
+        private static NombresDelDibujo NombresDeLineasYVistas(Transaction tr, Database db)
+        {
+            var r = new NombresDelDibujo();
+            var ejes = new List<ObjectId>();
+            try { foreach (ObjectId id in CivilApplication.ActiveDocument.GetAlignmentIds()) ejes.Add(id); }
+            catch (Exception ex) { r.Errores.Add("CivilDocument.GetAlignmentIds: " + ex.Message); }
+            foreach (ObjectId idAl in ejes)
+            {
+                try
+                {
+                    if (!(tr.GetObject(idAl, OpenMode.ForRead) is CivAlignment al)) continue;
+                    foreach (ObjectId idG in al.GetSampleLineGroupIds())
+                    {
+                        if (!(tr.GetObject(idG, OpenMode.ForRead) is Civ.SampleLineGroup g)) continue;
+                        string donde = "grupo '" + Seguro(() => g.Name, "?") + "' del eje '" + al.Name + "'";
+                        foreach (ObjectId idL in g.GetSampleLineIds())
+                        {
+                            if (!(tr.GetObject(idL, OpenMode.ForRead) is Civ.SampleLine sl)) continue;
+                            r.LineasPorEjes++;
+                            AnotarNombre(r.Lineas, Seguro(() => sl.Name, null), donde);
+                            try
+                            {
+                                foreach (ObjectId idV in sl.GetSectionViewIds())
+                                    if (tr.GetObject(idV, OpenMode.ForRead) is Civ.SectionView sv)
+                                    {
+                                        r.VistasPorEjes++;
+                                        AnotarNombre(r.Vistas, Seguro(() => sv.Name, null), donde);
+                                    }
+                            }
+                            catch (Exception ex) { r.Errores.Add("vistas de " + Seguro(() => sl.Name, "?") + ": " + ex.Message); }
+                        }
+                    }
+                }
+                catch (Exception ex) { r.Errores.Add("eje " + NombreDe(tr, idAl) + ": " + ex.Message); }
+            }
+            try
+            {
+                var claseLinea = Autodesk.AutoCAD.Runtime.RXObject.GetClass(typeof(Civ.SampleLine));
+                var claseVista = Autodesk.AutoCAD.Runtime.RXObject.GetClass(typeof(Civ.SectionView));
+                foreach (ObjectId id in EntidadesModelo(tr, db))
+                {
+                    bool esLinea = id.ObjectClass.IsDerivedFrom(claseLinea);
+                    if (!esLinea && !id.ObjectClass.IsDerivedFrom(claseVista)) continue;
+                    var o = tr.GetObject(id, OpenMode.ForRead);
+                    if (o is Civ.SampleLine sl)
+                    {
+                        r.LineasEspacioModelo++;
+                        if (AnotarNombre(r.Lineas, Seguro(() => sl.Name, null), "espacio modelo")) r.LineasSoloEspacioModelo++;
+                    }
+                    else if (o is Civ.SectionView sv)
+                    {
+                        r.VistasEspacioModelo++;
+                        if (AnotarNombre(r.Vistas, Seguro(() => sv.Name, null), "espacio modelo")) r.VistasSoloEspacioModelo++;
+                    }
+                }
+            }
+            catch (Exception ex) { r.Errores.Add("espacio modelo: " + ex.Message); }
+            foreach (string e in r.Errores) Historial.Registrar(HerramientaCrearSecciones + ": no se pudieron leer todos los nombres del dibujo (" + e + ")");
+            return r;
+        }
+
         private static ObjectId BuscarEstiloVistaSeccion(Transaction tr, string nombre)
         {
             var estilos = CivilApplication.ActiveDocument.Styles.SectionViewStyles;
@@ -150,7 +239,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = HerramientaCrearSecciones,
-                Descripcion = "Crea un grupo de líneas de muestreo en un alineamiento con una línea cada 'intervalo' metros (y otra en el final del tramo) con los anchos izquierdo y derecho pedidos, marca como muestreadas las fuentes (por defecto todas las superficies, los corredores del eje y sus superficies; o las de 'fuentes') y, si crear_vistas=true (por defecto), crea una vista de sección por línea en cuadrícula de 'filas_por_columna' filas (por defecto 5): columnas de izquierda a derecha, en cada columna la progresiva crece de abajo arriba, desde 'punto_insercion' o, si falta, a la derecha del eje, de sus vistas de perfil y de las vistas de sección de sus grupos ya existentes (desde 1.14.1; el resto del dibujo no cuenta). Todo en una sola transacción y una sola entrada de Deshacer. Vía: SampleLineGroup.Create, GetSectionSources/IsSampled, SampleLine.Create con dos puntos (Alignment.PointLocation a −ancho_izquierdo y +ancho_derecho) y SectionView.Create con el estilo pedido (StyleId), cada vista encima de la anterior según su extensión real. Relee el grupo y comprueba el número de líneas y de vistas, cada progresiva (±0,01) y las fuentes muestreadas (si no, error sin reintentar). Devuelve las líneas (progresiva, anchos leídos, secciones), las fuentes, las vistas (fila, columna, punto) y los solapes. Con simular=true solo comprueba e informa (sin copia ni cambios). Si ya existe un grupo con ese nombre en el eje, error sin tocar nada.",
+                Descripcion = "Crea un grupo de líneas de muestreo en un alineamiento con una línea cada 'intervalo' metros (y otra en el final del tramo) con los anchos izquierdo y derecho pedidos, marca como muestreadas las fuentes (por defecto todas las superficies, los corredores del eje y sus superficies; o las de 'fuentes') y, si crear_vistas=true (por defecto), crea una vista de sección por línea en cuadrícula de 'filas_por_columna' filas (por defecto 5): columnas de izquierda a derecha, en cada columna la progresiva crece de abajo arriba, desde 'punto_insercion' o, si falta, a la derecha del eje, de sus vistas de perfil y de las vistas de sección de sus grupos ya existentes (desde 1.14.1; el resto del dibujo no cuenta). Todo en una sola transacción y una sola entrada de Deshacer. Vía: SampleLineGroup.Create, GetSectionSources/IsSampled, SampleLine.Create con dos puntos (Alignment.PointLocation a −ancho_izquierdo y +ancho_derecho) y SectionView.Create con el estilo pedido (StyleId), cada vista encima de la anterior según su extensión real. Relee el grupo y comprueba el número de líneas y de vistas, cada progresiva (±0,01) y las fuentes muestreadas (si no, error sin reintentar). Las líneas se llaman por su progresiva ('0+020.00') y las vistas '<grupo> <progresiva>'; Civil 3D no deja repetir el nombre de una línea en todo el dibujo, así que si alguno ya existe (por ejemplo, un segundo grupo en el mismo eje) todas las líneas del grupo llevan delante el nombre del grupo ('Muestreo 100 0+100.00'; desde 1.14.2, con aviso y en despues.nombres_lineas). Devuelve las líneas (progresiva, anchos leídos, secciones), las fuentes, las vistas (fila, columna, punto) y los solapes. Con simular=true solo comprueba e informa (sin copia ni cambios). Si ya existe un grupo con ese nombre en el eje, error sin tocar nada.",
                 Parametros =
                 {
                     P("alineamiento", "string", "Nombre del alineamiento (eje); ver listar_alineamientos", true),
@@ -187,7 +276,9 @@ namespace ArbaMcp
                     ObjectId idAl = ObjectId.Null, idEstilo = ObjectId.Null;
                     string nombreAlReal = nombreAl, nombreGrupo = null, estiloUsado = null;
                     RangoMuestreo rango = null;
-                    List<string> nombresLineas = null;
+                    List<string> nombresLineas = null, nombresVistas = null;
+                    NombresDeLineas nombres = null;
+                    NombresDelDibujo existentes = null;
                     List<FuenteSeccion> fuentesElegidas = null;
                     Punto2 punto = default;
                     bool puntoAutomatico = conVistas && !puntoPedido.HasValue;
@@ -199,6 +290,7 @@ namespace ArbaMcp
 
                     // Lo releído
                     var progresivasLeidas = new List<double>();
+                    var nombresLeidos = new List<string>();
                     var lineasInfo = new List<object>();
                     var vistasInfo = new List<object>();
                     var extensionesVistas = new List<Extension2>();
@@ -218,6 +310,8 @@ namespace ArbaMcp
                         ["progresiva_primera"] = N(rango.Progresivas[0]),
                         ["progresiva_ultima"] = N(rango.Progresivas[rango.Numero - 1]),
                         ["progresivas"] = rango.Progresivas.Select(p => N(p)).ToList(),
+                        ["nombres_lineas"] = nombresLineas.ToList(),
+                        ["prefijo_lineas"] = nombres?.Prefijo,
                         ["intervalo"] = N(intervalo),
                         ["ancho_izquierdo"] = N(anchoIzq),
                         ["ancho_derecho"] = N(anchoDer),
@@ -249,7 +343,19 @@ namespace ArbaMcp
 
                             rango = Secciones.Progresivas(al.StartingStation, al.EndingStation, inicioPedido, finPedido, intervalo, al.Name);
                             ctx.Avisos.AddRange(rango.Avisos);
-                            nombresLineas = Secciones.NombresLineas(rango.Progresivas);
+                            // Nombres únicos en todo el dibujo (1.14.2): si alguno choca, todas las líneas llevan delante el
+                            // nombre del grupo; las vistas siguen siendo '<grupo> <progresiva>' (" (2)" solo si chocan)
+                            existentes = NombresDeLineasYVistas(tr, db);
+                            nombres = Secciones.NombresLineasUnicos(rango.Progresivas, nombreGrupo, existentes.Lineas);
+                            nombresLineas = nombres.Lineas;
+                            if (nombres.Aviso != null) ctx.Avisos.Add(nombres.Aviso);
+                            var vistasBase = nombres.Base.Select(b => Secciones.NombreVista(nombreGrupo, b)).ToList();
+                            nombresVistas = Secciones.NombresUnicos(vistasBase, existentes.Vistas.Keys);
+                            int vistasRenombradas = vistasBase.Where((v, i) => !string.Equals(v, nombresVistas[i], StringComparison.Ordinal)).Count();
+                            if (conVistas && vistasRenombradas > 0)
+                                ctx.Avisos.Add(vistasRenombradas + " vistas de sección llevan ' (2)' detrás porque ya hay vistas con su nombre en el dibujo (por ejemplo '" + nombresVistas.First(v => !vistasBase.Contains(v)) + "').");
+                            if (existentes.Errores.Count > 0)
+                                ctx.Avisos.Add("No se pudieron leer todos los nombres de líneas de muestreo del dibujo (" + string.Join("; ", existentes.Errores.Take(2)) + "): si Civil 3D rechaza un nombre, la herramienta lo dirá sin escribir nada.");
                             esperado["numero_lineas"] = rango.Numero;
                             esperado["numero_vistas"] = conVistas ? rango.Numero : 0;
 
@@ -334,6 +440,13 @@ namespace ArbaMcp
                                 }
                                 catch (Exception ex)
                                 {
+                                    // Red de seguridad (1.14.2): el servidor devuelve el mensaje de la excepción más interna, así que
+                                    // el error de nombre repetido se lanza SIN la de Civil 3D dentro (su texto va al historial)
+                                    if (Secciones.EsNombreRepetido(ex.Message))
+                                    {
+                                        Historial.Registrar(HerramientaCrearSecciones + ": SampleLine.Create rechazó el nombre '" + nombresLineas[i] + "': " + ex.Message);
+                                        throw new InvalidOperationException(Secciones.MensajeNombreRepetido("la línea de muestreo", nombresLineas[i], pk, existentes.Lineas.Count + existentes.Vistas.Count));
+                                    }
                                     throw new InvalidOperationException("No se pudo crear la línea de muestreo '" + nombresLineas[i] + "' (progresiva " + N(pk) + "): " + ex.Message + ". La transacción se descarta: no queda ni el grupo ni ninguna línea. No se reintenta.", ex);
                                 }
                             }
@@ -345,7 +458,7 @@ namespace ArbaMcp
                                 for (int i = 0; i < idsLineas.Count; i++)
                                 {
                                     var lugar = cuadricula.Siguiente();
-                                    string nombreVista = Secciones.NombreVista(nombreGrupo, nombresLineas[i]);
+                                    string nombreVista = nombresVistas[i];   // '<grupo> <progresiva>', sin repetir el grupo aunque la línea lo lleve delante (1.14.2)
                                     Civ.SectionView sv;
                                     try
                                     {
@@ -356,6 +469,11 @@ namespace ArbaMcp
                                     }
                                     catch (Exception ex)
                                     {
+                                        if (Secciones.EsNombreRepetido(ex.Message))
+                                        {
+                                            Historial.Registrar(HerramientaCrearSecciones + ": SectionView.Create rechazó el nombre '" + nombreVista + "': " + ex.Message);
+                                            throw new InvalidOperationException(Secciones.MensajeNombreRepetido("la vista de sección", nombreVista, rango.Progresivas[i], existentes.Lineas.Count + existentes.Vistas.Count));
+                                        }
                                         throw new InvalidOperationException("No se pudo crear la vista de sección '" + nombreVista + "' en (" + N(lugar.X) + ", " + N(lugar.Y) + "): " + ex.Message + ". La transacción se descarta: no quedan ni las líneas ni las vistas. No se reintenta; prueba con crear_vistas=false u otro 'estilo_vista'.", ex);
                                     }
                                     cuadricula.Registrar(lugar, ExtensionDe(sv), anchoIzq + anchoDer + 2 * separacion, (anchoIzq + anchoDer) / 2);
@@ -385,6 +503,7 @@ namespace ArbaMcp
                             {
                                 progresivasLeidas.Add(pk);
                                 string nombreLinea = Seguro(() => sl.Name, null);
+                                nombresLeidos.Add(nombreLinea);
                                 var (izq, der) = AnchosLinea(al, sl);
                                 if (avisosAnchos.Count < 3)
                                 {
@@ -457,6 +576,7 @@ namespace ArbaMcp
                             d0["progresiva_primera"] = lineas.Count > 0 ? N(lineas[0].pk) : null;
                             d0["progresiva_ultima"] = lineas.Count > 0 ? N(lineas[lineas.Count - 1].pk) : null;
                             d0["progresivas"] = progresivasLeidas.Select(p => N(p)).ToList();
+                            d0["nombres_lineas"] = nombresLeidos.ToList();
                             d0["fuentes_muestreadas"] = muestreadasLeidas.ToList();
                             d0["numero_vistas"] = numeroVistas;
                             if (conVistas)
@@ -477,6 +597,9 @@ namespace ArbaMcp
                             string dif = Secciones.DiferenciaFuentes(fuentesElegidas.Select(f => f.Nombre), muestreadasLeidas);
                             if (dif != null) ctx.Avisos.Add("Las fuentes reales del grupo no son las previstas en la simulación: " + dif + ". Quedaron muestreadas: " + string.Join(", ", muestreadasLeidas) + ".");
                             foreach (string av in avisosAnchos) ctx.Avisos.Add(av);
+                            if (!Escritura.Igual(nombresLeidos, nombresLineas))
+                                ctx.Avisos.Add("Las líneas quedaron con nombres distintos de los previstos: " + string.Join(", ", nombresLeidos.Take(3).Select(n => "'" + n + "'")) + (nombresLeidos.Count > 3 ? ", …" : "")
+                                    + " (se pidieron " + string.Join(", ", nombresLineas.Take(3).Select(n => "'" + n + "'")) + (nombresLineas.Count > 3 ? ", …" : "") + "). Revísalas en Prospector.");
                             if (lineasSinSecciones > 0)
                                 ctx.Avisos.Add(lineasSinSecciones + " de " + progresivasLeidas.Count + " líneas no tienen secciones: revisa las fuentes con listar_lineas_muestreo (fuentes=true) y que el terreno cubra la franja.");
                             if (conVistas)
@@ -499,6 +622,24 @@ namespace ArbaMcp
                             rango = new { inicio = N(rango.Inicio), fin = N(rango.Fin), numero_lineas = rango.Numero },
                             lineas = lineasInfo,
                             lineas_sin_secciones = lineasSinSecciones,
+                            nombres = new
+                            {
+                                prefijo_lineas = nombres?.Prefijo,
+                                lineas_que_chocaban = nombres?.Chocaban.Take(10).ToList(),
+                                numero_que_chocaban = nombres?.Chocaban.Count ?? 0,
+                                leidos = existentes == null ? null : new
+                                {
+                                    lineas = existentes.Lineas.Count,
+                                    vistas = existentes.Vistas.Count,
+                                    lineas_por_ejes = existentes.LineasPorEjes,
+                                    lineas_en_espacio_modelo = existentes.LineasEspacioModelo,
+                                    lineas_solo_en_espacio_modelo = existentes.LineasSoloEspacioModelo,
+                                    vistas_por_ejes = existentes.VistasPorEjes,
+                                    vistas_en_espacio_modelo = existentes.VistasEspacioModelo,
+                                    vistas_solo_en_espacio_modelo = existentes.VistasSoloEspacioModelo,
+                                    errores = existentes.Errores.Count == 0 ? null : existentes.Errores
+                                }
+                            },
                             fuentes = fuentesInfo,
                             fuentes_previstas = fuentesElegidas.Select(f => f.Nombre).ToList(),
                             vistas = vistasInfo,
