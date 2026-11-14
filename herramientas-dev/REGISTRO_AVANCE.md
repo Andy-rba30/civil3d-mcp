@@ -43,33 +43,43 @@ haya que probar. Usa Opus con esfuerzo extra alto en las sesiones hijas. Actuali
 - Cada informe de validación se sube a `herramientas-dev/informes/`. Una sesión de "hallazgos" (solo documentación)
   pasa lo aprendido a la tabla de miembros y a los "Hechos ya validados" de `CLAUDE.md`.
 
-## Estado actual (13/11/2026, 23:40)
+## Estado actual (14/11/2026, tras la prueba de la ronda A)
 
-**En `main`**: versión **1.11.0**, validada (1.10.1 y 1.11.0 el 13/11/2026; PR #22 a #25 y #28 fusionados).
+**En `main`**: versión **1.11.0**, validada. **Ronda A probada en la PC el 14/11/2026** sobre la rama
+**`tarea/2.7-volumenes`** (versión 1.14.1, 53 herramientas, commit `a502066`). Los PR #26, #27, #29, #30 y #31
+siguen **en borrador y sin fusionar**: quedan dos fallos que se corrigen en esa misma rama.
 
-**Ronda A LISTA PARA PROBAR en la PC** (aviso enviado al dueño). Todo va en la rama **`tarea/2.7-volumenes`**
-(commit `a502066`, versión **1.14.1**, 53 herramientas; pruebas en la nube 349/84/0 errores/21), que contiene:
+### Resultado de la ronda A (resumen del agente instalador; los informes completos están en la PC, en
+`C:\Proyectos\civil3d-mcp\herramientas-dev\informes\informe_validacion_{112,113,114,1141,flujo_completo}_20261114.md`,
+y todavía **no están en el repositorio**: hay que pedírselos al dueño o al agente y subirlos)
 
-| Rama | PR (borrador) | Versión | Qué |
-|---|---|---|---|
-| `tarea/2.5b-superficies-corredor` | #26 | 1.12.0 | `crear_superficies_corredor` (Top y Datum, voladizo, contorno) |
-| `tarea/2.6-secciones` | #27 | 1.13.0 | `crear_secciones` (líneas de muestreo y vistas en cuadrícula) |
-| `tarea/2.7-volumenes` | #31 | 1.14.0 | `calcular_volumenes` (superficie de volumen TIN y tabla por áreas medias) |
-| `tarea/1.14.1-arreglos` | #30 | 1.14.1 | Capa del corredor, buscar_api cp1252, `es_extension_corredor`, punto de inserción junto al eje, validar las `agregar_*` |
-| `tarea/2.8-flujo` | #29 | — | Receta 2b "Flujo vial completo" en INSTRUCCIONES_AGENTE y VALIDACION_FLUJO_COMPLETO |
+| Validación | Resultado | Hallazgos |
+|---|---|---|
+| 112 `crear_superficies_corredor` | OK | Top (`TopLinks`) y Datum (`BottomLinks`), contorno `OutsideBoundary`. **`_.UNDO 1` no quita las superficies de corredor** (como la TIN). `guardar_dibujo` funciona |
+| 113 `crear_secciones` | OK, con 1 fallo | 43 líneas y 43 vistas en 9×5, sin solapes; fuentes muestreadas correctas. **FALLO paso 9**: un segundo grupo en el mismo eje da `ArgumentException: Sample line name should not duplicate.` (los nombres de línea, "0+020.00", chocan con los del primer grupo) |
+| 114 `calcular_volumenes` | OK, con 1 fallo | Totales correctos (corte 7211,34; relleno 29907,86; neto de Civil 3D = relleno − corte). **FALLO tabla por progresivas**: 42 de 42 tramos sin volumen porque `Section.SourceName` de la Datum es `"Corredor 1 Corredor 1 - Datum"` (corredor + superficie), no `"Corredor 1 - Datum"`. **`_.UNDO 1` no quita la superficie de volumen** |
+| 1141 arreglos | **OK** | Capa `C-ROAD-CORR`; punto de inserción junto al eje con contenido lejano; las tres `agregar_*` funcionan; buscar_api en cp1252 OK |
+| Flujo completo | OK salvo la tabla | 8 pasos con simulación previa y `aprobar_resultado`; **117 s frente a 130 min manuales**. `tabla_progresivas: null` por el mismo motivo de `SourceName` |
+| Evaluación (memoria-firma, 14/11 09:59) | **6 de 10 OK** (antes 3) | 4, 5 y 6 pasan a OK. Falla la 7 por el nombre de línea duplicado; la 8 por la tabla (el total sí sale); la 9 porque no hay herramienta para la tabla de PI del eje; la 10 por la 7 y la 8 |
 
-Orden de la prueba en una sola instalación: VALIDACION_112 → 113 → 114 → 1141 → FLUJO_COMPLETO → evaluación
-(PROMPT_EVALUACION de memoria-firma + `comparar` + `sincronizar_memoria.ps1`). Dibujo: `PRUEBA_112.dwg`, copia de
-`PRUEBA_111.dwg`.
-
-**Si da OK**: fusionar en orden #26, #27, #31, #30 y #29 (o solo #31, que lo contiene todo, cerrando los demás como
-incluidos), subir los informes, lanzar la sesión de hallazgos y actualizar la hoja de ruta (Etapa 2 hecha). Después,
-la **Ronda B** (Etapa 3: 3.1 `ejecutar_codigo` y 3.2 recetas).
-**Si falla**: pasar cada fallo a la sesión de su rama (o a una nueva con el prompt del fallo), corregir en esa rama,
-volver a fusionar en `tarea/2.7-volumenes` y repetir solo lo que falló.
+### Siguiente paso (al retomar)
+1. **Corrección 1.14.2 en `tarea/2.7-volumenes`** (una sesión hija, plan aprobado por la orquestadora):
+   a) `crear_secciones`: nombres de línea únicos aunque ya haya otros grupos en el eje (por ejemplo, con el nombre del
+   grupo delante) y comprobación previa de nombres;
+   b) `calcular_volumenes`: identificar las secciones por `Section.SourceId` (o `CorridorSurfaceId`), no por
+   `SourceName`, y documentar el formato real de `SourceName`.
+   Opcional y propuesto (decidirlo al retomar): una herramienta de lectura de la **tabla de PI del eje** (tarea 9 de
+   la evaluación), como 1.15.0.
+2. **Prueba corta en la PC**: solo lo que falló (VALIDACION_113 paso 9, VALIDACION_114 tabla, paso 8 del flujo
+   completo) y repetir la evaluación (tareas 7, 8 y 10, y la 9 si se hace la herramienta).
+3. Si da OK: fusionar #31 (contiene #26, #27, #29 y #30; cerrar esos como incluidos), subir los seis informes,
+   sesión de hallazgos (la tabla de miembros y los "Hechos ya validados": los `_.UNDO 1` que no quitan superficies de
+   corredor ni de volumen, los valores `TopLinks`/`BottomLinks`, el formato de `SourceName` y el signo del neto) y
+   marcar la Etapa 2 como hecha en la hoja de ruta.
+4. Después: **Ronda B** (Etapa 3: 3.1 `ejecutar_codigo` y 3.2 recetas).
 
 ## Propuestas pendientes (no están en la hoja de ruta)
 
-- Deshacer propio para la superficie TIN (Ctrl+Z no la quita; informe 1.7.0).
+- Deshacer propio para las superficies que Ctrl+Z no quita: TIN (1.7.0), superficies de corredor (1.12.0) y de volumen (1.14.0).
 - El caso "sin `frecuencia`" de VALIDACION_111: lo corta antes la validación del puente (Pydantic), no el plugin.
   Decidir si se cambia el guion.
