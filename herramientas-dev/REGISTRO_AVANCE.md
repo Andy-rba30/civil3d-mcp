@@ -92,6 +92,16 @@ Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a
   instalador los cree en `C:\Proyectos\memoria-firma\evaluacion\datos_prueba\` y los suba con L.2.
 - Etapa 4 bloqueada hasta que el dueño suba el PDF de la DG-2018 a `memoria-firma/normas/fuentes/` (hoy solo `.gitkeep`)
   y prepare los 5 casos calculados a mano.
+- **18:07 hallazgos terminados** (`tarea/2.10-hallazgos-ronda-a`, `5b88796`): revisados y fusionados en
+  `claude/charming-brown-70s7g3` (sin PR: el conector de GitHub vuelve a pedir autorización). Pasan a `main` con el
+  próximo PR de documentación.
+- **18:12 plan de la 3.1 aprobado.** Riesgos explicados (salir de Civil 3D, saltarse la transacción, estropear el
+  dibujo, simulación engañosa, colgar o cerrar Civil 3D, hilos, choque de versiones de Roslyn, memoria, atajo para
+  saltarse las reglas) con sus mitigaciones; no se puede detener un script a la fuerza (sin `Thread.Abort` en .NET 10;
+  el hilo es el de AutoCAD). Decisiones: copia también al simular y entrada vacía en Deshacer al simular (dos
+  excepciones documentadas), fuera de la comprobación previa (asíncrona), Roslyn 5.0.0 en un contexto aislado, 60 s de
+  tiempo límite. Catálogo: confirmados `GetAllObjects`, `IsNewObject`/`IsModified`/`IsErased`, `TopTransaction` y los
+  argumentos de eventos; los eventos de `Database` no constan (el catálogo no registra eventos): solo de apoyo.
 - **Integración prevista de la ronda B**: `tarea/3.1` → `tarea/3.2` → + `tarea/2.11` + `tarea/2.12` en una sola rama
   (versión **1.17.2**). Orden en la PC: VALIDACION_116 → 117 → 1171 → 1172 → evaluación (5.2-D/PC).
 
