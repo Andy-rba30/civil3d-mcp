@@ -237,7 +237,7 @@ namespace ArbaMcp.Nucleo
         /// texto crudo de Civil 3D no llega al agente). 'que': "la línea de muestreo" o "la vista de sección".
         /// </summary>
         public static string MensajeNombreRepetido(string que, string nombre, double progresiva, int nombresLeidos)
-            => "Civil 3D no deja crear " + que + " '" + nombre + "' (progresiva " + Num(progresiva) + "): ya hay otro objeto con ese nombre en el dibujo (los nombres de las líneas de muestreo no se pueden repetir en todo el dibujo) y el plugin no lo encontró entre los "
+            => "Civil 3D no deja crear " + que + " '" + nombre + "' (progresiva " + Num(progresiva) + "): ya hay otro objeto con ese nombre en el dibujo (Civil 3D no deja repetir ese nombre en todo el dibujo, aunque sea de otro grupo o de otro eje) y el plugin no lo encontró entre los "
                + nombresLeidos + " nombres que leyó (grupos de muestreo de todos los ejes y espacio modelo). Nada queda escrito (la transacción se descarta) y no se reintenta. Revisa los grupos de líneas de muestreo de todos los ejes en Prospector y anótalo como hallazgo (miembros_por_verificar_civil3d.md, sección 1.14.2).";
 
         private static HashSet<string> Ocupados(IEnumerable<string> nombres)
