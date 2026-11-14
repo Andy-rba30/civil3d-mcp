@@ -89,6 +89,26 @@ namespace ArbaMcp.Nucleo
         public SeccionLinea(string nombre, double progresiva, AreasSeccion areas, string falta = null) { Nombre = nombre; Progresiva = progresiva; Areas = areas; Falta = falta; }
     }
 
+    /// <summary>
+    /// Una comparación del supuesto de ejes (1.14.3): la cota de la sección de una superficie en un desplazamiento
+    /// (Volumenes.CotaEn) frente a la de la superficie del dibujo en ese punto (Surface.FindElevationAtXY en
+    /// Alignment.PointLocation(pk, desplazamiento)). Null la que no se pudo leer (fuera de la sección o de la TIN).
+    /// </summary>
+    public sealed class ComparacionCota
+    {
+        public string Superficie;
+        public double Desplazamiento;
+        public double? CotaSeccion, CotaSuperficie;
+        public bool Comparable => CotaSeccion.HasValue && CotaSuperficie.HasValue && !double.IsNaN(CotaSeccion.Value) && !double.IsNaN(CotaSuperficie.Value)
+                                  && !double.IsInfinity(CotaSeccion.Value) && !double.IsInfinity(CotaSuperficie.Value);
+        public double? Diferencia => Comparable ? CotaSeccion.Value - CotaSuperficie.Value : (double?)null;
+        public ComparacionCota() { }
+        public ComparacionCota(string superficie, double desplazamiento, double? cotaSeccion, double? cotaSuperficie)
+        {
+            Superficie = superficie; Desplazamiento = desplazamiento; CotaSeccion = cotaSeccion; CotaSuperficie = cotaSuperficie;
+        }
+    }
+
     /// <summary>Una fila de la tabla por progresivas. Los volúmenes son los del tramo desde la línea anterior (null en la primera o sin áreas).</summary>
     public sealed class FilaVolumen
     {
@@ -590,10 +610,11 @@ namespace ArbaMcp.Nucleo
         }
 
         /// <summary>
-        /// Comprueba el supuesto de que SectionPoint.Location da X = desplazamiento e Y = cota: todos los puntos deben
-        /// quedar dentro de los desplazamientos de la sección (±0,01; |LeftOffset| y |RightOffset| por si el izquierdo
-        /// viene con signo) y entre su cota mínima y máxima (±0,01) cuando se leyeron. Devuelve el motivo si no se cumple;
-        /// null si se cumple o no hay con qué comparar.
+        /// Compara los puntos de una sección con Section.LeftOffset/RightOffset (±0,01; |LeftOffset| y |RightOffset| por si
+        /// el izquierdo viene con signo) y con su cota mínima y máxima (±0,01) cuando se leyeron. Devuelve el texto de la
+        /// diferencia o null si cuadran o no hay con qué comparar. Desde 1.14.3 es solo diagnóstico (aviso), ya no bloquea
+        /// la tabla: en la sección de una superficie de corredor LeftOffset/RightOffset dieron −3.9 a 3.6 con puntos de −30
+        /// a 30 (informe 1.14.2 del 14/11/2026, paso 8), así que no son los extremos de los puntos.
         /// </summary>
         public static string MotivoPuntosNoValidos(IEnumerable<Punto2> puntos, double? izquierdo, double? derecho, double? cotaMinima, double? cotaMaxima, string seccion)
         {
@@ -612,6 +633,68 @@ namespace ArbaMcp.Nucleo
                 foreach (var q in p)
                     if (q.Y < cotaMinima.Value - tol || q.Y > cotaMaxima.Value + tol)
                         return "un punto de la sección de '" + seccion + "' tiene Y = " + Txt(q.Y) + ", fuera de sus cotas (" + Txt(cotaMinima.Value) + " a " + Txt(cotaMaxima.Value) + ")";
+            }
+            return null;
+        }
+
+        // ------------------------------------------------------------------ supuesto de ejes (1.14.3)
+        /// <summary>Margen al comparar la cota de una sección con la de su superficie (unidades del dibujo).</summary>
+        public const double ToleranciaCota = 0.01;
+        /// <summary>Desplazamiento máximo a cada lado del eje en que se comparan las cotas (metros): con un 1 % de pendiente transversal da 0,05 de diferencia entre lados, de sobra frente a la tolerancia.</summary>
+        public const double DesplazamientoComprobacion = 5;
+
+        /// <summary>
+        /// Comprueba que los puntos de una sección quedan dentro del ancho real de su línea de muestreo (desde 1.14.3; hasta
+        /// la 1.14.2 se usaba Section.LeftOffset/RightOffset): X entre −anchoIzquierdo y +anchoDerecho, ±0,01. Los anchos
+        /// son positivos (la izquierda es X negativa); un lado sin ancho cuenta como 0; sin ninguno de los dos, no se
+        /// comprueba. Devuelve el motivo o null.
+        /// </summary>
+        public static string MotivoFueraDeLaLinea(IEnumerable<Punto2> puntos, double? anchoIzquierdo, double? anchoDerecho, string seccion)
+        {
+            if (!Finito(anchoIzquierdo) && !Finito(anchoDerecho)) return null;
+            double izq = Finito(anchoIzquierdo) ? Math.Abs(anchoIzquierdo.Value) : 0, der = Finito(anchoDerecho) ? Math.Abs(anchoDerecho.Value) : 0;
+            foreach (var q in puntos ?? new List<Punto2>())
+                if (q.X < -izq - ToleranciaCota || q.X > der + ToleranciaCota)
+                    return "un punto de la sección de '" + seccion + "' tiene X = " + Txt(q.X) + ", fuera del ancho de la línea de muestreo (" + Txt(izq) + " m a la izquierda y " + Txt(der) + " m a la derecha)";
+            return null;
+        }
+
+        /// <summary>
+        /// Desplazamientos en que se compara la cota de las secciones con la de las superficies: el eje (0) si está en el
+        /// tramo común de las dos secciones, y uno a cada lado (DesplazamientoComprobacion o la mitad de lo que haya a ese
+        /// lado, lo que sea menor), para comprobar también el signo izquierda/derecha.
+        /// </summary>
+        public static List<double> DesplazamientosDeComprobacion(double desde, double hasta)
+        {
+            var l = new List<double>();
+            if (!Finito(desde) || !Finito(hasta) || hasta - desde < 1e-9) return l;
+            if (desde <= 1e-9 && hasta >= -1e-9) l.Add(0);
+            if (desde < -2 * ToleranciaCota) l.Add(-Math.Min(DesplazamientoComprobacion, -desde / 2));
+            if (hasta > 2 * ToleranciaCota) l.Add(Math.Min(DesplazamientoComprobacion, hasta / 2));
+            return l;
+        }
+
+        /// <summary>True si hay al menos una cota comparable (de la sección y de la superficie) del terreno y otra de la Datum.</summary>
+        public static bool ComprobacionCompleta(IEnumerable<ComparacionCota> comparaciones, string terreno, string datum)
+        {
+            var c = (comparaciones ?? new List<ComparacionCota>()).Where(x => x != null && x.Comparable).ToList();
+            return c.Any(x => string.Equals(x.Superficie, terreno, StringComparison.OrdinalIgnoreCase))
+                && c.Any(x => string.Equals(x.Superficie, datum, StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>
+        /// Null si en todas las comparaciones la cota de la sección y la de la superficie coinciden (±0,01); si no, el motivo
+        /// (la primera que no coincide), para que la tabla salga sin números.
+        /// </summary>
+        public static string MotivoCotasNoCoinciden(IEnumerable<ComparacionCota> comparaciones, string linea, double progresiva)
+        {
+            foreach (var c in comparaciones ?? new List<ComparacionCota>())
+            {
+                if (c == null || !c.Comparable || Math.Abs(c.Diferencia.Value) <= ToleranciaCota) continue;
+                string donde = Math.Abs(c.Desplazamiento) < 1e-9 ? "en el eje" : "a " + Txt(Math.Abs(c.Desplazamiento)) + " m a la " + (c.Desplazamiento < 0 ? "izquierda" : "derecha") + " del eje";
+                return "en la línea '" + linea + "' (pk " + Txt(progresiva) + ") la sección de '" + c.Superficie + "' da cota " + Txt(c.CotaSeccion.Value) + " " + donde
+                    + " y la superficie da " + Txt(c.CotaSuperficie.Value) + ": SectionPoint.Location no es (desplazamiento, cota)"
+                    + (Math.Abs(c.Desplazamiento) < 1e-9 ? "" : " o el signo de los desplazamientos está cambiado");
             }
             return null;
         }

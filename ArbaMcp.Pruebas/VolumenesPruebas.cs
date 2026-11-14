@@ -549,6 +549,63 @@ namespace ArbaMcp.Pruebas
             Assert.False(IdentificacionSecciones.Identificar(l, null, null).Encontrada);
         }
 
+        // ---------------------------------------------------------------- supuesto de ejes (1.14.3)
+        [Fact]
+        public void ElCasoRealYaNoBloquea()
+        {
+            // Informe 1.14.2 del 14/11/2026, paso 8: sección de la Datum con puntos de −30 a 30 en una línea de 30/30 y
+            // LeftOffset/RightOffset −3.9 y 3.6. Con los offsets sale la diferencia (solo diagnóstico); con el ancho de la línea, nada
+            var datum = P(-30, 108.4, -3.9, 109.0, 0, 109.08, 3.6, 109.0, 30, 108.5);
+            Assert.Contains("X = -30", Volumenes.MotivoPuntosNoValidos(datum, -3.9, 3.6, null, null, "Corredor 1 - Datum"));
+            Assert.Null(Volumenes.MotivoFueraDeLaLinea(datum, 30, 30, "Corredor 1 - Datum"));
+        }
+
+        [Fact]
+        public void PuntosFueraDelAnchoDeLaLinea()
+        {
+            Assert.Null(Volumenes.MotivoFueraDeLaLinea(P(-30.005, 100, 30.004, 101), 30, 30, "Terreno"));   // ±0,01
+            Assert.Equal("un punto de la sección de 'Terreno' tiene X = 31, fuera del ancho de la línea de muestreo (30 m a la izquierda y 30 m a la derecha)",
+                Volumenes.MotivoFueraDeLaLinea(P(-30, 100, 31, 101), 30, 30, "Terreno"));
+            Assert.Contains("X = -12", Volumenes.MotivoFueraDeLaLinea(P(-12, 100, 25, 101), 10, 25, "Terreno"));   // 10 a la izquierda, 25 a la derecha
+            Assert.Contains("X = 1300", Volumenes.MotivoFueraDeLaLinea(P(1300, 100, 1330, 101), 30, 30, "Terreno"));   // coordenadas absolutas
+            Assert.Contains("X = -1", Volumenes.MotivoFueraDeLaLinea(P(-1, 100, 20, 101), null, 25, "Terreno"));   // lado sin ancho = 0
+            Assert.Null(Volumenes.MotivoFueraDeLaLinea(P(-1000, 100, 1000, 101), null, null, "Terreno"));   // sin anchos, no se comprueba
+        }
+
+        [Fact]
+        public void DesplazamientosDeComprobacion()
+        {
+            Assert.Equal(new[] { 0.0, -5, 5 }, Volumenes.DesplazamientosDeComprobacion(-30, 30));
+            Assert.Equal(new[] { 0.0, -1.5, 5 }, Volumenes.DesplazamientosDeComprobacion(-3, 25));   // la mitad si a ese lado hay menos de 10 m
+            Assert.Equal(new[] { 4.0 }, Volumenes.DesplazamientosDeComprobacion(2, 8));   // el eje no está en el tramo: solo la derecha
+            Assert.Empty(Volumenes.DesplazamientosDeComprobacion(5, 5));
+            Assert.Empty(Volumenes.DesplazamientosDeComprobacion(double.NaN, 5));
+        }
+
+        [Fact]
+        public void ComparacionDeCotas()
+        {
+            var bien = new List<ComparacionCota>
+            {
+                new ComparacionCota("Terreno", 0, 104.1867, 104.1900),
+                new ComparacionCota("Corredor 1 - Datum", 0, 109.0011, 109.0011),
+                new ComparacionCota("Corredor 1 - Datum", -5, null, 108.9),   // fuera de la sección: no cuenta
+                new ComparacionCota("Terreno", 5, 104.2, null)                 // fuera de la TIN: no cuenta
+            };
+            Assert.True(Volumenes.ComprobacionCompleta(bien, "Terreno", "Corredor 1 - Datum"));
+            Assert.Null(Volumenes.MotivoCotasNoCoinciden(bien, "0+400.00", 400));
+            Assert.False(Volumenes.ComprobacionCompleta(bien.Where(c => c.Superficie == "Terreno").ToList(), "Terreno", "Corredor 1 - Datum"));
+            Assert.Equal(-0.0033, bien[0].Diferencia.Value, 9);
+            Assert.Null(bien[2].Diferencia);
+
+            // El signo izquierda/derecha cambiado: en −5 la sección da lo que la superficie tiene en +5
+            var mal = new List<ComparacionCota> { new ComparacionCota("Terreno", 0, 104.1867, 104.1867), new ComparacionCota("Terreno", -5, 104.25, 104.12) };
+            Assert.Equal("en la línea '0+400.00' (pk 400) la sección de 'Terreno' da cota 104.25 a 5 m a la izquierda del eje y la superficie da 104.12: SectionPoint.Location no es (desplazamiento, cota) o el signo de los desplazamientos está cambiado",
+                Volumenes.MotivoCotasNoCoinciden(mal, "0+400.00", 400));
+            Assert.Equal("en la línea 'L' (pk 0) la sección de 'D' da cota 110 en el eje y la superficie da 109: SectionPoint.Location no es (desplazamiento, cota)",
+                Volumenes.MotivoCotasNoCoinciden(new[] { new ComparacionCota("D", 0, 110, 109) }, "L", 0));
+        }
+
         [Fact]
         public void RecuentoPorMetodo()
         {
