@@ -32,6 +32,25 @@ namespace ArbaMcp.Nucleo
     }
 
     /// <summary>
+    /// Nombres de las líneas de un grupo nuevo, únicos en todo el dibujo (crear_secciones, desde 1.14.2): Civil 3D no deja
+    /// crear una línea de muestreo con el nombre de otra que ya existe en el dibujo ("Sample line name should not
+    /// duplicate.", informe 1.13.0 del 14/11/2026, paso 9), aunque sea de otro grupo o de otro eje.
+    /// </summary>
+    public sealed class NombresDeLineas
+    {
+        /// <summary>Nombre de cada línea, uno por progresiva: el que se pasa a SampleLine.Create.</summary>
+        public List<string> Lineas = new List<string>();
+        /// <summary>Nombre por progresiva sin prefijo ("0+020.00"): el que va detrás del grupo en el nombre de la vista.</summary>
+        public List<string> Base = new List<string>();
+        /// <summary>Texto que va delante de cada línea ("Muestreo 100 "); null si ningún nombre chocaba.</summary>
+        public string Prefijo;
+        /// <summary>Nombres por progresiva que ya existían en el dibujo (los que obligaron a poner el prefijo).</summary>
+        public List<string> Chocaban = new List<string>();
+        /// <summary>Aviso para la respuesta (qué chocaba, con qué y qué nombres se usan); null si no hubo que cambiar nada.</summary>
+        public string Aviso;
+    }
+
+    /// <summary>
     /// Colocación de las vistas de sección en cuadrícula (crear_secciones, 1.13.0): columnas de izquierda a derecha y,
     /// dentro de cada columna, una vista encima de la otra (progresiva creciente de abajo arriba, como la esquina de
     /// inicio "inferior izquierda" de Civil 3D). Cada vista se coloca con la extensión real de la anterior: la siguiente
@@ -154,6 +173,80 @@ namespace ArbaMcp.Nucleo
 
         /// <summary>Nombre de la vista de sección de una línea: "&lt;grupo&gt; &lt;línea&gt;" ("Eje 1 - Muestreo 0+020.00").</summary>
         public static string NombreVista(string grupo, string linea) => grupo.Trim() + " " + linea;
+
+        /// <summary>
+        /// Nombres de las líneas de un grupo nuevo, únicos en el dibujo (desde 1.14.2). 'existentes': nombre de cada línea
+        /// de muestreo que ya hay en el dibujo → dónde está (por ejemplo "grupo 'Eje 1 - Muestreo' del eje 'Eje 1'"), sin
+        /// distinguir mayúsculas. Si ningún nombre por progresiva ("0+020.00") choca, se usan tal cual (el caso normal: el
+        /// primer grupo). Si choca alguno, TODAS las líneas del grupo llevan delante el nombre del grupo
+        /// ("Muestreo 100 0+100.00"), para que los nombres del grupo sean homogéneos, y si aun así alguno choca, " (2)",
+        /// " (3)"... El aviso dice qué chocaba, con qué y qué nombres se usan.
+        /// </summary>
+        public static NombresDeLineas NombresLineasUnicos(IList<double> progresivas, string grupo, IDictionary<string, string> existentes)
+        {
+            var r = new NombresDeLineas { Base = NombresLineas(progresivas ?? new List<double>()) };
+            var ocupados = Ocupados(existentes?.Keys);
+            r.Chocaban = r.Base.Where(n => ocupados.Contains(Limpio(n))).ToList();
+            if (r.Chocaban.Count == 0)
+            {
+                r.Lineas = r.Base.ToList();
+                return r;
+            }
+            string g = (grupo ?? "").Trim();
+            r.Prefijo = g + " ";
+            r.Lineas = NombresUnicos(r.Base.Select(b => r.Prefijo + b).ToList(), ocupados);
+
+            var donde = r.Chocaban
+                .Select(n => existentes.FirstOrDefault(kv => kv.Key != null && string.Equals(Limpio(kv.Key), Limpio(n), StringComparison.OrdinalIgnoreCase)).Value)
+                .Where(d => !string.IsNullOrWhiteSpace(d)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            r.Aviso = "Ya hay líneas de muestreo con " + (r.Chocaban.Count == 1 ? "el nombre " : "los nombres ") + Enumerar(r.Chocaban, 5)
+                + " en el dibujo" + (donde.Count == 0 ? "" : " (" + string.Join("; ", donde.Take(3)) + (donde.Count > 3 ? "; …" : "") + ")")
+                + " y Civil 3D no deja repetir el nombre de una línea en todo el dibujo: las " + r.Lineas.Count + " líneas del grupo '" + g
+                + "' llevan delante el nombre del grupo ('" + r.Lineas[0] + "'" + (r.Lineas.Count > 1 ? " … '" + r.Lineas[r.Lineas.Count - 1] + "'" : "")
+                + "). Las vistas se siguen llamando '<grupo> <progresiva>'.";
+            return r;
+        }
+
+        /// <summary>
+        /// Hace únicos unos nombres frente a los 'ocupados' (sin distinguir mayúsculas ni espacios en los extremos) y entre
+        /// sí: el que choca lleva " (2)", " (3)"... Los que no chocan no cambian.
+        /// </summary>
+        public static List<string> NombresUnicos(IList<string> nombres, IEnumerable<string> ocupados)
+        {
+            var usados = Ocupados(ocupados);
+            var lista = new List<string>();
+            foreach (string n in nombres ?? new List<string>())
+            {
+                string candidato = n;
+                for (int k = 2; usados.Contains(Limpio(candidato)); k++) candidato = n + " (" + k + ")";
+                usados.Add(Limpio(candidato));
+                lista.Add(candidato);
+            }
+            return lista;
+        }
+
+        /// <summary>
+        /// True si el mensaje de una excepción de SampleLine.Create o SectionView.Create es el de nombre repetido
+        /// ("Sample line name should not duplicate.", informe 1.13.0 del 14/11/2026; se acepta también en español).
+        /// </summary>
+        public static bool EsNombreRepetido(string mensaje)
+            => !string.IsNullOrEmpty(mensaje) && (mensaje.IndexOf("duplic", StringComparison.OrdinalIgnoreCase) >= 0 || mensaje.IndexOf("repetid", StringComparison.OrdinalIgnoreCase) >= 0);
+
+        /// <summary>
+        /// Error claro cuando Civil 3D rechaza un nombre que el plugin no vio al leer el dibujo (red de seguridad: el
+        /// texto crudo de Civil 3D no llega al agente). 'que': "la línea de muestreo" o "la vista de sección".
+        /// </summary>
+        public static string MensajeNombreRepetido(string que, string nombre, double progresiva, int nombresLeidos)
+            => "Civil 3D no deja crear " + que + " '" + nombre + "' (progresiva " + Num(progresiva) + "): ya hay otro objeto con ese nombre en el dibujo (los nombres de las líneas de muestreo no se pueden repetir en todo el dibujo) y el plugin no lo encontró entre los "
+               + nombresLeidos + " nombres que leyó (grupos de muestreo de todos los ejes y espacio modelo). Nada queda escrito (la transacción se descarta) y no se reintenta. Revisa los grupos de líneas de muestreo de todos los ejes en Prospector y anótalo como hallazgo (miembros_por_verificar_civil3d.md, sección 1.14.2).";
+
+        private static HashSet<string> Ocupados(IEnumerable<string> nombres)
+            => new HashSet<string>((nombres ?? new string[0]).Where(n => !string.IsNullOrWhiteSpace(n)).Select(Limpio), StringComparer.OrdinalIgnoreCase);
+
+        private static string Limpio(string n) => (n ?? "").Trim();
+
+        private static string Enumerar(IList<string> l, int max)
+            => string.Join(", ", l.Take(max).Select(x => "'" + x + "'")) + (l.Count > max ? " y " + (l.Count - max) + " más" : "");
 
         // ------------------------------------------------------------------ validación de parámetros
         /// <summary>El intervalo (m) es obligatorio, finito y mayor que 0.</summary>

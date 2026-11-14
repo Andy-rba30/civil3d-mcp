@@ -460,5 +460,108 @@ namespace ArbaMcp.Pruebas
             Assert.Equal(5, Volumenes.DiferenciaPorcentaje(1050, 1000).Value, 9);
             Assert.Null(Volumenes.DiferenciaPorcentaje(10, 0));
         }
+
+        // ---------------------------------------------------------------- identificación de secciones (1.14.2)
+        // Ids como texto (los handles); "T" = terreno, "T2" = Terreno 2, "C" = corredor, "D" = Datum, "P" = Top.
+        private static readonly SuperficieBuscada BuscaTerreno = new SuperficieBuscada("T", "Terreno");
+        private static readonly SuperficieBuscada BuscaDatum = new SuperficieBuscada("D", "Corredor 1 - Datum", "Corredor 1");
+
+        /// <summary>
+        /// Las cinco secciones de cada línea en la validación 1.13.0 (informe del 14/11/2026, pregunta 2), con lo observado en
+        /// la 1.14.0: SourceName "&lt;corredor&gt; &lt;superficie&gt;" en las de corredor y SourceId que no es la superficie (aquí,
+        /// el corredor). CorridorSurfaceId sin leer.
+        /// </summary>
+        private static List<SeccionCandidata> CincoSecciones() => new List<SeccionCandidata>
+        {
+            new SeccionCandidata("s0", "T", null, "Terreno"),
+            new SeccionCandidata("s1", "T2", null, "Terreno 2"),
+            new SeccionCandidata("s2", "C", null, "Corredor 1"),
+            new SeccionCandidata("s3", "C", null, "Corredor 1 Corredor 1 - Top"),
+            new SeccionCandidata("s4", "C", null, "Corredor 1 Corredor 1 - Datum")
+        };
+
+        [Fact]
+        public void LaDatumSeEncuentraPorElNombreConElCorredorDelante()
+        {
+            var (t, d) = IdentificacionSecciones.IdentificarLasDos(CincoSecciones(), BuscaTerreno, null, BuscaDatum, null);
+            Assert.Equal(0, t.Indice);
+            Assert.Equal(IdentificacionSecciones.PorSourceId, t.Metodo);
+            Assert.Equal(4, d.Indice);   // ni la del corredor (2) ni la de la Top (3)
+            Assert.Equal(IdentificacionSecciones.PorNombreConCorredor, d.Metodo);
+        }
+
+        [Fact]
+        public void GetSectionIdGanaSiEsUnaSeccionDeLaLinea()
+        {
+            var (t, d) = IdentificacionSecciones.IdentificarLasDos(CincoSecciones(), BuscaTerreno, "s0", BuscaDatum, "S4");
+            Assert.Equal((0, IdentificacionSecciones.PorGetSectionId), (t.Indice, t.Metodo));
+            Assert.Equal((4, IdentificacionSecciones.PorGetSectionId), (d.Indice, d.Metodo));
+            // Si GetSectionId devuelve una sección que no es de la línea, se ignora y se sigue con el siguiente intento
+            var otra = IdentificacionSecciones.Identificar(CincoSecciones(), BuscaDatum, "s99");
+            Assert.Equal((4, IdentificacionSecciones.PorNombreConCorredor), (otra.Indice, otra.Metodo));
+        }
+
+        [Fact]
+        public void CorridorSurfaceIdVaAntesQueSourceIdYQueElNombre()
+        {
+            var l = CincoSecciones();
+            l[3].SuperficieCorredorId = "P";
+            l[4].SuperficieCorredorId = "D";
+            var d = IdentificacionSecciones.Identificar(l, BuscaDatum, null);
+            Assert.Equal((4, IdentificacionSecciones.PorCorridorSurfaceId), (d.Indice, d.Metodo));
+        }
+
+        [Fact]
+        public void SourceIdIgualALaSuperficie()
+        {
+            var l = new List<SeccionCandidata> { new SeccionCandidata("a", "C", null, "x"), new SeccionCandidata("b", "D", null, "y") };
+            Assert.Equal((1, IdentificacionSecciones.PorSourceId), (IdentificacionSecciones.Identificar(l, BuscaDatum, null).Indice, IdentificacionSecciones.Identificar(l, BuscaDatum, null).Metodo));
+        }
+
+        [Fact]
+        public void NombreExactoSinMayusculasNiEspaciosDeMas()
+        {
+            var l = new List<SeccionCandidata> { new SeccionCandidata("a", null, null, "Terreno 2"), new SeccionCandidata("b", null, null, "  terreno ") };
+            var t = IdentificacionSecciones.Identificar(l, BuscaTerreno, null);
+            Assert.Equal((1, IdentificacionSecciones.PorNombre), (t.Indice, t.Metodo));   // "Terreno 2" no es "Terreno"
+            Assert.True(IdentificacionSecciones.NombreConCorredorCoincide("Corredor 1   Corredor 1 - Datum", "Corredor 1", "Corredor 1 - Datum"));
+            Assert.False(IdentificacionSecciones.NombreConCorredorCoincide("Corredor 1 Corredor 1 - Datum", null, "Corredor 1 - Datum"));
+            Assert.False(IdentificacionSecciones.NombreCoincide("Corredor 1 Corredor 1 - Datum", "Corredor 1"));
+        }
+
+        [Fact]
+        public void LaDatumNuncaTomaLaSeccionDelTerreno()
+        {
+            // Datos raros: la única sección cumple las dos cosas (SourceId del terreno y CorridorSurfaceId de la Datum)
+            var l = new List<SeccionCandidata> { new SeccionCandidata("a", "T", "D", "Terreno") };
+            var (t, d) = IdentificacionSecciones.IdentificarLasDos(l, BuscaTerreno, null, BuscaDatum, null);
+            Assert.Equal(0, t.Indice);
+            Assert.False(d.Encontrada);
+            Assert.Null(d.Metodo);
+        }
+
+        [Fact]
+        public void SinSeccionDeLaSuperficie()
+        {
+            var l = new List<SeccionCandidata> { new SeccionCandidata("s0", "T", null, "Terreno"), null };
+            Assert.False(IdentificacionSecciones.Identificar(l, BuscaDatum, null).Encontrada);
+            Assert.False(IdentificacionSecciones.Identificar(null, BuscaDatum, null).Encontrada);
+            Assert.False(IdentificacionSecciones.Identificar(l, null, null).Encontrada);
+        }
+
+        [Fact]
+        public void RecuentoPorMetodo()
+        {
+            var r = new RecuentoIdentificacion();
+            r.Anotar(new SeccionIdentificada { Indice = 0, Metodo = IdentificacionSecciones.PorGetSectionId });
+            r.Anotar(new SeccionIdentificada { Indice = 2, Metodo = IdentificacionSecciones.PorGetSectionId });
+            r.Anotar(new SeccionIdentificada { Indice = 1, Metodo = IdentificacionSecciones.PorNombre });
+            r.Anotar(new SeccionIdentificada());
+            Assert.Equal(4, r.Lineas);
+            Assert.Equal(1, r.SinSeccion);
+            Assert.Equal(2, r.Metodos[IdentificacionSecciones.PorGetSectionId]);
+            Assert.Equal(1, r.Metodos[IdentificacionSecciones.PorNombre]);
+            Assert.Equal(5, IdentificacionSecciones.Orden.Count);
+        }
     }
 }

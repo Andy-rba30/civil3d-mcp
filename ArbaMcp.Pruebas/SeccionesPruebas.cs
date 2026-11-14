@@ -316,5 +316,114 @@ namespace ArbaMcp.Pruebas
             Assert.Null(Secciones.AvisoAncho("0+020.00", "izquierda", 30, null));
             Assert.Equal("La línea '0+020.00' quedó con 25 m a la derecha (se pidieron 30): revísala en Civil 3D (Propiedades de la línea de muestreo).", Secciones.AvisoAncho("0+020.00", "derecha", 30, 25));
         }
+
+        // ---------------------------------------------------------------- nombres únicos en el dibujo (1.14.2)
+        private static readonly List<double> Cada100 = new List<double> { 0, 100, 200, 300, 400, 500, 600, 700, 800, FinEje };
+
+        /// <summary>Nombres de las 43 líneas de 'Eje 1 - Muestreo' (cada 20 m), como los deja el primer grupo.</summary>
+        private static Dictionary<string, string> PrimerGrupo()
+        {
+            var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string n in Secciones.NombresLineas(Secciones.Progresivas(0, FinEje, null, null, 20, "Eje 1").Progresivas))
+                d[n] = "grupo 'Eje 1 - Muestreo' del eje 'Eje 1'";
+            return d;
+        }
+
+        [Fact]
+        public void SinChoqueLosNombresNoCambian()
+        {
+            var r = Secciones.NombresLineasUnicos(new List<double> { 0, 20, 40 }, "Eje 1 - Muestreo", new Dictionary<string, string>());
+            Assert.Equal(new[] { "0+000.00", "0+020.00", "0+040.00" }, r.Lineas);
+            Assert.Equal(r.Lineas, r.Base);
+            Assert.Null(r.Prefijo);
+            Assert.Empty(r.Chocaban);
+            Assert.Null(r.Aviso);
+            // Sin diccionario (dibujo sin líneas) es lo mismo
+            Assert.Equal(new[] { "0+000.00", "0+020.00", "0+040.00" }, Secciones.NombresLineasUnicos(new List<double> { 0, 20, 40 }, "G", null).Lineas);
+        }
+
+        [Fact]
+        public void SegundoGrupoEnElMismoEjeLlevaElNombreDelGrupoDelanteEnTodasLasLineas()
+        {
+            // El caso del paso 9 de VALIDACION_113: 'Muestreo 100' cada 100 m después de 'Eje 1 - Muestreo' cada 20 m
+            var r = Secciones.NombresLineasUnicos(Cada100, "Muestreo 100", PrimerGrupo());
+            Assert.Equal("Muestreo 100 ", r.Prefijo);
+            Assert.Equal(10, r.Lineas.Count);
+            Assert.Equal("Muestreo 100 0+000.00", r.Lineas[0]);
+            Assert.Equal("Muestreo 100 0+100.00", r.Lineas[1]);
+            Assert.Equal("Muestreo 100 0+831.33", r.Lineas[9]);
+            Assert.Equal("0+100.00", r.Base[1]);
+            Assert.Equal(10, r.Chocaban.Count);   // también 0+831.33, la última de los dos grupos
+            Assert.StartsWith("Ya hay líneas de muestreo con los nombres '0+000.00', '0+100.00', '0+200.00', '0+300.00', '0+400.00' y 5 más en el dibujo (grupo 'Eje 1 - Muestreo' del eje 'Eje 1') y Civil 3D no deja repetir", r.Aviso);
+            Assert.Contains("las 10 líneas del grupo 'Muestreo 100' llevan delante el nombre del grupo ('Muestreo 100 0+000.00' … 'Muestreo 100 0+831.33')", r.Aviso);
+        }
+
+        [Fact]
+        public void UnSoloChoquePrefijaTodoElGrupo()
+        {
+            var existentes = new Dictionary<string, string> { ["0+200.00"] = "espacio modelo" };
+            var r = Secciones.NombresLineasUnicos(new List<double> { 0, 100, 200 }, " Otro ", existentes);
+            Assert.Equal(new[] { "Otro 0+000.00", "Otro 0+100.00", "Otro 0+200.00" }, r.Lineas);
+            Assert.Equal(new[] { "0+200.00" }, r.Chocaban);
+            Assert.Contains("con el nombre '0+200.00' en el dibujo (espacio modelo)", r.Aviso);
+        }
+
+        [Fact]
+        public void SiElNombreConPrefijoTambienChocaLlevaNumero()
+        {
+            var existentes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["0+000.00"] = "a",
+                ["MUESTREO 100 0+000.00"] = "b",      // sin distinguir mayúsculas
+                ["Muestreo 100 0+000.00 (2)"] = "c"
+            };
+            var r = Secciones.NombresLineasUnicos(new List<double> { 0, 100 }, "Muestreo 100", existentes);
+            Assert.Equal(new[] { "Muestreo 100 0+000.00 (3)", "Muestreo 100 0+100.00" }, r.Lineas);
+        }
+
+        [Fact]
+        public void ElChoqueNoDistingueMayusculasNiEspacios()
+        {
+            var r = Secciones.NombresLineasUnicos(new List<double> { 0 }, "G", new Dictionary<string, string> { [" 0+000.00 "] = "x" });
+            Assert.Equal("G ", r.Prefijo);
+            Assert.Equal(new[] { "G 0+000.00" }, r.Lineas);
+        }
+
+        [Fact]
+        public void LosDuplicadosDentroDelGrupoSeConservanConPrefijo()
+        {
+            var r = Secciones.NombresLineasUnicos(new List<double> { 10, 10.001, 20 }, "G", new Dictionary<string, string> { ["0+020.00"] = "x" });
+            Assert.Equal(new[] { "G 0+010.00", "G 0+010.00 (2)", "G 0+020.00" }, r.Lineas);
+        }
+
+        [Fact]
+        public void LaVistaNoRepiteElGrupoYSoloLlevaNumeroSiChoca()
+        {
+            var r = Secciones.NombresLineasUnicos(new List<double> { 0, 100 }, "Muestreo 100", PrimerGrupo());
+            var vistas = Secciones.NombresUnicos(r.Base.Select(b => Secciones.NombreVista("Muestreo 100", b)).ToList(), new[] { "muestreo 100 0+100.00" });
+            Assert.Equal(new[] { "Muestreo 100 0+000.00", "Muestreo 100 0+100.00 (2)" }, vistas);
+            Assert.DoesNotContain(vistas, v => v.Contains("Muestreo 100 Muestreo 100"));
+            Assert.Equal(new[] { "a", "b" }, Secciones.NombresUnicos(new[] { "a", "b" }, null));
+            Assert.Equal(new[] { "a", "a (2)" }, Secciones.NombresUnicos(new[] { "a", "a" }, new string[0]));
+        }
+
+        [Theory]
+        [InlineData("Sample line name should not duplicate.", true)]
+        [InlineData("El nombre está duplicado", true)]
+        [InlineData("Nombre repetido", true)]
+        [InlineData("eInvalidInput", false)]
+        [InlineData(null, false)]
+        public void ReconoceElErrorDeNombreRepetido(string mensaje, bool esperado)
+            => Assert.Equal(esperado, Secciones.EsNombreRepetido(mensaje));
+
+        [Fact]
+        public void ElMensajeDeNombreRepetidoNoLlevaElTextoCrudo()
+        {
+            string m = Secciones.MensajeNombreRepetido("la línea de muestreo", "0+100.00", 100, 53);
+            Assert.StartsWith("Civil 3D no deja crear la línea de muestreo '0+100.00' (progresiva 100): ya hay otro objeto con ese nombre en el dibujo", m);
+            Assert.Contains("entre los 53 nombres que leyó", m);
+            Assert.Contains("no se reintenta", m);
+            Assert.DoesNotContain("should not duplicate", m);
+        }
     }
 }
