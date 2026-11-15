@@ -209,6 +209,43 @@ namespace ArbaMcp.Pruebas
             Assert.Empty(CodigoReferencias.FiltrarPlataforma(null, Acad, Runtime));
         }
 
+        // ------------------------------------------------------------------ RutasAutodesk y TieneLasDeAutodesk
+        [Fact]
+        public void RutasAutodesk_LasCincoDelPluginConSusSubcarpetas()
+        {
+            // Mismo esquema que los HintPath de ArbaMcp.csproj; AecBaseMgd y AeccDbMgd no están en el TPA de acad.exe
+            var rutas = CodigoReferencias.RutasAutodesk(Acad).ToList();
+            Assert.Equal(5, rutas.Count);
+            Assert.All(rutas, r => Assert.StartsWith(Acad, r));
+            Assert.Equal(new[] { "acdbmgd.dll", "accoremgd.dll", "acmgd.dll", "AecBaseMgd.dll", "AeccDbMgd.dll" }, rutas.Select(r => Path.GetFileName(r)));
+            Assert.Equal(Path.Combine(Acad, "acdbmgd.dll"), rutas[0]);
+            Assert.Equal(Path.Combine(Acad, "accoremgd.dll"), rutas[1]);
+            Assert.Equal(Path.Combine(Acad, "acmgd.dll"), rutas[2]);
+            Assert.Equal(Path.Combine(Acad, "ACA", "AecBaseMgd.dll"), rutas[3]);
+            Assert.Equal(Path.Combine(Acad, "C3D", "AeccDbMgd.dll"), rutas[4]);
+            Assert.Equal(Acad, Path.GetDirectoryName(rutas[0]));
+            Assert.Equal("ACA", Path.GetFileName(Path.GetDirectoryName(rutas[3])));
+            Assert.Equal("C3D", Path.GetFileName(Path.GetDirectoryName(rutas[4])));
+            Assert.Empty(CodigoReferencias.RutasAutodesk(null));
+            Assert.Empty(CodigoReferencias.RutasAutodesk(""));
+        }
+
+        [Fact]
+        public void TieneLasDeAutodesk_SoloConLasCinco()
+        {
+            var nombres = new[] { "System.Runtime", "acdbmgd", "accoremgd", "acmgd", "AecBaseMgd", "AeccDbMgd", "ArbaMcp", "ArbaMcp.Nucleo" };
+            Assert.True(CodigoReferencias.TieneLasDeAutodesk(nombres));
+            Assert.False(CodigoReferencias.TieneLasDeAutodesk(nombres.Where(n => n != "AecBaseMgd")));
+            Assert.False(CodigoReferencias.TieneLasDeAutodesk(nombres.Where(n => n != "AeccDbMgd")));
+            Assert.False(CodigoReferencias.TieneLasDeAutodesk(nombres.Where(n => n != "acmgd")));
+            Assert.True(CodigoReferencias.TieneLasDeAutodesk(new[] { "ACDBMGD", "AcCoreMgd", "ACMGD", "aecbasemgd", "AECCDBMGD" }));
+            Assert.True(CodigoReferencias.TieneLasDeAutodesk(new[] { "acdbmgd.dll", "accoremgd.dll", "acmgd.dll", "AecBaseMgd.dll", "AeccDbMgd.dll" }));
+            Assert.False(CodigoReferencias.TieneLasDeAutodesk(new string[0]));
+            Assert.False(CodigoReferencias.TieneLasDeAutodesk(null));
+            // Las dos listas cuentan las mismas cinco DLL
+            Assert.True(CodigoReferencias.TieneLasDeAutodesk(CodigoReferencias.RutasAutodesk(Acad).Select(r => Path.GetFileName(r))));
+        }
+
         // ------------------------------------------------------------------ integración con el compilador
         [Fact]
         public void ConUnPeNativoEnLasReferencias_FiltradoCompila_SinFiltrarDaCS0009()

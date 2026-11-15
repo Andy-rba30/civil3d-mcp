@@ -19,6 +19,61 @@ namespace ArbaMcp.Nucleo
     public static class CodigoReferencias
     {
         /// <summary>
+        /// Las DLL de AutoCAD y Civil 3D que referencia el plugin, por segmentos relativos a la carpeta de AutoCAD: el
+        /// mismo esquema que los HintPath de ArbaMcp.csproj ($(C3DPath)\acdbmgd.dll, ...\ACA\AecBaseMgd.dll,
+        /// ...\C3D\AeccDbMgd.dll). AecBaseMgd y AeccDbMgd están en subcarpetas que el runtime no pone en
+        /// TRUSTED_PLATFORM_ASSEMBLIES, así que sin esta lista solo entraban si ya estaban cargadas.
+        /// </summary>
+        private static readonly string[][] SegmentosAutodesk =
+        {
+            new[] { "acdbmgd.dll" },
+            new[] { "accoremgd.dll" },
+            new[] { "acmgd.dll" },
+            new[] { "ACA", "AecBaseMgd.dll" },
+            new[] { "C3D", "AeccDbMgd.dll" },
+        };
+
+        /// <summary>Nombres de ensamblado (sin carpeta ni .dll) de las DLL de SegmentosAutodesk.</summary>
+        public static readonly IReadOnlyList<string> NombresAutodesk = new[] { "acdbmgd", "accoremgd", "acmgd", "AecBaseMgd", "AeccDbMgd" };
+
+        /// <summary>
+        /// Rutas de las DLL de AutoCAD y Civil 3D que referencia el plugin dentro de la carpeta de AutoCAD 'dirAcad'
+        /// (Path.Combine por segmentos). Solo arma las rutas: no comprueba que existan ni carga nada. Sin 'dirAcad', vacía.
+        /// </summary>
+        public static IEnumerable<string> RutasAutodesk(string dirAcad)
+        {
+            var salida = new List<string>();
+            if (string.IsNullOrEmpty(dirAcad)) return salida;
+            foreach (var segmentos in SegmentosAutodesk)
+            {
+                var partes = new string[segmentos.Length + 1];
+                partes[0] = dirAcad;
+                Array.Copy(segmentos, 0, partes, 1, segmentos.Length);
+                salida.Add(Path.Combine(partes));
+            }
+            return salida;
+        }
+
+        /// <summary>
+        /// true si 'nombres' (nombres de ensamblado, con o sin .dll, sin distinguir mayúsculas) incluye las cinco DLL de
+        /// AutoCAD y Civil 3D que referencia el plugin. Decide si la lista de referencias de ejecutar_codigo se guarda en
+        /// caché: si falta alguna, se vuelve a armar en la llamada siguiente.
+        /// </summary>
+        public static bool TieneLasDeAutodesk(IEnumerable<string> nombres)
+        {
+            if (nombres == null) return false;
+            var presentes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var n in nombres)
+            {
+                if (string.IsNullOrEmpty(n)) continue;
+                presentes.Add(n.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ? n.Substring(0, n.Length - 4) : n);
+            }
+            foreach (var n in NombresAutodesk)
+                if (!presentes.Contains(n)) return false;
+            return true;
+        }
+
+        /// <summary>
         /// true solo si el archivo es un ensamblado .NET legible: una imagen PE con metadatos administrados que se
         /// pueden leer y con manifiesto de ensamblado. Un PE nativo, un archivo que no es PE, una ruta vacía o que no
         /// existe, o cualquier error al leerlo: false.
