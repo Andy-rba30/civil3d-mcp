@@ -246,6 +246,61 @@ namespace ArbaMcp.Pruebas
             Assert.True(CodigoReferencias.TieneLasDeAutodesk(CodigoReferencias.RutasAutodesk(Acad).Select(r => Path.GetFileName(r))));
         }
 
+        // ------------------------------------------------------------------ CarpetaDeAutoCAD, lo que falta, diagnóstico y resumen (1.17.4)
+        [Fact]
+        public void CarpetaDeAutoCad_SinDistinguirMayusculas()
+        {
+            // En Civil 3D 2027 el nombre de ensamblado de acdbmgd.dll es «Acdbmgd»: la 1.17.3 lo buscaba exacto y no lo encontraba
+            string ruta = Path.Combine(Acad, "acdbmgd.dll");
+            foreach (var nombre in new[] { "Acdbmgd", "ACDBMGD", "acdbmgd" })
+                Assert.Equal(Acad, CodigoReferencias.CarpetaDeAutoCAD(new[] { ("System.Runtime", Path.Combine(Runtime, "System.Runtime.dll")), (nombre, ruta) }));
+        }
+
+        [Fact]
+        public void CarpetaDeAutoCad_SinAcdbmgd_EsNula()
+        {
+            Assert.Null(CodigoReferencias.CarpetaDeAutoCAD(new[] { ("Acmgd", Path.Combine(Acad, "acmgd.dll")), ("System.Runtime", Path.Combine(Runtime, "System.Runtime.dll")) }));
+            Assert.Null(CodigoReferencias.CarpetaDeAutoCAD(Array.Empty<(string, string)>()));
+            Assert.Null(CodigoReferencias.CarpetaDeAutoCAD(null));
+        }
+
+        [Fact]
+        public void CarpetaDeAutoCad_LaEntradaSinRutaSeSalta()
+        {
+            Assert.Null(CodigoReferencias.CarpetaDeAutoCAD(new[] { ("Acdbmgd", ""), ("acdbmgd", (string)null) }));
+            Assert.Equal(Acad, CodigoReferencias.CarpetaDeAutoCAD(new[] { ("Acdbmgd", ""), ("acdbmgd", (string)null), ("ACDBMGD", Path.Combine(Acad, "acdbmgd.dll")) }));
+        }
+
+        [Fact]
+        public void FaltanDeAutodesk_EnOrdenYSinDistinguirMayusculas()
+        {
+            Assert.Equal(new[] { "AecBaseMgd" }, CodigoReferencias.FaltanDeAutodesk(new[] { "ACDBMGD", "AcCoreMgd", "acmgd.dll", "aeccdbmgd" }).ToArray());
+            Assert.Equal(CodigoReferencias.NombresAutodesk.ToArray(), CodigoReferencias.FaltanDeAutodesk(null).ToArray());
+            Assert.Empty(CodigoReferencias.FaltanDeAutodesk(new[] { "Acdbmgd", "accoremgd", "Acmgd", "AecBaseMgd", "AeccDbMgd" }));
+        }
+
+        [Fact]
+        public void Diagnostico_SoloSiFaltaLaCarpetaOAlgunaDll()
+        {
+            var cinco = new[] { "Acdbmgd", "accoremgd", "Acmgd", "AecBaseMgd", "AeccDbMgd", "System.Runtime" };
+            Assert.Null(CodigoReferencias.DiagnosticoReferencias(Acad, cinco));
+            Assert.Equal("Referencias del plugin: carpeta de AutoCAD no encontrada; faltan acdbmgd, accoremgd, acmgd, AecBaseMgd, AeccDbMgd.",
+                CodigoReferencias.DiagnosticoReferencias(null, new[] { "System.Runtime" }));
+            Assert.Equal("Referencias del plugin: carpeta de AutoCAD " + Acad + "; faltan AecBaseMgd, AeccDbMgd.",
+                CodigoReferencias.DiagnosticoReferencias(Acad, new[] { "acdbmgd", "accoremgd", "acmgd" }));
+            Assert.Equal("Referencias del plugin: carpeta de AutoCAD no encontrada; no falta ninguna de las cinco DLL de AutoCAD y Civil 3D.",
+                CodigoReferencias.DiagnosticoReferencias("", cinco));
+        }
+
+        [Fact]
+        public void Resumen_CuantasLaCarpetaYLasQueFaltan()
+        {
+            Assert.Equal("referencias para compilar: 180 DLL; carpeta de AutoCAD " + Acad + "; DLL de AutoCAD y Civil 3D: las cinco presentes",
+                CodigoReferencias.ResumenReferencias(180, Acad, new[] { "Acdbmgd", "accoremgd", "Acmgd", "AecBaseMgd", "AeccDbMgd" }));
+            Assert.Equal("referencias para compilar: 170 DLL; carpeta de AutoCAD no encontrada; DLL de AutoCAD y Civil 3D: faltan AecBaseMgd, AeccDbMgd",
+                CodigoReferencias.ResumenReferencias(170, null, new[] { "acdbmgd", "accoremgd", "acmgd" }));
+        }
+
         // ------------------------------------------------------------------ integración con el compilador
         [Fact]
         public void ConUnPeNativoEnLasReferencias_FiltradoCompila_SinFiltrarDaCS0009()
