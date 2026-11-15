@@ -1,0 +1,66 @@
+informe_evaluacion: 1
+fecha: "2026-11-14 22:52"
+version_plugin: "1.17.4"
+version_puente: "1.17.4"
+dibujo_de_partida: "C:\\Proyectos\\dibujos_prueba\\PRUEBA_EVALUACION_1174.dwg"
+tareas:
+  - id: 1
+    resultado: OK
+    tiempo_s: 13
+    herramientas: [crear_superficie_tin(simular), crear_superficie_tin, extension_superficie]
+    respuesta_literal: '{"superficie": "Terreno", "tipo_superficie": "TIN", "n_puntos": 9, "min_x": 900, "max_x": 1700, "min_y": 1900, "max_y": 2400, "min_z": 97.5, "max_z": 111.5}'
+    fallo: ""
+  - id: 2
+    resultado: OK
+    tiempo_s: 26
+    herramientas: [crear_alineamiento_desde_polilinea(simular), ejecutar_comando, crear_alineamiento_desde_polilinea(simular), crear_alineamiento_desde_polilinea, listar_alineamientos]
+    respuesta_literal: '{"result": [{"nombre": "Eje 1", "inicio": 0, "fin": 848.4956, "longitud": 848.4956, "perfiles": []}]}'
+    fallo: ""
+  - id: 3
+    resultado: OK
+    tiempo_s: 9
+    herramientas: [crear_perfil_terreno_y_vista(simular), crear_perfil_terreno_y_vista, listar_perfiles]
+    respuesta_literal: '{"result": [{"nombre": "Terreno - Terreno", "tipo": "EG", "inicio": 0, "fin": 848.4956, "pvis": 95}]}'
+    fallo: ""
+  - id: 4
+    resultado: OK
+    tiempo_s: 11
+    herramientas: [crear_rasante(simular), crear_rasante, listar_pvis]
+    respuesta_literal: '{"result": [{"n": 1, "progresiva": 0, "cota": 100, "pe_pct": null, "ps_pct": 2.5}, {"n": 2, "progresiva": 400, "cota": 110, "pe_pct": 2.5, "ps_pct": -1.1148, "longitud_curva": 40}, {"n": 3, "progresiva": 848.4956, "cota": 105, "pe_pct": -1.1148}]}'
+    fallo: ""
+  - id: 5
+    resultado: OK
+    tiempo_s: 24
+    herramientas: [crear_corredor(simular), crear_corredor, estado_corredor, listar_regiones, listar_objetivos]
+    respuesta_literal: '{"nombre": "Corredor 1", "esta_desactualizado": false, "n_lineas_base": 1}; ambos DaylightBench TargetDTM -> Terreno'
+    fallo: ""
+  - id: 6
+    resultado: OK
+    tiempo_s: 21
+    herramientas: [crear_superficies_corredor(simular), crear_superficies_corredor, listar_superficies, extension_superficie, extension_superficie, estado_corredor]
+    respuesta_literal: 'Corredor 1 - Top (593 pts, esta_desactualizada=false), Corredor 1 - Datum (764 pts, esta_desactualizada=false)'
+    fallo: ""
+  - id: 7
+    resultado: OK
+    tiempo_s: 22
+    herramientas: [crear_secciones(simular), crear_secciones, listar_lineas_muestreo]
+    respuesta_literal: '{"result": [{"nombre": "Eje 1 - Muestreo", "alineamiento": "Eje 1", "n_lineas": 44, "inicio": 0, "fin": 848.4956, "fuentes": [{"nombre": "Terreno", "muestreada": true}, {"nombre": "Corredor 1", "muestreada": true}, {"nombre": "Corredor 1 - Top", "muestreada": true}, {"nombre": "Corredor 1 - Datum", "muestreada": true}]}]}'
+    fallo: ""
+  - id: 8
+    resultado: OK
+    tiempo_s: 14
+    herramientas: [calcular_volumenes(simular), calcular_volumenes]
+    respuesta_literal: '{"superficie_base": "Terreno", "superficie_comparacion": "Corredor 1 - Datum", "corte": 7420.8346, "relleno": 32065.2314, "neto": -24644.3968, "diferencia_con_superficie_pct": {"corte": 0.2061, "relleno": 0.0642}}'
+    fallo: ""
+  - id: 9
+    resultado: OK
+    tiempo_s: 4
+    herramientas: [listar_pis]
+    respuesta_literal: '{"alineamiento": "Eje 1", "numero_pi": 2, "numero_curvas": 2, "pis": [{"numero": 1, "progresiva": 300, "radio": 60, "longitud_curva": 94.2478}, {"numero": 2, "progresiva": 574.2478, "radio": 60, "longitud_curva": 94.2478}]}'
+    fallo: ""
+  - id: 10
+    resultado: OK
+    tiempo_s: 140
+    herramientas: [crear_superficie_tin, crear_alineamiento_desde_polilinea, crear_perfil_terreno_y_vista, crear_rasante, crear_corredor, crear_superficies_corredor, crear_secciones, calcular_volumenes]
+    respuesta_literal: 'Flujo completo (tareas 1 a 8) completado en una sola corrida sobre PRUEBA_EVALUACION_1174.dwg: 140 s vs 7800 s manuales'
+    fallo: ""
