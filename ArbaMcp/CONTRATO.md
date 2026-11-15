@@ -284,14 +284,17 @@ sin entrada en Deshacer (la llamada sí queda en `mcp_log.jsonl`, como todas).
 
 | Herramienta | Parámetros | Devuelve |
 |---|---|---|
-| `ejecutar_codigo` (1.16.0) | codigo_csharp*, simular (boolean, **por defecto `true`**), parametros (json: un objeto, como texto o ya estructurado; el script lo lee como `Parametros`, de solo lectura) | La respuesta estándar de escritura (`simulado`, `accion` o `mensaje`, `cambios`, `antes`/`despues` con `objetos_creados`, `objetos_modificados` y `objetos_borrados`, `copia`, `avisos`) más `datos` (`objetos`: `creados`, `modificados` y `borrados` con `handle`, `tipo`, `nombre` y `capa`, hasta 200 por lista, `temporales` y `recortado`; `mensajes` de `F.Escribir`; `archivos`: `leidos`, `escritos`, `no_escritos_por_simulacion` y `carpeta`; `compilacion`: `ms`, `de_cache`, `lineas` y `roslyn`; `ms_espera`, `ms_script`, `revisiones`, `tiempo_limite_s` y `eventos_bd`) y **`resultado`**: lo que el script devuelve con `return`, convertido a JSON (`ObjectId` → handle, `Point3d` → `{x,y,z}`, un objeto de AutoCAD → `{tipo, handle, nombre, capa}`; hasta 8 niveles, 1000 elementos por lista y 100 000 caracteres por texto, con aviso si se recorta). API: Roslyn (`Microsoft.CodeAnalysis.CSharp` 5.0.0, de NuGet), `Transaction.GetAllObjects()`, `DBObject.IsNewObject`/`IsModified`/`IsErased`, `ObjectId.IsValid`/`IsErased`, `TransactionManager.TopTransaction` y, como apoyo, los eventos `Database.ObjectAppended`/`ObjectModified`/`ObjectErased` |
+| `ejecutar_codigo` (1.16.0) | codigo_csharp*, simular (boolean, **por defecto `true`**), parametros (json: un objeto, como texto o ya estructurado; el script lo lee como `Parametros`, de solo lectura) | La respuesta estándar de escritura (`simulado`, `accion` o `mensaje`, `cambios`, `antes`/`despues` con `objetos_creados`, `objetos_modificados` y `objetos_borrados`, `copia`, `avisos`) más `datos` (`objetos`: `creados`, `modificados` y `borrados` con `handle`, `tipo`, `nombre` y `capa`, hasta 200 por lista, `temporales`, `recortado` y, desde 1.17.5, `fuente_deteccion`: `creados_por` y lo que vio cada fuente, ver el punto 5 de *Cómo corre*; `deshacer` (1.17.5): `comando` (`CMDNAMES` durante el script), `undoctl_antes`, `undoctl_despues`, `undoctl_texto` y `dbmod_antes`/`dbmod_despues`; `mensajes` de `F.Escribir`; `archivos`: `leidos`, `escritos`, `no_escritos_por_simulacion` y `carpeta`; `compilacion`: `ms`, `de_cache`, `lineas` y `roslyn`; `ms_espera`, `ms_script`, `revisiones`, `tiempo_limite_s` y `eventos_bd`) y **`resultado`**: lo que el script devuelve con `return`, convertido a JSON (`ObjectId` → handle, `Point3d` → `{x,y,z}`, un objeto de AutoCAD → `{tipo, handle, nombre, capa}`; hasta 8 niveles, 1000 elementos por lista y 100 000 caracteres por texto, con aviso si se recorta). API: Roslyn (`Microsoft.CodeAnalysis.CSharp` 5.0.0, de NuGet), `Transaction.GetAllObjects()`, `DBObject.IsNewObject`/`IsModified`/`IsErased`, `ObjectId.IsValid`/`IsErased`/`ObjectClass`, `TransactionManager.TopTransaction`, los eventos `Database.ObjectAppended`/`ObjectModified`/`ObjectErased` y, desde 1.17.5, las variables `CMDNAMES`, `UNDOCTL` y `DBMOD` (`GetSystemVariable`) |
 
 **El script** es el cuerpo de un método `object Ejecutar(Fachada F, JsonElement Parametros)`: sentencias, variables y
 funciones locales, sin declarar clases ni métodos; puede empezar con `using`. Using por defecto: `System`,
 `System.Collections.Generic`, `System.Linq`, `System.Text`, `System.Globalization`, `Autodesk.AutoCAD.ApplicationServices`,
 `Autodesk.AutoCAD.DatabaseServices` y `Autodesk.AutoCAD.Geometry`, más los alias `Civ` = `Autodesk.Civil.DatabaseServices`
-(`Civ.Alignment`, `Civ.Surface`: con un using normal, `Entity`, `DBObject` y `Surface` serían ambiguos) y `AcApp` =
-`Autodesk.AutoCAD.ApplicationServices.Application`. La **Fachada `F`** (`Fachada.cs`) tiene lo básico:
+(`Civ.Alignment`, `Civ.Surface`: con un using normal, `Entity`, `DBObject` y `Surface` serían ambiguos), `AcApp` =
+`Autodesk.AutoCAD.ApplicationServices.Application` y, desde 1.17.5, `TransactionManager` =
+`Autodesk.AutoCAD.DatabaseServices.TransactionManager` (el nombre está en los dos espacios de nombres; sin el alias,
+`TransactionManager tm = F.Db.TransactionManager;` daba CS0104, nombre ambiguo; también admite
+`F.Doc.TransactionManager`, que es una clase derivada). El script no debe declarar otra vez esos tres alias. La **Fachada `F`** (`Fachada.cs`) tiene lo básico:
 
 - Dibujo: `F.Doc`, `F.Db`, `F.Tr` (la transacción del script), `F.Civil` (`CivilApplication.ActiveDocument`), `F.Simulando` y `F.Parametros`.
 - Búsqueda por nombre, con los mismos errores que las herramientas («No existe ... Usa listar_...»): `F.Alineamiento(nombre)`, `F.Perfil(eje, nombre)`, `F.Superficie`, `F.Corredor`, `F.Ensamblaje`, `F.Capa` y `F.Bloque`.
@@ -340,11 +343,26 @@ funciones locales, sin declarar clases ni métodos; puede empezar con `using`. U
    transacciones y bloqueos abiertos. Tampoco puede ir a otro proceso: necesita el dibujo que está en memoria. Así que
    el script se detiene solo, en la siguiente revisión. Lo que no se puede cortar: una sola llamada larga a la API (un
    `Rebuild` enorme) hasta que vuelve, o una operación que agote la memoria; la protección final es la copia.
-5. **Qué cambió**: `Transaction.GetAllObjects()` de la transacción del plugin con `IsNewObject`, `IsModified` e
-   `IsErased` (camino principal) y, como apoyo, los eventos `ObjectAppended`, `ObjectModified` y `ObjectErased` de la
-   base de datos (cada uno en su `try`, con baja segura; si no están, `datos.eventos_bd` lo dice y la herramienta
-   sigue). Un objeto creado y borrado en el mismo script cuenta como `temporales`.
-6. **Simulación** (`simular=true`, por defecto): se aborta la transacción y se comprueba que lo creado ya no está. La
+5. **Qué cambió** (desde 1.17.5, cinco fuentes combinadas por `ArbaMcp.Nucleo.CodigoCambios`, probado sin Civil 3D):
+   `fachada` (lo que añade `F.Agregar`), `transaccion_script` (`Transaction.GetAllObjects()` de `F.Tr` con
+   `IsNewObject`, `IsModified` e `IsErased`, justo antes de confirmarla y solo si el script no la cerró),
+   `transaccion_plugin` (lo mismo con la transacción del plugin, después; el único camino de la 1.16.0 junto con el
+   siguiente), `eventos` (`ObjectAppended`, `ObjectModified` y `ObjectErased` mientras corre el script; cada uno en
+   su `try`, con baja segura; si no están, `datos.eventos_bd` lo dice y la herramienta sigue) y `eventos_al_cerrar`
+   (los mismos eventos mientras se confirma o se aborta la transacción del plugin; sus manejadores solo anotan el
+   `ObjectId`, no abren nada, y no entran en la clasificación: si ven un objeto nuevo que nadie más vio, sale un aviso
+   con su handle y su clase). Basta con que una fuente vea un objeto nuevo o modificado; el borrado es el último estado
+   conocido. Un objeto creado y borrado en el mismo script cuenta como `temporales`. `datos.objetos.fuente_deteccion`
+   dice `creados_por` (las fuentes que vieron los creados, o `ninguna`) y, por fuente, `creados`, `modificados`,
+   `borrados` (cada fuente cuenta lo que ella vio: un objeto nuevo puede salir también como modificado), `errores` y
+   `primer_error`; las dos de transacción, `objetos` (cuántos devolvió `GetAllObjects`; `null` si no se leyó) y
+   `no_leida`; `eventos_al_cerrar`, `momento` (`al confirmar`, `al abortar` o `desactivados`). Motivo (informe de
+   `VALIDACION_116`, pasos 4b y 5a, 14/11/2026): con la 1.17.4 la línea de `F.Agregar` salió con
+   `objetos_creados: 0`; los eventos se soltaban antes de que AutoCAD los mandara (los objetos de una transacción se
+   notifican al terminar la exterior) y `GetAllObjects` se leía en la transacción del plugin, no en la que abrió la
+   línea. Qué fuente funciona en Civil 3D lo dice `VALIDACION_1175.md`.
+6. **Simulación** (`simular=true`, por defecto): se aborta la transacción y se comprueba que lo creado ya no está
+   (desde 1.17.5, releyéndolo en una transacción nueva, como en la escritura real). La
    respuesta avisa siempre que **la simulación no es garantía total con objetos de Civil 3D** y que la protección
    real es la copia; si algo creado sigue en el dibujo tras abortar, lo lista con «ATENCIÓN: ...». Los archivos de
    `F.EscribirTexto` no se escriben (`no_escritos_por_simulacion`).
