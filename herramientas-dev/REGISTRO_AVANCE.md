@@ -163,6 +163,23 @@ Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a
 - **L.1 OK en la PC** (15/11): `tarea/ronda-b` en `18a747b`, versión 1.17.3, compilación Release con las DLL reales
   sin errores ni avisos, `dotnet test` 558/558, pytest del puente 166, puente reiniciado y MCP `civil3d` reconectado,
   `ARBA_MCP_CODIGO=1`, `ESTADO_PC.md` al día. Falta el Prompt P.
+- **Prompt P con la 1.17.3: VALIDACION_116 detenida otra vez en el paso 4a** (`id_log` `20261114-220719-440eae`,
+  1399 ms). Paso 0 OK (`ping` 1.17.3, 58 herramientas en el MCP). El 4a da **un solo error**: `CS0234 'Civil' no
+  existe en el espacio de nombres 'Autodesk'`. `backups\` siguió en 12. El agente guardó
+  `informe_validacion_116_20261114.md` en la PC (todavía no está en el repositorio).
+- **Diagnóstico confirmado con el catálogo** (`memoria-firma`, tabla `ensamblados`): en Civil 3D 2027 el **nombre de
+  ensamblado** de `acdbmgd.dll` es **`Acdbmgd`** (y el de `acmgd.dll`, `Acmgd`). `ReferenciasCodigo()` buscaba la carpeta
+  de AutoCAD con `GetName().Name == "acdbmgd"`, que distingue mayúsculas, así que `dirAcad` era siempre `null`. Eso
+  explica los dos informes: con la 1.17.2, sin filtro por carpeta, salieron los 282 CS0009 y el CS0234 quedó escondido;
+  con la 1.17.3 el filtro de metadatos quitó los CS0009, pero sin `dirAcad` no entraron las cinco DLL ni lo cargado de
+  AutoCAD (`C3D\` y `ACA\` nunca están en el TPA). Es la única comparación así: el resto usa `OrdinalIgnoreCase`.
+- **Corrección 1.17.4** encargada a la misma hija, con el plan aprobado por la orquestadora (decisión vigente: correcciones
+  pequeñas tras un informe):
+  - `dirAcad` sale de `typeof(Database).Assembly.Location`, y si no, de `CodigoReferencias.CarpetaDeAutoCAD`, que busca
+    el nombre sin distinguir mayúsculas.
+  - Si la compilación falla sin las cinco DLL, el error dice qué falta. La primera vez que se arma la lista, deja una
+    línea en el historial.
+  - Pruebas con `Acdbmgd`, versión 1.17.4 y `ping` esperado en las cuatro VALIDACION.
 - Etapa 4 sigue bloqueada (15/11): `memoria-firma/normas/fuentes/` solo tiene `.gitkeep`. Los datos de la evaluación
   **ya están** en `memoria-firma/evaluacion/datos_prueba/` (sincronización del 14/11 16:03).
 
