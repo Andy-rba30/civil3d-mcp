@@ -158,11 +158,13 @@ namespace ArbaMcp.Pruebas
         [Fact]
         public void TransactionManager_ConLosUsingPorDefecto_NoEsAmbiguo()
         {
-            // 1.17.5 (H3): el alias manda sobre los using de ApplicationServices y DatabaseServices
+            // 1.17.5 (H3): el alias manda sobre los using de ApplicationServices y DatabaseServices. Solo se compila: la
+            // biblioteca falsa de Autodesk es una referencia de compilación y no se carga al ejecutar.
             var r = Scripts.CompilarBien("TransactionManager tm = null;\nDatabase db = null;\nDocument doc = null;\n"
                 + "if (db != null) tm = db.TransactionManager;\nif (doc != null) tm = doc.TransactionManager;\nreturn tm == null;");
+            Assert.True(r.Ok, r.Mensaje);
+            Assert.DoesNotContain(r.Errores, e => e.Contains("CS0104"));
             Assert.DoesNotContain("CS0104", r.Mensaje ?? "");
-            Assert.Equal(true, Scripts.Ejecutar(r, new FachadaPrueba()));
         }
 
         [Fact]
