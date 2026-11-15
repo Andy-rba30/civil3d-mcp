@@ -233,6 +233,12 @@ Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a
   - `session_01XnJWqaBA6s29sWjXdYLDjf`: **5 casos de prueba** en `normas/casos_prueba/`, sacados directamente del PDF y
     sin usar lo de la 4.1, para que sirvan de comprobación independiente.
   - Aviso al dueño: el repositorio `Normas` es público y contiene normas de AASHTO y ASTM con derechos de autor.
+- **04:12, hallazgos de la ronda B terminados**: **PR #45** en borrador (`tarea/3.5-hallazgos-ronda-b`, `c20a5d2`), solo
+  documentación, revisado por la orquestadora. Se fusiona **después del #43**, porque depende de él. Plan de la 1.17.5
+  aprobado a las 04:10: cinco fuentes de detección con `datos.objetos.fuente_deteccion` y `datos.deshacer` (`UNDOCTL`,
+  `DBMOD`, `CMDNAMES`), y el alias H3 confirmado con el catálogo (la `TransactionManager` de ApplicationServices deriva
+  de la de DatabaseServices). Hipótesis del Deshacer: el `ZOOM` que pedía el paso 5a. VALIDACION_1175 pide no hacer
+  ZOOM y anotar el menú Deshacer.
 - Etapa 4 sigue bloqueada (15/11): `memoria-firma/normas/fuentes/` solo tiene `.gitkeep`. Los datos de la evaluación
   **ya están** en `memoria-firma/evaluacion/datos_prueba/` (sincronización del 14/11 16:03).
 
