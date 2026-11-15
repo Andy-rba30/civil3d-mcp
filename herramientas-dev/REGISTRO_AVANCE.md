@@ -239,6 +239,17 @@ Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a
   `DBMOD`, `CMDNAMES`), y el alias H3 confirmado con el catálogo (la `TransactionManager` de ApplicationServices deriva
   de la de DatabaseServices). Hipótesis del Deshacer: el `ZOOM` que pedía el paso 5a. VALIDACION_1175 pide no hacer
   ZOOM y anotar el menú Deshacer.
+- **04:14, 5 casos DG-2018 terminados** (memoria-firma `main`, `d082973`, en `normas/casos_prueba/casos_dg2018.md` y
+  `.yaml`, con 30 ejemplos de «Cumple» y «No cumple»):
+  1. radio mínimo a 40, 60 y 80 km/h: 50, 125 y 230 m (Tabla 302.02, pág. 129);
+  2. peralte con R 125 m: 8 %, y con R 3000 m: 2 %;
+  3. visibilidad de parada a 80 km/h: 130, 144 y 118 m (Tabla 205.01 y 205.01-A);
+  4. pendiente máxima: 8 % (Tabla 303.01);
+  5. curva vertical: convexa 77 m (K 11) y cóncava 144 m (K 18).
+  **Duda para Jose**: la Tabla 303.02 (convexa) no sale de la fórmula del texto (h2 = 0,15 m): la fórmula da 125 m y
+  la tabla 77 m, con una h2 implícita de unos 0,60 m. El caso sigue la tabla; el ejemplo de borde queda
+  `pendiente_de_decision`. Otras observaciones: 302.02 frente a 302.04 a 50 km/h (85 m y 80 m); erratas en 304.05 y en
+  205.01 a 120 km/h.
 - Etapa 4 sigue bloqueada (15/11): `memoria-firma/normas/fuentes/` solo tiene `.gitkeep`. Los datos de la evaluación
   **ya están** en `memoria-firma/evaluacion/datos_prueba/` (sincronización del 14/11 16:03).
 
