@@ -180,6 +180,13 @@ Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a
   - Si la compilación falla sin las cinco DLL, el error dice qué falta. La primera vez que se arma la lista, deja una
     línea en el historial.
   - Pruebas con `Acdbmgd`, versión 1.17.4 y `ping` esperado en las cuatro VALIDACION.
+- **03:14, 1.17.4 subida** por la hija (`b0287f8`; núcleo y pruebas `3cb047b`, plugin `c5a2ad3`, versión `0262240`).
+  Revisada por la orquestadora: `dirAcad` sale de `typeof(Database).Assembly`, con `CarpetaDeAutoCAD` como respaldo;
+  `DiagnosticoReferencias` se añade al error si la compilación falla, y `ResumenReferencias` va al historial la primera
+  vez. Hay 6 pruebas nuevas.
+- **CI del PR #43 en verde sobre `b0287f8`**: xUnit 564/564, CompilarSinCivil 0 errores, puente y evaluador OK.
+  Descripción del PR actualizada a 1.17.4. **Aviso al dueño enviado**: L.1 con `b0287f8` (`ping` 1.17.4) y P (116 desde
+  el paso 4, luego 117 → 1171 → 1172 → evaluación).
 - Etapa 4 sigue bloqueada (15/11): `memoria-firma/normas/fuentes/` solo tiene `.gitkeep`. Los datos de la evaluación
   **ya están** en `memoria-firma/evaluacion/datos_prueba/` (sincronización del 14/11 16:03).
 
