@@ -217,6 +217,14 @@ Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a
     que entran en `main` con el PR #43.
   - Recomendado al dueño: «Verificación OK» y fusión del #43; los dos hallazgos de la 116 van como corrección aparte, que
     se probará con la ronda C.
+- **15/11 ~04:00: el dueño dio «Verificación OK» de la ronda B.** El PR #43 pasó a «listo»; el **Merge lo hace el
+  dueño**, y después L.1 con `main` (`ping` 1.17.4). Sesiones hijas lanzadas para la noche (Opus, esfuerzo extra alto):
+  - `session_01XnJWqbZr8U8ayr9SDd4PUP`: **corrección 1.17.5** en `tarea/3.4-codigo-objetos-deshacer`, que parte de
+    `tarea/ronda-b`: objetos creados en 0, `_.UNDO 1` tras `ejecutar_codigo` y el alias H3, con `VALIDACION_1175.md`.
+    Necesita la PC, así que se prueba en la próxima instalación.
+  - `session_01XnJWqbXgf2DcUmEDfvbkhM`: **hallazgos de la ronda B**, solo documentación, en
+    `tarea/3.5-hallazgos-ronda-b`: la tabla de miembros, los hechos validados de `CLAUDE.md` y la sección 0 de la hoja
+    de ruta. Se fusiona sin la PC.
 - Etapa 4 sigue bloqueada (15/11): `memoria-firma/normas/fuentes/` solo tiene `.gitkeep`. Los datos de la evaluación
   **ya están** en `memoria-firma/evaluacion/datos_prueba/` (sincronización del 14/11 16:03).
 
