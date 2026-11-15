@@ -194,6 +194,13 @@ Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a
   línea 1 y `ping` estable 30 s después. Informe en la PC: `informe_validacion_116_20261114.md`.
   **VALIDACION_117 en curso**: pasos 0 a 6 OK; el agente espera a Jose en el paso 2 (capa `MCP Receta A`, color 3,
   para `aprobar_resultado`) y en el paso 7 (frase literal «Sí, guárdala como receta»).
+- **VALIDACION_117 partes A y B OK.** Parte A (pasos 0 a 10): receta `crear_capa_con_color` guardada con la frase
+  literal de Jose y subida con L.2 (commit `5456524` de memoria-firma). Parte B, en una conversación **nueva** del agente
+  (paso 11, decisivo): `buscar_api` («crear capa color») da la receta la primera; luego `ejecutar_receta` simulada
+  (`veces_usada` 0, `sumada` false), Jose confirma y se ejecuta de verdad (`veces_usada` 1). Paso 13: `MCP Receta C`
+  con el color por defecto 7, `veces_usada` 2. Paso 14: `colour` rechazado sin llamar al plugin. Pasos 15 y 16: log
+  con los pedidos y YAML con `veces_usada: 2`. Falta la parte C (17 a 20: comando `buscar_api`, quitar
+  `ARBA_MCP_CODIGO`, comprobar que queda desactivada y L.2), y después 1171, 1172 y la evaluación.
 - Etapa 4 sigue bloqueada (15/11): `memoria-firma/normas/fuentes/` solo tiene `.gitkeep`. Los datos de la evaluación
   **ya están** en `memoria-firma/evaluacion/datos_prueba/` (sincronización del 14/11 16:03).
 
