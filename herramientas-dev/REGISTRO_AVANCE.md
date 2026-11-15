@@ -201,6 +201,18 @@ Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a
   con el color por defecto 7, `veces_usada` 2. Paso 14: `colour` rechazado sin llamar al plugin. Pasos 15 y 16: log
   con los pedidos y YAML con `veces_usada: 2`. Falta la parte C (17 a 20: comando `buscar_api`, quitar
   `ARBA_MCP_CODIGO`, comprobar que queda desactivada y L.2), y después 1171, 1172 y la evaluación.
+- **Ronda B terminada en la PC (14/11, ~22:52 hora de la PC) con la 1.17.4 (`b0287f8`)**:
+  - **116 OK** en los pasos decisivos. **Hallazgos**: en 4b y 5a, `despues.objetos_creados: 0` aunque la línea se creó
+    (se esperaba 1: la detección de objetos creados no funcionó); 5c: tras `_.UNDO 1` el conteo da N0 + 1 (la línea
+    **no** se quitó).
+  - **117 OK global** (partes A, B y C; L.2 final con el commit `7083d1e` de memoria-firma; `ARBA_MCP_CODIGO` quitada y
+    la herramienta desactivada otra vez).
+  - **1171 OK**: diferencia de la tabla con la superficie de volumen de **0,31 % en corte y 0,05 % en relleno** (antes,
+    16,58 % y 4,13 %).
+  - **1172 OK**: elige `Contours 1m and 5m (Background)` (`aplicados: true`). Aviso menor: «No se pudo releer el estilo
+    de la superficie creada (Entity.StyleId)».
+  - **Evaluación: 10 de 10 OK** en 284 s; la tarea 1 aplica las curvas de 1 y 5 m y la tarea 8 da 0,21 % y 0,06 %.
+  - Informes en la PC (116, 117, 1171, 1172 y dos YAML de la evaluación); falta subirlos al repositorio.
 - Etapa 4 sigue bloqueada (15/11): `memoria-firma/normas/fuentes/` solo tiene `.gitkeep`. Los datos de la evaluación
   **ya están** en `memoria-firma/evaluacion/datos_prueba/` (sincronización del 14/11 16:03).
 
