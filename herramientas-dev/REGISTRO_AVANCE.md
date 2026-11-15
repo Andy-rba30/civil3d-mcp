@@ -153,6 +153,13 @@ Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a
   el plan aprobado: las cinco DLL del plugin por ruta (esquema de los HintPath) y caché solo con las cinco; `_t1` con su
   propio Abort/Dispose en `AbortarEncimaDe`; en VALIDACION_116, aviso de CS0234/CS0012 en el 4a y `ping` 30 s después
   de los pasos con error o tiempo agotado.
+- **02:49, H1 y H2 subidos** por la hija (`18a747b`; núcleo y pruebas `ce4d4df`, plugin `715d3e4`), versión 1.17.3.
+  Revisados por la orquestadora. **CI del PR #43 en verde**: xUnit 558/558, CompilarSinCivil 0 errores, puente 166,
+  evaluador OK. La hija tocó además una frase de `README.md` (la de la 1.17.3, que con H1 quedaba falsa): aceptado.
+  Descripción del PR #43 actualizada a 1.17.3 (título, tabla, pruebas, «Para el agente instalador» y «Para Jose»).
+- **Aviso al dueño enviado (15/11): ronda B lista para retomar en la PC**, con L.1 (`tarea/ronda-b`, `18a747b`) y P:
+  VALIDACION_116 desde el paso 0 (`ping` 1.17.3) y luego desde el **paso 4** sobre el mismo `PRUEBA_116.dwg`, después
+  117 → 1171 → 1172 → evaluación.
 - Etapa 4 sigue bloqueada (15/11): `memoria-firma/normas/fuentes/` solo tiene `.gitkeep`. Los datos de la evaluación
   **ya están** en `memoria-firma/evaluacion/datos_prueba/` (sincronización del 14/11 16:03).
 
