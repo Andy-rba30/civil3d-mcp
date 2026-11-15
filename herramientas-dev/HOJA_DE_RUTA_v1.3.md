@@ -7,7 +7,7 @@ prompt.
 
 ---
 
-## 0. Avance (actualizado el 14/11/2026, tras la 1.15.1: Etapa 2 hecha)
+## 0. Avance (actualizado el 15/11/2026, tras la ronda B con la 1.17.4: Etapa 3 hecha, salvo la 3.3, mensual)
 
 Leyenda: ✅ hecho y verificado · 🟡 hecho, falta comprobar algo · ⬜ pendiente · ❓ no se puede comprobar desde
 civil3d-mcp (vive en `memoria-firma` o en la PC).
@@ -33,29 +33,52 @@ civil3d-mcp (vive en `memoria-firma` o en la PC).
 | Etapa 2 | 2.7 `calcular_volumenes` | ✅ | 1.14.0 y correcciones 1.14.2 y 1.14.3 (tabla por progresivas), informes 114, 1142 y 1143 del 14/11/2026 (PR #31) |
 | Etapa 2 | 2.8 Receta "flujo vial completo" | ✅ | Receta 2b de `INSTRUCCIONES_AGENTE.md` (PR #29); informe del flujo completo del 14/11/2026 (117 s frente a 130 min). **Hito de la Etapa 2 cumplido**: la tarea 10 da OK (evaluación del 14/11/2026) |
 | Etapa 2 | Extra: `listar_pis` (tabla de PI del eje, tarea 9 de la evaluación) | ✅ | 1.15.0, informe 115 del 14/11/2026 (PR #35); en `main` como 1.15.1 |
-| Etapa 3 | 3.1 `ejecutar_codigo` · 3.2 Recetas · 3.3 Promoción (mensual) | ⬜ **siguiente (ronda B)** | — |
+| Etapa 3 | 3.1 `ejecutar_codigo` | ✅ | 1.16.0, con las correcciones 1.17.3 y 1.17.4 (referencias de Roslyn dentro de acad.exe); informe 116 del 14/11/2026 (PR #43). Dos hallazgos abiertos: objetos creados en 0 y `_.UNDO 1` que no quita la línea (corrección 1.17.5 en curso) |
+| Etapa 3 | 3.2 Recetas (`guardar_receta`, `ejecutar_receta`, recetas primero en `buscar_api`) | ✅ | 1.17.0, informe 117 del 14/11/2026 (PR #43): receta guardada con la aprobación del dueño, subida con L.2 y reutilizada en una conversación nueva del agente |
+| Etapa 3 | Extras: 1.17.1 tabla por progresivas dentro de la Datum · 1.17.2 estilo con las curvas pedidas | ✅ | Informes 1171 (diferencia con la superficie de volumen: 0,31 % en corte y 0,05 % en relleno) y 1172 (elige `Contours 1m and 5m (Background)`) del 14/11/2026 (PR #43) |
+| Etapa 3 | 5.2-D y 5.2-PC con la 1.17.4 | ✅ | Evaluación del 14/11/2026 (22:52): **10 de 10 OK** en 284 s sumando las diez tareas; la tarea 10 (flujo completo) en 140 s frente a 7800 s a mano (`herramientas-dev/informes/informe_evaluacion_20261114_2252.yaml`) |
+| Etapa 3 | 3.3 Promoción de recetas (cada mes) | ⬜ mensual | Se corre cada mes, con L.2 antes; propone herramientas a partir de las recetas usadas 3 veces o más (la de prueba va por 2: informe 117, paso 16) |
 | Etapa 4 | 4.1 Tablas DG-2018 · 4.2 `verificar_norma` · 4.3 Norma en el alineamiento | ⬜ | — |
 | Continuo | F · L.2 · 5.2 | ❓ | Viven en `memoria-firma` y en la PC |
 
 **Decisión del dueño (13/11/2026): solo 3 rondas de prueba en la PC** para lo que queda: **A** = Etapa 2 completa
 (1.12.0, 1.13.0, 1.14.0, 1.14.1, receta 2.8 y evaluación 5.2), **B** = Etapa 3 (3.1 y 3.2), **C** = Etapa 4 (4.2 y 4.3;
-la 4.1 no necesita la PC). El estado al día de ramas, PR y sesiones está en `herramientas-dev/REGISTRO_AVANCE.md`.
+la 4.1 no necesita la PC). Las rondas A y B están hechas (14/11/2026); queda la C. El estado al día de ramas, PR y
+sesiones está en `herramientas-dev/REGISTRO_AVANCE.md`.
 
 **Pendientes que no están en la hoja de ruta** (salieron de las validaciones; ver los hechos validados de `CLAUDE.md`).
 Resueltos en la 1.10.1 (validada el 13/11/2026, PR #22): `ejecutar_comando` conserva los espacios finales, un error
 de escritura ya no deja una entrada vacía en Deshacer, `ping` da tres cifras y los errores de estilo listan los nombres.
 Resueltos en la 1.14.1 (validada el 14/11/2026): el punto de inserción automático usa la extensión del eje y de sus
 vistas, el corredor va a la capa de la configuración (`C-ROAD-CORR`) y `buscar_api.py` funciona en cp1252.
+Resueltos después:
+
+- La tabla de miembros y los hechos validados de `CLAUDE.md` recogen las validaciones 1.10.1 a 1.15.1 (hallazgos de la
+  ronda A, PR #42) y las de la ronda B (hallazgos de la ronda B, tarea 3.5).
+- La tabla por progresivas de `calcular_volumenes` solo cuenta el tramo donde existen la Datum y el terreno, y queda a
+  0,31 % en corte y 0,05 % en relleno de la superficie de volumen, frente al 16,6 % y 4,1 % de la 1.14.3 (1.17.1,
+  informe 1171 del 14/11/2026, PR #43).
+- `crear_superficie_tin` elige un estilo del dibujo con las curvas pedidas: `Contours 1m and 5m (Background)` para 1 y
+  5 m (1.17.2, informe 1172 del 14/11/2026, PR #43).
+- `memoria-firma/evaluacion/datos_prueba/` ya tiene los datos de la evaluación (sincronización del 14/11/2026 a las
+  16:03, anotada por la sesión orquestadora en `REGISTRO_AVANCE.md` el 15/11/2026).
+
 Siguen abiertos:
 
 - Ctrl+Z no quita la superficie TIN (informe 1.7.0), ni las superficies de corredor (informe 1.12.0), ni la superficie de
-  volumen (informe 1.14.0); en cambio, sí quita las rasantes (1.10.0), el corredor (1.11.0) y un contorno (1.14.1).
-  Valorar un deshacer propio, como `deshacer_objetivos`.
-- La tabla de miembros y los hechos validados de `CLAUDE.md` aún no recogen las validaciones 1.10.1 a 1.15.1 (sesión de
-  hallazgos, solo documentación).
-- La tabla por progresivas de `calcular_volumenes` difiere de la superficie de volumen (corte 16,6 %, relleno 4,1 % en
-  la 1143): manda la superficie; investigar si conviene limitar las áreas al tramo donde existe la Datum.
-- `memoria-firma/evaluacion/datos_prueba/` está vacío: los datos de la evaluación se improvisan con equivalentes.
+  volumen (informe 1.14.0), ni la línea que dibuja `ejecutar_codigo` (informe 1.16.0, paso 5c); en cambio, sí quita las
+  rasantes (1.10.0), el corredor (1.11.0) y un contorno (1.14.1). Valorar un deshacer propio, como `deshacer_objetivos`.
+- `ejecutar_codigo` (informe 1.16.0, pasos 4b y 5a): `despues.objetos_creados` da 0 con una línea creada, en simulación
+  y en real. Lo investiga la 1.17.5 (`tarea/3.4-codigo-objetos-deshacer`, junto con el `_.UNDO 1` y el alias de la H3),
+  que se probará con la ronda C.
+- `ejecutar_codigo` (revisión previa del 15/11/2026): comprobar en Civil 3D si algún miembro heredado de
+  `GraphicsInterface.Drawable` sale bloqueado por la lista blanca (H4).
+- `crear_superficie_tin` (informe 1172, pasos 2 y 4): aviso «No se pudo releer el estilo de la superficie creada
+  (Entity.StyleId)».
+- La evaluación marca OK comprobaciones manuales que no hace (curvas de la tarea 1, cálculo manual de la 8, informe de
+  Civil 3D de la 9): aclararlo en `tareas.yaml` o en el prompt de evaluación.
+
+El resto de propuestas sueltas está en `herramientas-dev/REGISTRO_AVANCE.md`, sección «Propuestas pendientes».
 
 ---
 
