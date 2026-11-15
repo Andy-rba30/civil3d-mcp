@@ -189,6 +189,11 @@ Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a
   el paso 4, luego 117 → 1171 → 1172 → evaluación).
 - **L.1 de la 1.17.4 OK en la PC** (15/11): `b0287f8`, compilación Release sin errores ni avisos, `dotnet test` 564/564,
   pytest del puente 166, puente reiniciado y MCP `civil3d` reconectado, `ARBA_MCP_CODIGO=1`. Falta el Prompt P.
+- **Prompt P con la 1.17.4: VALIDACION_116 OK** (pasos decisivos 0, 4, 6, 8 y 9). Paso 9: `TimeoutException` a los
+  60 s (`ms_puente` 60086) y Civil 3D estable (`ping` justo después y 30 s después). Paso 10: error del script en la
+  línea 1 y `ping` estable 30 s después. Informe en la PC: `informe_validacion_116_20261114.md`.
+  **VALIDACION_117 en curso**: pasos 0 a 6 OK; el agente espera a Jose en el paso 2 (capa `MCP Receta A`, color 3,
+  para `aprobar_resultado`) y en el paso 7 (frase literal «Sí, guárdala como receta»).
 - Etapa 4 sigue bloqueada (15/11): `memoria-firma/normas/fuentes/` solo tiene `.gitkeep`. Los datos de la evaluación
   **ya están** en `memoria-firma/evaluacion/datos_prueba/` (sincronización del 14/11 16:03).
 
