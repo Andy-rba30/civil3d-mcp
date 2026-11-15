@@ -250,6 +250,10 @@ Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a
   la tabla 77 m, con una h2 implícita de unos 0,60 m. El caso sigue la tabla; el ejemplo de borde queda
   `pendiente_de_decision`. Otras observaciones: 302.02 frente a 302.04 a 50 km/h (85 m y 80 m); erratas en 304.05 y en
   205.01 a 120 km/h.
+- **04:22, 1.17.5 terminada**: **PR #46** en borrador (`tarea/3.4-codigo-objetos-deshacer`, `14a3c08`; depende del #43).
+  Incluye `CodigoCambios.cs` y `CodigoDeshacer` con 14 pruebas, las cinco fuentes de detección, `datos.deshacer` y el
+  alias H3, con `VALIDACION_1175.md`. Nada compilado en la nube: lo cubre la CI. Revisión previa de solo lectura en
+  marcha, por el riesgo nuevo de que la línea entre en Creados y salte el aviso «ATENCIÓN» tras abortar.
 - Etapa 4 sigue bloqueada (15/11): `memoria-firma/normas/fuentes/` solo tiene `.gitkeep`. Los datos de la evaluación
   **ya están** en `memoria-firma/evaluacion/datos_prueba/` (sincronización del 14/11 16:03).
 
