@@ -264,6 +264,10 @@ Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a
 - **04:25, CI del #46**: xUnit 577/578. Falla la prueba nueva del alias H3, que ejecutaba el script con un tipo de la
   biblioteca falsa, que solo existe para compilar (`FileNotFoundException 'AutodeskFalsa'`). Encargado a la hija que
   esa prueba solo compile. Es un fallo de la prueba, no del plugin.
+- **04:27, prueba H3 corregida** (`790f951`). **Revisión previa de la 1.17.5**: nada de confianza alta; los textos de
+  VALIDACION_1175 coinciden con el código, y la fuente `fachada` siempre ve la línea. Se encargan dos arreglos baratos
+  en la misma rama: soltar los manejadores de `eventos_al_cerrar` antes de `t0.Dispose()` y desechar las
+  `DBObjectCollection` de `GetAllObjects`.
 - Etapa 4 sigue bloqueada (15/11): `memoria-firma/normas/fuentes/` solo tiene `.gitkeep`. Los datos de la evaluación
   **ya están** en `memoria-firma/evaluacion/datos_prueba/` (sincronización del 14/11 16:03).
 
