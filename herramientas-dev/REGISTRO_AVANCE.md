@@ -138,6 +138,21 @@ Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a
   (contexto aislado de Roslyn, carga del ensamblado del script, CS0012, biblioteca falsa frente a la API real) antes de
   volver a la PC. El dueño pidió (15/11) **probar en su PC solo cuando sea necesario**: no se le avisa hasta tener la
   1.17.3 subida, con la CI en verde y la revisión resuelta.
+- **01:48, 1.17.3 subida** por la hija (`4830c75`; código y pruebas `e2d0c3a`, versión `5a89e79`). Su contenedor no tenía
+  red para .NET ni PyPI: no corrió ninguna prueba; la **CI del PR #43 dio verde** en los tres trabajos (xUnit +
+  CompilarSinCivil, puente, evaluador). `uv.lock` cambiado a mano en la línea de la versión (como en las subidas
+  anteriores; `uv lock --check` lo acepta).
+- **Resultado de la revisión previa**: **H1** (medio) AeccDbMgd (`C3D\`) y AecBaseMgd (`ACA\`) solo entran en las
+  referencias si ya están cargadas (nunca estuvieron en el TPA) → CS0234 con el alias `Civ`, y la caché se congela sin
+  AecBaseMgd (CS0012); **H2** (bajo, impacto alto) con un script que falla, `t1` no recibe su propio Abort/Dispose (se
+  aborta otro envoltorio de `TopTransaction`) → posible cierre de Civil 3D por el finalizador. Menores, como propuestas:
+  **H3** `TransactionManager` y `Surface` ambiguos con los using por defecto en la API real (CS0104 en scripts del
+  agente); **H4** `DBObject` hereda de `GraphicsInterface.Drawable` en la API real: un miembro heredado y no
+  sobrescrito podría salir bloqueado por la lista blanca (comprobar en Civil 3D).
+- **El dueño aprobó incluir H1 y H2 en la 1.17.3** (sin subir versión: aún no se instaló). Encargado a la misma hija con
+  el plan aprobado: las cinco DLL del plugin por ruta (esquema de los HintPath) y caché solo con las cinco; `_t1` con su
+  propio Abort/Dispose en `AbortarEncimaDe`; en VALIDACION_116, aviso de CS0234/CS0012 en el 4a y `ping` 30 s después
+  de los pasos con error o tiempo agotado.
 - Etapa 4 sigue bloqueada (15/11): `memoria-firma/normas/fuentes/` solo tiene `.gitkeep`. Los datos de la evaluación
   **ya están** en `memoria-firma/evaluacion/datos_prueba/` (sincronización del 14/11 16:03).
 
@@ -237,5 +252,8 @@ y todavía **no están en el repositorio**: hay que pedírselos al dueño o al a
   sigue teniendo puntos hasta ±30 m).
 - La evaluación marca OK comprobaciones manuales que no hace (curvas de la tarea 1, cálculo manual de la 8, informe de
   Civil 3D de la 9): aclararlo en `tareas.yaml` o en el prompt de evaluación.
+- `ejecutar_codigo` (revisión previa del 15/11): alias para `TransactionManager` en los using por defecto y el duplicado
+  en la biblioteca falsa de las pruebas (H3); comprobar en Civil 3D si algún miembro heredado de
+  `GraphicsInterface.Drawable` sale bloqueado por la lista blanca (H4).
 - `crear_secciones`: comprobar si los nombres de **grupo** también deben ser únicos en todo el dibujo (propuesta de la
   hija de la 1.14.2) y añadir en `datos.lineas[].secciones` el nombre de la superficie del dibujo junto a `SourceName`.
