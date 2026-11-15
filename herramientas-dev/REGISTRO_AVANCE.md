@@ -187,6 +187,8 @@ Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a
 - **CI del PR #43 en verde sobre `b0287f8`**: xUnit 564/564, CompilarSinCivil 0 errores, puente y evaluador OK.
   Descripción del PR actualizada a 1.17.4. **Aviso al dueño enviado**: L.1 con `b0287f8` (`ping` 1.17.4) y P (116 desde
   el paso 4, luego 117 → 1171 → 1172 → evaluación).
+- **L.1 de la 1.17.4 OK en la PC** (15/11): `b0287f8`, compilación Release sin errores ni avisos, `dotnet test` 564/564,
+  pytest del puente 166, puente reiniciado y MCP `civil3d` reconectado, `ARBA_MCP_CODIGO=1`. Falta el Prompt P.
 - Etapa 4 sigue bloqueada (15/11): `memoria-firma/normas/fuentes/` solo tiene `.gitkeep`. Los datos de la evaluación
   **ya están** en `memoria-firma/evaluacion/datos_prueba/` (sincronización del 14/11 16:03).
 
