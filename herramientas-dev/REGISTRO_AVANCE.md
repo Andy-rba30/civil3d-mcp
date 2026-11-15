@@ -225,6 +225,14 @@ Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a
   - `session_01XnJWqbXgf2DcUmEDfvbkhM`: **hallazgos de la ronda B**, solo documentación, en
     `tarea/3.5-hallazgos-ronda-b`: la tabla de miembros, los hechos validados de `CLAUDE.md` y la sección 0 de la hoja
     de ruta. Se fusiona sin la PC.
+- **15/11 ~04:05, Etapa 4 desbloqueada**: el dueño indicó el PDF de su repositorio público `Andy-rba30/Normas`
+  (`normas/Manual.de.Carreteras.DG-2018.pdf`: 285 páginas, con texto) y pidió que los 5 casos los prepare Claude con la
+  norma; él los revisa. Dos sesiones sobre memoria-firma, directo en `main`:
+  - `session_01XnJWqYUqvDdqAqByaDyacY`: **4.1** (prompt literal, con notas). Sin copiar el PDF: un `FUENTE.md` con su
+    ubicación y el SHA-256. Produce `dg2018.sqlite`, `VERSION.md`, el script, `LEEME.md` y `VERIFICAR.md` con imágenes.
+  - `session_01XnJWqaBA6s29sWjXdYLDjf`: **5 casos de prueba** en `normas/casos_prueba/`, sacados directamente del PDF y
+    sin usar lo de la 4.1, para que sirvan de comprobación independiente.
+  - Aviso al dueño: el repositorio `Normas` es público y contiene normas de AASHTO y ASTM con derechos de autor.
 - Etapa 4 sigue bloqueada (15/11): `memoria-firma/normas/fuentes/` solo tiene `.gitkeep`. Los datos de la evaluación
   **ya están** en `memoria-firma/evaluacion/datos_prueba/` (sincronización del 14/11 16:03).
 
