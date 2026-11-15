@@ -28,9 +28,15 @@ namespace ArbaMcp
     ///     comprobaciones previas y copia de seguridad terminada antes de ejecutar nada, también al simular (excepción
     ///     documentada en CONTRATO.md). El script corre en una transacción anidada dentro de una del plugin, con el
     ///     tiempo límite cooperativo de CodigoVigilante, en un AssemblyLoadContext coleccionable que se descarga al acabar.
-    ///  3. Qué cambió: Transaction.GetAllObjects() con IsNewObject, IsModified e IsErased (camino principal) y los
-    ///     eventos ObjectAppended, ObjectModified y ObjectErased de la base de datos como apoyo (cada uno en su try; si
-    ///     no están, la herramienta sigue).
+    ///  3. Qué cambió (desde 1.17.5, cinco fuentes combinadas por ArbaMcp.Nucleo.CodigoCambios; la respuesta dice qué
+    ///     vio cada una en datos.objetos.fuente_deteccion): lo que añade F.Agregar; Transaction.GetAllObjects() con
+    ///     IsNewObject, IsModified e IsErased de F.Tr antes de confirmarla y de la transacción del plugin después; los
+    ///     eventos ObjectAppended, ObjectModified y ObjectErased mientras corre el script; y, solo como diagnóstico, esos
+    ///     eventos mientras se confirma o se aborta la transacción del plugin. En la 1.16.0 solo había la transacción
+    ///     del plugin y los eventos del script, y ninguna vio la línea de F.Agregar (informe de VALIDACION_116, pasos 4b
+    ///     y 5a): los objetos de una transacción se notifican al terminar la exterior, cuando ya no se escuchaba, y
+    ///     GetAllObjects se leía en la del plugin, no en la que abrió el objeto. Cada lectura va en su try y sus errores
+    ///     se cuentan en la respuesta (antes se tragaban sin rastro). datos.deshacer lleva CMDNAMES, UNDOCTL y DBMOD.
     ///  4. Simulación: aborta y comprueba que lo creado desapareció. Escritura real: confirma, vuelve a leer en otra
     ///     transacción y verifica lo creado y lo borrado; si no cuadra, error sin reintentar. Si el script borró una
     ///     superficie, un corredor o un ensamblaje, aborta y responde error (regla del proyecto).
@@ -43,6 +49,14 @@ namespace ArbaMcp
         private static string[] _referenciasCodigo;
         private static string _diagnosticoReferencias;   // null si la última lista armada tenía la carpeta de AutoCAD y las cinco DLL
         private static bool _referenciasRegistradas;     // ya se escribió en el historial el resumen de la primera lista
+
+        /// <summary>
+        /// Vigilar los eventos de la base de datos mientras se confirma o se aborta la transacción del plugin (fuente
+        /// 'eventos_al_cerrar', solo diagnóstico, desde 1.17.5). Sus manejadores solo anotan el ObjectId (no abren nada ni
+        /// leen otras propiedades, y no lanzan). Si causaran algún problema en Civil 3D, se desactivan poniendo false aquí:
+        /// la fuente sale con 'momento' «desactivados» y lo demás no cambia.
+        /// </summary>
+        private static readonly bool VigilarEventosAlCerrar = true;
 
         private static void RegistrarCodigo()
         {
@@ -222,6 +236,10 @@ namespace ArbaMcp
             var avisos = ctx.Avisos;
             foreach (var aviso in compilado.Avisos) avisos.Add("Compilador: " + aviso);
 
+            // Diagnóstico de Deshacer (1.17.5): el pseudocomando que recoge la entrada y el estado del deshacer al empezar
+            string comando = VariableTexto("CMDNAMES");
+            int? undoctlAntes = VariableEntera("UNDOCTL"), dbmodAntes = VariableEntera("DBMOD");
+
             // Nunca se ejecuta sin copia terminada, tampoco al simular (excepción a la regla de las simulaciones)
             ctx.EsperarCopia();
 
@@ -237,6 +255,7 @@ namespace ArbaMcp
                 {
                     var t0 = db.TransactionManager.StartTransaction();
                     var pila = new PilaTransacciones(db, t0);
+                    bool vigilandoCierre = false;
                     try
                     {
                         var t1 = db.TransactionManager.StartTransaction();
@@ -271,8 +290,12 @@ namespace ArbaMcp
                             fachada.Cerrar();
                         }
 
-                        pila.CerrarLasDelScript(avisos);
-                        cambios.AgregarDeTransaccion(t0);
+                        // Qué cambió (1.17.5): lo de F.Agregar, F.Tr antes de confirmarla (solo si sigue abierta) y la del plugin
+                        cambios.AgregarDeFachada(fachada.Agregados);
+                        pila.CerrarLasDelScript(avisos,
+                            t1Abierta => cambios.AgregarDeTransaccion(t1Abierta, FuenteCambio.TransaccionScript),
+                            motivo => cambios.NoLeida(FuenteCambio.TransaccionScript, motivo));
+                        cambios.AgregarDeTransaccion(t0, FuenteCambio.TransaccionPlugin);
                         cambios.Detallar(t0);
                         string violacion = parada ?? cambios.Violacion;
                         if (violacion != null)
@@ -281,6 +304,7 @@ namespace ArbaMcp
                             t0.Abort();
                             throw new InvalidOperationException(violacion + SufijoNadaAplicado(ctx));
                         }
+                        vigilandoCierre = EngancharEventosAlCerrar(db, cambios, ctx.Simular);
                         if (ctx.Simular) t0.Abort();
                         else t0.Commit();
                     }
@@ -288,6 +312,7 @@ namespace ArbaMcp
                     {
                         pila.AbortarEncimaDelPlugin();
                         t0.Dispose();
+                        if (vigilandoCierre) DesengancharEventosAlCerrar(db, cambios);
                     }
                 }
             }
@@ -305,6 +330,17 @@ namespace ArbaMcp
                 catch (Exception ex) { avisos.Add("Los cambios del dibujo se aplicaron, pero no se pudieron escribir los archivos de F.EscribirTexto en " + CodigoCarpeta.Texto + ": " + ex.Message); }
             }
 
+            // Diagnóstico (1.17.5): qué vio cada fuente, lo que solo vieron los eventos al cerrar y el deshacer al terminar
+            int? undoctlDespues = VariableEntera("UNDOCTL"), dbmodDespues = VariableEntera("DBMOD");
+            var fuenteDeteccion = cambios.FuenteDeteccion();
+            string creadosPor = fuenteDeteccion["creados_por"] as string;
+            var soloAlCerrar = cambios.NuevosSoloAlCerrar();
+            if (soloAlCerrar.Count > 0)
+                avisos.Add("Los eventos de la base de datos vieron " + soloAlCerrar.Count + " objeto(s) nuevo(s) " + cambios.MomentoCierre + " que no salen en datos.objetos.creados ("
+                    + string.Join(", ", soloAlCerrar.Take(20).Select(CambiosScript.DescribirSinAbrir)) + "): puede que Civil 3D los creara fuera de la transacción del script. Compruébalos en el dibujo (datos.objetos.fuente_deteccion).");
+            string avisoDeshacer = ctx.Simular ? null : CodigoDeshacer.Aviso(undoctlDespues ?? undoctlAntes);
+            if (avisoDeshacer != null) avisos.Add(avisoDeshacer);
+
             var antes = new Dictionary<string, object> { ["objetos_creados"] = 0, ["objetos_modificados"] = 0, ["objetos_borrados"] = 0 };
             var hechos = new Dictionary<string, object> { ["objetos_creados"] = cambios.Creados.Count, ["objetos_modificados"] = cambios.Modificados.Count, ["objetos_borrados"] = cambios.Borrados.Count };
             object datos = new
@@ -315,7 +351,17 @@ namespace ArbaMcp
                     modificados = cambios.Lista(cambios.Modificados),
                     borrados = cambios.Lista(cambios.Borrados),
                     temporales = cambios.Temporales,
-                    recortado = cambios.Recortado
+                    recortado = cambios.Recortado,
+                    fuente_deteccion = fuenteDeteccion
+                },
+                deshacer = new
+                {
+                    comando,
+                    undoctl_antes = undoctlAntes,
+                    undoctl_despues = undoctlDespues,
+                    undoctl_texto = CodigoDeshacer.DescribirUndoctl(undoctlDespues ?? undoctlAntes),
+                    dbmod_antes = dbmodAntes,
+                    dbmod_despues = dbmodDespues
                 },
                 mensajes = fachada.Mensajes,
                 archivos = new { leidos = fachada.Leidos, escritos, no_escritos_por_simulacion = noEscritos, carpeta = CodigoCarpeta.Texto },
@@ -333,14 +379,17 @@ namespace ArbaMcp
             {
                 avisos.Insert(0, "Simulación: el script se ejecutó de verdad dentro de una transacción que se abortó al final. Con objetos de Civil 3D no es una garantía total (Civil 3D puede guardar datos fuera de la transacción); la protección real es la copia de seguridad (copia.ruta).");
                 avisos.Add("La simulación puede dejar una entrada vacía (Executefunction) en el menú Deshacer: no deshace nada.");
-                var quedaron = cambios.Creados.Where(id => id.IsValid && !id.IsErased).ToList();
+                // Desde 1.17.5 se comprueba releyendo en una transacción nueva, como en la escritura real: con la línea de
+                // F.Agregar ya en Creados, un ObjectId que siguiera «válido» tras abortar daría una falsa alarma
+                List<ObjectId> quedaron;
+                using (doc.LockDocument()) quedaron = SiguenEnElDibujo(db, cambios.Creados);
                 if (quedaron.Count > 0)
                     avisos.Add("ATENCIÓN: después de abortar siguen en el dibujo " + quedaron.Count + " objeto(s) que creó el script (" + string.Join(", ", quedaron.Take(20).Select(cambios.Describir))
                         + "): Civil 3D no los deshizo con la transacción. Quítalos con _.UNDO o vuelve a la copia (copia.ruta).");
                 if (noEscritos.Count > 0)
                     avisos.Add("Simulación: no se escribió ningún archivo; se habrían escrito en " + CodigoCarpeta.Texto + ": " + string.Join(", ", noEscritos) + ".");
                 string accion = "Ejecutar un script de " + compilado.Lineas + " línea(s) en simulación: se ejecutó dentro de una transacción que se abortó al final.";
-                Historial.Registrar("ejecutar_codigo: simulación terminada (creados " + cambios.Creados.Count + ", modificados " + cambios.Modificados.Count + ", borrados " + cambios.Borrados.Count + ", " + msScript + " ms)");
+                Historial.Registrar("ejecutar_codigo: simulación terminada (creados " + cambios.Creados.Count + " según " + creadosPor + ", modificados " + cambios.Modificados.Count + ", borrados " + cambios.Borrados.Count + ", " + msScript + " ms)");
                 var sim = Escritura.Simulacion(ctx, antes, hechos, accion);
                 return ConExtras(sim, new Dictionary<string, object> { ["copia"] = ctx.Copia, ["datos"] = datos, ["resultado"] = resultado });
             }
@@ -348,7 +397,7 @@ namespace ArbaMcp
             // Escritura real: se vuelve a leer en una transacción nueva y se comprueba lo creado y lo borrado
             Dictionary<string, object> despues;
             using (doc.LockDocument()) despues = VerificarCambios(db, cambios);
-            Historial.Registrar("ejecutar_codigo: aplicado (creados " + cambios.Creados.Count + ", modificados " + cambios.Modificados.Count + ", borrados " + cambios.Borrados.Count + ", " + msScript + " ms)");
+            Historial.Registrar("ejecutar_codigo: aplicado (creados " + cambios.Creados.Count + " según " + creadosPor + ", modificados " + cambios.Modificados.Count + ", borrados " + cambios.Borrados.Count + ", " + msScript + " ms)");
             string mensaje = "Script de " + compilado.Lineas + " línea(s) ejecutado y confirmado: " + cambios.Creados.Count + " objeto(s) creado(s), "
                 + cambios.Modificados.Count + " modificado(s) y " + cambios.Borrados.Count + " borrado(s).";
             var res = Escritura.Resultado(ctx, antes, despues, hechos, mensaje, datos);
@@ -408,12 +457,25 @@ namespace ArbaMcp
                 _identidadFiable = MismaTransaccion(Arriba(), t1);
             }
 
-            /// <summary>Aborta las que el script dejó abiertas, confirma F.Tr si sigue abierta y comprueba que queda la del plugin.</summary>
-            public void CerrarLasDelScript(List<string> avisos)
+            /// <summary>
+            /// Aborta las que el script dejó abiertas, confirma F.Tr si sigue abierta y comprueba que queda la del plugin.
+            /// Desde 1.17.5, justo antes de confirmar F.Tr, 'antesDeConfirmar' la lee (GetAllObjects: qué abrió y creó el
+            /// script). Si el script ya la cerró, no se toca (una transacción terminada no se puede leer sin riesgo) y
+            /// 'sinLeer' recibe el motivo.
+            /// </summary>
+            public void CerrarLasDelScript(List<string> avisos, Action<Transaction> antesDeConfirmar, Action<string> sinLeer)
             {
                 int abiertas = AbortarEncimaDe(_t1, _nivelT1);
                 if (abiertas > 0) avisos.Add("El script dejó " + abiertas + " transacción(es) suya(s) sin cerrar: se abortaron y sus cambios no cuentan.");
-                if (EsLaDeArriba(_t1, _nivelT1)) _t1.Commit();
+                if (EsLaDeArriba(_t1, _nivelT1))
+                {
+                    try { antesDeConfirmar?.Invoke(_t1); } catch { }
+                    _t1.Commit();
+                }
+                else
+                {
+                    try { sinLeer?.Invoke("F.Tr ya no estaba abierta al terminar el script (el script la confirmó, la abortó o la desechó): no se leyó, para no usar una transacción terminada."); } catch { }
+                }
                 try { _t1.Dispose(); } catch { }
                 if (!EsLaDeArriba(_t0, _nivelT0))
                     throw new InvalidOperationException("La transacción de ejecutar_codigo ya no está activa después del script (o no se puede saber cuál es la activa): no se puede asegurar qué quedó en el dibujo. Revisa el dibujo y, si hace falta, usa _.UNDO o la copia de seguridad.");
@@ -499,22 +561,55 @@ namespace ArbaMcp
             return new Dictionary<string, object> { ["objetos_creados"] = creados, ["objetos_modificados"] = modificados, ["objetos_borrados"] = borrados };
         }
 
+        /// <summary>Simulación (desde 1.17.5): lo creado que sigue en el dibujo después de abortar, releído en una transacción nueva.</summary>
+        private static List<ObjectId> SiguenEnElDibujo(Database db, List<ObjectId> creados)
+        {
+            var quedaron = new List<ObjectId>();
+            if (creados.Count == 0) return quedaron;
+            using (var tr = db.TransactionManager.StartTransaction())
+            {
+                foreach (var id in creados) if (Existe(tr, id)) quedaron.Add(id);
+                tr.Commit();
+            }
+            return quedaron;
+        }
+
         private static bool Existe(Transaction tr, ObjectId id)
         {
             try { return id.IsValid && !id.IsErased && tr.GetObject(id, OpenMode.ForRead) != null; }
             catch { return false; }
         }
 
+        // ------------------------------------------------------------------ variables del sistema para datos.deshacer (1.17.5)
+        private static object Variable(string nombre)
+        {
+            try { return Autodesk.AutoCAD.ApplicationServices.Application.GetSystemVariable(nombre); }
+            catch { return null; }
+        }
+
+        private static int? VariableEntera(string nombre)
+        {
+            object v = Variable(nombre);
+            if (v == null) return null;
+            try { return Convert.ToInt32(v, System.Globalization.CultureInfo.InvariantCulture); }
+            catch { return null; }
+        }
+
+        private static string VariableTexto(string nombre) => Variable(nombre)?.ToString();
+
         // ------------------------------------------------------------------ 3. qué cambió
+        /// <summary>Eventos mientras corre el script (fuente 'eventos'). El de borrado aplica además la regla del proyecto.</summary>
         private static void EngancharEventos(Database db, CambiosScript c)
         {
             c.AlAnadir = (s, e) =>
             {
-                try { var o = e.DBObject; if (o != null) c.Anotar(o.ObjectId, o.GetType().Name, nuevo: true); } catch { }
+                try { var o = e.DBObject; if (o != null) c.AnotarEvento(o.ObjectId, o.GetType().Name, nuevo: true); }
+                catch (Exception ex) { c.ErrorEvento(FuenteCambio.Eventos, ex); }
             };
             c.AlModificar = (s, e) =>
             {
-                try { var o = e.DBObject; if (o != null) c.Anotar(o.ObjectId, o.GetType().Name, modificado: true); } catch { }
+                try { var o = e.DBObject; if (o != null) c.AnotarEvento(o.ObjectId, o.GetType().Name, modificado: true); }
+                catch (Exception ex) { c.ErrorEvento(FuenteCambio.Eventos, ex); }
             };
             c.AlBorrar = (s, e) =>
             {
@@ -522,11 +617,11 @@ namespace ArbaMcp
                 {
                     var o = e.DBObject;
                     if (o == null) return;
-                    c.Anotar(o.ObjectId, o.GetType().Name, borrado: e.Erased, recuperado: !e.Erased);
+                    c.AnotarEvento(o.ObjectId, o.GetType().Name, borrado: e.Erased);
                     string protegido = e.Erased ? CambiosScript.Protegido(o) : null;
                     if (protegido != null) CodigoVigilante.Detener(protegido);
                 }
-                catch { }
+                catch (Exception ex) { c.ErrorEvento(FuenteCambio.Eventos, ex); }
             };
             try { db.ObjectAppended += c.AlAnadir; c.EnAnadir = true; } catch (Exception ex) { c.FallosEventos.Add("ObjectAppended: " + ex.Message); }
             try { db.ObjectModified += c.AlModificar; c.EnModificar = true; } catch (Exception ex) { c.FallosEventos.Add("ObjectModified: " + ex.Message); }
@@ -540,85 +635,202 @@ namespace ArbaMcp
             if (c.EnBorrar) { try { db.ObjectErased -= c.AlBorrar; } catch { } c.EnBorrar = false; }
         }
 
-        /// <summary>Objetos que el script creó, modificó o borró, con su tipo, nombre y capa para la respuesta.</summary>
+        /// <summary>
+        /// Eventos mientras se confirma o se aborta la transacción del plugin (fuente 'eventos_al_cerrar', desde 1.17.5,
+        /// solo diagnóstico). AutoCAD notifica los objetos de una transacción al terminar la exterior, y durante esa
+        /// confirmación no se debe abrir ni cambiar nada: estos manejadores solo anotan el ObjectId (el tipo se lee después,
+        /// con ObjectId.ObjectClass) y nunca lanzan. Devuelve true si quedó enganchado alguno (hay que soltarlos).
+        /// </summary>
+        private static bool EngancharEventosAlCerrar(Database db, CambiosScript c, bool simular)
+        {
+            if (!VigilarEventosAlCerrar)
+            {
+                c.MomentoCierre = "desactivados (VigilarEventosAlCerrar = false en el plugin)";
+                return false;
+            }
+            c.MomentoCierre = simular ? "al abortar" : "al confirmar";
+            c.AlAnadirCierre = (s, e) =>
+            {
+                try { var o = e.DBObject; if (o != null) c.AnotarCierre(o.ObjectId, nuevo: true); }
+                catch (Exception ex) { c.ErrorEvento(FuenteCambio.EventosAlCerrar, ex); }
+            };
+            c.AlModificarCierre = (s, e) =>
+            {
+                try { var o = e.DBObject; if (o != null) c.AnotarCierre(o.ObjectId, modificado: true); }
+                catch (Exception ex) { c.ErrorEvento(FuenteCambio.EventosAlCerrar, ex); }
+            };
+            c.AlBorrarCierre = (s, e) =>
+            {
+                try { var o = e.DBObject; if (o != null) c.AnotarCierre(o.ObjectId, borrado: e.Erased); }
+                catch (Exception ex) { c.ErrorEvento(FuenteCambio.EventosAlCerrar, ex); }
+            };
+            try { db.ObjectAppended += c.AlAnadirCierre; c.EnAnadirCierre = true; } catch (Exception ex) { c.ErrorEvento(FuenteCambio.EventosAlCerrar, ex); }
+            try { db.ObjectModified += c.AlModificarCierre; c.EnModificarCierre = true; } catch (Exception ex) { c.ErrorEvento(FuenteCambio.EventosAlCerrar, ex); }
+            try { db.ObjectErased += c.AlBorrarCierre; c.EnBorrarCierre = true; } catch (Exception ex) { c.ErrorEvento(FuenteCambio.EventosAlCerrar, ex); }
+            return c.EnAnadirCierre || c.EnModificarCierre || c.EnBorrarCierre;
+        }
+
+        private static void DesengancharEventosAlCerrar(Database db, CambiosScript c)
+        {
+            if (c.EnAnadirCierre) { try { db.ObjectAppended -= c.AlAnadirCierre; } catch { } c.EnAnadirCierre = false; }
+            if (c.EnModificarCierre) { try { db.ObjectModified -= c.AlModificarCierre; } catch { } c.EnModificarCierre = false; }
+            if (c.EnBorrarCierre) { try { db.ObjectErased -= c.AlBorrarCierre; } catch { } c.EnBorrarCierre = false; }
+        }
+
+        /// <summary>
+        /// Objetos que el script creó, modificó o borró, con su tipo, nombre y capa para la respuesta. La combinación de
+        /// las fuentes y su recuento están en ArbaMcp.Nucleo.CodigoCambios (probado sin Civil 3D); aquí, lo que toca la
+        /// API: leer cada fuente, el detalle de los objetos y la regla del proyecto.
+        /// </summary>
         private sealed class CambiosScript
         {
-            private sealed class Estado
+            private sealed class Detalle
             {
-                public string Tipo;
-                public bool Nuevo, Borrado, Modificado;
-                public string Nombre, Capa, Handle;
+                public string Tipo, Nombre, Capa, Handle;
             }
 
-            private readonly Dictionary<ObjectId, Estado> _estados = new Dictionary<ObjectId, Estado>();
-            public ObjectEventHandler AlAnadir, AlModificar;
-            public ObjectErasedEventHandler AlBorrar;
-            public bool EnAnadir, EnModificar, EnBorrar;
+            private readonly CodigoCambios<ObjectId> _deteccion = new CodigoCambios<ObjectId>();
+            private readonly Dictionary<ObjectId, Detalle> _detalles = new Dictionary<ObjectId, Detalle>();
+            private ClasificacionCambios<ObjectId> _clasificacion;
+            public ObjectEventHandler AlAnadir, AlModificar, AlAnadirCierre, AlModificarCierre;
+            public ObjectErasedEventHandler AlBorrar, AlBorrarCierre;
+            public bool EnAnadir, EnModificar, EnBorrar, EnAnadirCierre, EnModificarCierre, EnBorrarCierre;
             public readonly List<string> FallosEventos = new List<string>();
+            public string MomentoCierre = "no se llegó a confirmar ni abortar";
             public List<ObjectId> Creados = new List<ObjectId>(), Modificados = new List<ObjectId>(), Borrados = new List<ObjectId>();
             public int Temporales;
             public bool Recortado;
             public string Violacion;
 
-            public void Anotar(ObjectId id, string tipo, bool nuevo = false, bool modificado = false, bool borrado = false, bool recuperado = false)
+            private Detalle DetalleDe(ObjectId id)
             {
-                if (id.IsNull) return;
-                if (!_estados.TryGetValue(id, out var e)) _estados[id] = e = new Estado { Tipo = tipo };
-                e.Nuevo |= nuevo;
-                e.Modificado |= modificado;
-                if (borrado) e.Borrado = true;
-                if (recuperado) e.Borrado = false;
+                if (!_detalles.TryGetValue(id, out var d)) _detalles[id] = d = new Detalle();
+                return d;
             }
 
-            /// <summary>Camino principal: los objetos abiertos en la transacción del plugin (con los de F.Tr y las anidadas, ya confirmadas en ella).</summary>
-            public void AgregarDeTransaccion(Transaction t0)
+            private void AnotarTipo(ObjectId id, string tipo)
             {
-                DBObjectCollection objetos;
-                try { objetos = t0.GetAllObjects(); }
-                catch (Exception ex) { FallosEventos.Add("Transaction.GetAllObjects: " + ex.Message); return; }
-                foreach (DBObject o in objetos)
+                var d = DetalleDe(id);
+                if (d.Tipo == null) d.Tipo = tipo;
+            }
+
+            /// <summary>Fuente 'eventos' (mientras corre el script). borrado: true al borrar, false al recuperar, null si no se sabe.</summary>
+            public void AnotarEvento(ObjectId id, string tipo, bool nuevo = false, bool modificado = false, bool? borrado = null)
+            {
+                if (id.IsNull) return;
+                AnotarTipo(id, tipo);
+                _deteccion.Anotar(FuenteCambio.Eventos, id, nuevo, modificado, borrado);
+            }
+
+            /// <summary>Fuente 'eventos_al_cerrar': solo el ObjectId, sin tocar el objeto (se está confirmando).</summary>
+            public void AnotarCierre(ObjectId id, bool nuevo = false, bool modificado = false, bool? borrado = null)
+            {
+                if (id.IsNull) return;
+                _deteccion.Anotar(FuenteCambio.EventosAlCerrar, id, nuevo, modificado, borrado);
+            }
+
+            public void ErrorEvento(string fuente, Exception ex)
+            {
+                try { _deteccion.Error(fuente, ex.GetType().Name + ": " + ex.Message); } catch { }
+            }
+
+            public void NoLeida(string fuente, string motivo) => _deteccion.NoLeida(fuente, motivo);
+
+            /// <summary>Fuente 'fachada': lo que añadió F.Agregar, con su estado de borrado de ahora (F.Tr sigue abierta).</summary>
+            public void AgregarDeFachada(IEnumerable<ObjectId> agregados)
+            {
+                foreach (var id in agregados)
                 {
-                    try
-                    {
-                        var id = o.ObjectId;
-                        if (id.IsNull) continue;
-                        if (!_estados.TryGetValue(id, out var e)) _estados[id] = e = new Estado { Tipo = o.GetType().Name };
-                        e.Nuevo |= o.IsNewObject;
-                        e.Borrado = o.IsErased;
-                        e.Modificado |= o.IsModified;
-                    }
-                    catch { }
+                    if (id.IsNull) continue;
+                    bool? borrado = null;
+                    try { borrado = id.IsErased; }
+                    catch (Exception ex) { _deteccion.Error(FuenteCambio.Fachada, "ObjectId.IsErased: " + ex.GetType().Name + ": " + ex.Message); }
+                    _deteccion.Anotar(FuenteCambio.Fachada, id, nuevo: true, borrado: borrado);
                 }
             }
 
             /// <summary>
-            /// Clasifica y, con la transacción aún abierta, lee tipo, nombre y capa de los primeros objetos de cada lista
-            /// (los que salen en la respuesta) y comprueba la regla del proyecto en todos los borrados.
+            /// Fuentes 'transaccion_script' (F.Tr, antes de confirmarla) y 'transaccion_plugin' (la del plugin, después):
+            /// los objetos de Transaction.GetAllObjects() con IsNewObject, IsModified e IsErased, cada lectura en su try y
+            /// con su error contado (en la 1.16.0 un error aquí se tragaba sin rastro).
+            /// </summary>
+            public void AgregarDeTransaccion(Transaction t, string fuente)
+            {
+                DBObjectCollection objetos;
+                try { objetos = t.GetAllObjects(); }
+                catch (Exception ex)
+                {
+                    _deteccion.Error(fuente, "Transaction.GetAllObjects: " + ex.GetType().Name + ": " + ex.Message);
+                    _deteccion.NoLeida(fuente, "Transaction.GetAllObjects falló.");
+                    return;
+                }
+                bool? Leer(Func<bool> lectura, string propiedad)
+                {
+                    try { return lectura(); }
+                    catch (Exception ex) { _deteccion.Error(fuente, propiedad + ": " + ex.GetType().Name + ": " + ex.Message); return null; }
+                }
+                int leidos = 0;
+                foreach (DBObject o in objetos)
+                {
+                    leidos++;
+                    if (o == null) continue;
+                    ObjectId id;
+                    try { id = o.ObjectId; }
+                    catch (Exception ex) { _deteccion.Error(fuente, "DBObject.ObjectId: " + ex.GetType().Name + ": " + ex.Message); continue; }
+                    if (id.IsNull) continue;
+                    try { AnotarTipo(id, o.GetType().Name); } catch { }
+                    bool? nuevo = Leer(() => o.IsNewObject, "DBObject.IsNewObject");
+                    bool? modificado = Leer(() => o.IsModified, "DBObject.IsModified");
+                    bool? borrado = Leer(() => o.IsErased, "DBObject.IsErased");
+                    _deteccion.Anotar(fuente, id, nuevo ?? false, modificado ?? false, borrado);
+                }
+                _deteccion.Leidos(fuente, leidos);
+            }
+
+            /// <summary>
+            /// Clasifica (CodigoCambios) y, con la transacción del plugin aún abierta, lee tipo, nombre y capa de los
+            /// primeros objetos de cada lista (los que salen en la respuesta) y comprueba la regla del proyecto en todos
+            /// los borrados.
             /// </summary>
             public void Detallar(Transaction t0)
             {
-                foreach (var kv in _estados)
+                _clasificacion = _deteccion.Clasificar();
+                Creados = _clasificacion.Creados;
+                Modificados = _clasificacion.Modificados;
+                Borrados = _clasificacion.Borrados;
+                Temporales = _clasificacion.Temporales;
+                DetallarLista(t0, Creados, false);
+                DetallarLista(t0, Modificados, false);
+                DetallarLista(t0, Borrados, true);
+            }
+
+            private void DetallarLista(Transaction t0, List<ObjectId> lista, bool sonBorrados)
+            {
+                for (int i = 0; i < lista.Count; i++)
                 {
-                    var e = kv.Value;
-                    if (e.Nuevo && e.Borrado) { Temporales++; continue; }
-                    var lista = e.Nuevo ? Creados : e.Borrado ? Borrados : e.Modificado ? Modificados : null;
-                    if (lista == null) continue;
-                    lista.Add(kv.Key);
-                    bool detallar = lista.Count <= CodigoLimites.MaximoObjetosListados;
-                    if (!detallar && !e.Borrado) continue;
+                    bool detallar = i < CodigoLimites.MaximoObjetosListados;
+                    if (!detallar && !sonBorrados) break;
+                    var id = lista[i];
+                    var d = DetalleDe(id);
                     try
                     {
-                        e.Handle = kv.Key.Handle.ToString();
-                        var o = t0.GetObject(kv.Key, OpenMode.ForRead, true);
-                        e.Tipo = o.GetType().Name;
-                        if (e.Borrado && Violacion == null) Violacion = Protegido(o);
+                        d.Handle = id.Handle.ToString();
+                        var o = t0.GetObject(id, OpenMode.ForRead, true);
+                        d.Tipo = o.GetType().Name;
+                        if (sonBorrados && Violacion == null) Violacion = Protegido(o);
                         if (!detallar) continue;
-                        e.Nombre = o is SymbolTableRecord str ? str.Name : Api.Leer<string>(o, null, "Name");
-                        e.Capa = (o as Entity)?.Layer;
+                        d.Nombre = o is SymbolTableRecord str ? str.Name : Api.Leer<string>(o, null, "Name");
+                        d.Capa = (o as Entity)?.Layer;
                     }
                     catch { }
                 }
             }
+
+            /// <summary>datos.objetos.fuente_deteccion: qué vio cada fuente (después de confirmar o abortar, con los eventos al cerrar).</summary>
+            public Dictionary<string, object> FuenteDeteccion() => _deteccion.Informe(_clasificacion, MomentoCierre);
+
+            /// <summary>Lo que solo vieron nuevo los eventos al cerrar.</summary>
+            public List<ObjectId> NuevosSoloAlCerrar() => _deteccion.NuevosSoloAlCerrar();
 
             /// <summary>Texto de la regla del proyecto si el objeto es una superficie, un corredor o un ensamblaje; null si no.</summary>
             public static string Protegido(DBObject o)
@@ -636,15 +848,23 @@ namespace ArbaMcp
                 if (ids.Count > CodigoLimites.MaximoObjetosListados) Recortado = true;
                 return ids.Take(CodigoLimites.MaximoObjetosListados).Select(id =>
                 {
-                    _estados.TryGetValue(id, out var e);
-                    return (object)new { handle = e?.Handle ?? Handle(id), tipo = e?.Tipo, nombre = e?.Nombre, capa = e?.Capa };
+                    _detalles.TryGetValue(id, out var d);
+                    return (object)new { handle = d?.Handle ?? Handle(id), tipo = d?.Tipo, nombre = d?.Nombre, capa = d?.Capa };
                 }).ToList();
             }
 
             public string Describir(ObjectId id)
             {
-                _estados.TryGetValue(id, out var e);
-                return (e?.Tipo ?? "objeto") + " " + (e?.Handle ?? Handle(id)) + (e?.Nombre != null ? " '" + e.Nombre + "'" : "");
+                _detalles.TryGetValue(id, out var d);
+                return (d?.Tipo ?? "objeto") + " " + (d?.Handle ?? Handle(id)) + (d?.Nombre != null ? " '" + d.Nombre + "'" : "");
+            }
+
+            /// <summary>Handle y clase (ObjectId.ObjectClass) sin abrir el objeto: para lo que solo vieron los eventos al cerrar.</summary>
+            public static string DescribirSinAbrir(ObjectId id)
+            {
+                string clase = null;
+                try { clase = id.ObjectClass?.Name; } catch { }
+                return (clase ?? "objeto") + " " + (Handle(id) ?? "?");
             }
 
             private static string Handle(ObjectId id)
