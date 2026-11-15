@@ -310,9 +310,16 @@ namespace ArbaMcp
                     }
                     finally
                     {
-                        pila.AbortarEncimaDelPlugin();
-                        t0.Dispose();
-                        if (vigilandoCierre) DesengancharEventosAlCerrar(db, cambios);
+                        try
+                        {
+                            pila.AbortarEncimaDelPlugin();
+                            t0.Dispose();
+                        }
+                        finally
+                        {
+                            // Siempre, aunque Dispose lance: si no, los manejadores quedarían en la base de datos y se acumularían
+                            if (vigilandoCierre) DesengancharEventosAlCerrar(db, cambios);
+                        }
                     }
                 }
             }
@@ -770,19 +777,27 @@ namespace ArbaMcp
                     catch (Exception ex) { _deteccion.Error(fuente, propiedad + ": " + ex.GetType().Name + ": " + ex.Message); return null; }
                 }
                 int leidos = 0;
-                foreach (DBObject o in objetos)
+                try
                 {
-                    leidos++;
-                    if (o == null) continue;
-                    ObjectId id;
-                    try { id = o.ObjectId; }
-                    catch (Exception ex) { _deteccion.Error(fuente, "DBObject.ObjectId: " + ex.GetType().Name + ": " + ex.Message); continue; }
-                    if (id.IsNull) continue;
-                    try { AnotarTipo(id, o.GetType().Name); } catch { }
-                    bool? nuevo = Leer(() => o.IsNewObject, "DBObject.IsNewObject");
-                    bool? modificado = Leer(() => o.IsModified, "DBObject.IsModified");
-                    bool? borrado = Leer(() => o.IsErased, "DBObject.IsErased");
-                    _deteccion.Anotar(fuente, id, nuevo ?? false, modificado ?? false, borrado);
+                    foreach (DBObject o in objetos)
+                    {
+                        leidos++;
+                        if (o == null) continue;
+                        ObjectId id;
+                        try { id = o.ObjectId; }
+                        catch (Exception ex) { _deteccion.Error(fuente, "DBObject.ObjectId: " + ex.GetType().Name + ": " + ex.Message); continue; }
+                        if (id.IsNull) continue;
+                        try { AnotarTipo(id, o.GetType().Name); } catch { }
+                        bool? nuevo = Leer(() => o.IsNewObject, "DBObject.IsNewObject");
+                        bool? modificado = Leer(() => o.IsModified, "DBObject.IsModified");
+                        bool? borrado = Leer(() => o.IsErased, "DBObject.IsErased");
+                        _deteccion.Anotar(fuente, id, nuevo ?? false, modificado ?? false, borrado);
+                    }
+                }
+                finally
+                {
+                    // Ya se copiaron los ObjectId: la colección (dos por ejecución, F.Tr y la del plugin) se libera aquí
+                    try { objetos?.Dispose(); } catch { }
                 }
                 _deteccion.Leidos(fuente, leidos);
             }
