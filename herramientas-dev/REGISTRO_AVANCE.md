@@ -254,6 +254,13 @@ Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a
   Incluye `CodigoCambios.cs` y `CodigoDeshacer` con 14 pruebas, las cinco fuentes de detección, `datos.deshacer` y el
   alias H3, con `VALIDACION_1175.md`. Nada compilado en la nube: lo cubre la CI. Revisión previa de solo lectura en
   marcha, por el riesgo nuevo de que la línea entre en Creados y salte el aviso «ATENCIÓN» tras abortar.
+- **04:24, 4.1 terminada** (memoria-firma `main`, `026a363`; Actions en verde). Se extrajeron 33 tablas y figuras, con
+  1483 valores, 33 fórmulas con su sección y página y 33 observaciones. Contenido: `dg2018.sqlite`,
+  `extraer_dg2018.py` (repetible; comprueba el SHA-256 del PDF), `LEEME.md`, `VERSION.md` (R.D. 03-2018-MTC/14, «a
+  confirmar por Jose»), `VERIFICAR.md` con 34 imágenes y `normas/fuentes/FUENTE.md`. Los 5 casos coinciden con el
+  sqlite. **Jose debe revisar primero**: la 204.01, leída por el color de las celdas; posibles erratas del PDF
+  guardadas tal cual; la discrepancia entre 205.05 y 302.22; los peraltes de 302.02 frente a 304.05; y el alcance de
+  Tercera Clase. Regla del PDF: **no seguir a la 4.2 sin el 100 % de las tablas críticas comprobado**.
 - Etapa 4 sigue bloqueada (15/11): `memoria-firma/normas/fuentes/` solo tiene `.gitkeep`. Los datos de la evaluación
   **ya están** en `memoria-firma/evaluacion/datos_prueba/` (sincronización del 14/11 16:03).
 
