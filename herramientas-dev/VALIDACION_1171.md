@@ -54,7 +54,7 @@ Reglas:
 ## Pasos
 
 0. **Comprobar la instalación (decisivo).** `ping` con `args={"pedido":"comprueba que el plugin responde"}` y la lista
-   de herramientas: `ping` da **`1.17.3`** si se instaló la rama integrada de la ronda B (lo normal), o **`1.17.1` o
+   de herramientas: `ping` da **`1.17.4`** si se instaló la rama integrada de la ronda B (lo normal), o **`1.17.1` o
    superior** en cualquier caso; una versión menor es FALLO. Anota la versión y el número de herramientas (debe incluir
    `calcular_volumenes`).
 

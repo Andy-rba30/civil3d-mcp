@@ -54,7 +54,7 @@ Reglas:
 
 ## Pasos
 
-0. **Comprobar la instalación.** `ping` → `version` debe ser `1.17.3` si se instaló la rama integrada de la ronda B
+0. **Comprobar la instalación.** `ping` → `version` debe ser `1.17.4` si se instaló la rama integrada de la ronda B
    (o una versión superior, si el dueño indicó otra rama). `listar_superficies` → lista vacía (el dibujo base no tiene
    superficies). Mira la carpeta `C:\Proyectos\dibujos_prueba\backups\` y anota cuántos archivos tiene. Si `ping` no
    responde, para aquí.

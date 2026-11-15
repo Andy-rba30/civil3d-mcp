@@ -67,8 +67,8 @@ Reglas:
    ```
    (dice si AutoCAD o Dynamo traen su propio Roslyn; puede salir vacío). En `PuenteMcp`, `uv sync`; reinicia el puente
    y **recarga el MCP `civil3d`** en el cliente. Abre Civil 3D **desde el menú Inicio** con `PRUEBA_116.dwg`. Después:
-   `ping` con `args={"pedido":"comprueba que el plugin responde"}` → `"version": "1.17.3"` (rama integrada `tarea/ronda-b`; `1.16.0` si se instaló `tarea/3.1-ejecutar-codigo` sola), `"hay_dibujo": true`. En
-   PowerShell: `curl.exe -s http://127.0.0.1:8765/ping` → `{"ok":true,"servidor":"ArbaMcp","version":"1.17.3"}` (o `1.16.0` con la rama sola). Pide la
+   `ping` con `args={"pedido":"comprueba que el plugin responde"}` → `"version": "1.17.4"` (rama integrada `tarea/ronda-b`; `1.16.0` si se instaló `tarea/3.1-ejecutar-codigo` sola), `"hay_dibujo": true`. En
+   PowerShell: `curl.exe -s http://127.0.0.1:8765/ping` → `{"ok":true,"servidor":"ArbaMcp","version":"1.17.4"}` (o `1.16.0` con la rama sola). Pide la
    lista de herramientas: **55** del plugin (más `buscar_api` del puente), con `ejecutar_codigo` y sus parámetros
    `codigo_csharp` (obligatorio), `simular`, `parametros` y `pedido`. Si la versión no es la de la rama, para aquí.
 
@@ -96,8 +96,8 @@ Reglas:
 4. **Simulación (decisivo).** Tres llamadas seguidas, todas sin `simular` (por defecto es `true`):
    - **4a, contar las líneas**: `ejecutar_codigo` con
      `args={"codigo_csharp":"int n = 0;\nforeach (var id in F.EspacioModelo())\n    if (F.Abrir<Entity>(id) is Line) n++;\nreturn n;","pedido":"cuenta las líneas del espacio modelo"}`.
-     Si sale `CS0009 ... La imagen PE no contiene metadatos administrados`, es el fallo de la 1.17.2 (referencias de la carpeta de AutoCAD): **para aquí** y comprueba que `ping` da `1.17.3`.
-     Si sale `CS0234` con «'Civil' no existe en el espacio de nombres 'Autodesk'» (en inglés, `The type or namespace name 'Civil' does not exist in the namespace 'Autodesk'`) o `CS0012` con `AecBaseMgd` o `AeccDbMgd`, es un fallo de referencias de la 1.17.3: **para aquí** y copia el error literal en el informe.
+     Si sale `CS0009 ... La imagen PE no contiene metadatos administrados`, es el fallo de la 1.17.2 (referencias de la carpeta de AutoCAD): **para aquí** y comprueba que `ping` da `1.17.4`.
+     Si sale `CS0234` con «'Civil' no existe en el espacio de nombres 'Autodesk'» (en inglés, `The type or namespace name 'Civil' does not exist in the namespace 'Autodesk'`) o `CS0012` con `AecBaseMgd` o `AeccDbMgd`, es el fallo de referencias de la 1.17.3: **para aquí**, comprueba que `ping` da `1.17.4` y copia el error literal en el informe, con la línea `Referencias del plugin: ...` si sale.
      Anota `resultado`: es **N0** (en el dibujo base debería ser `0`). Debe traer `simulado: true` y `copia` (es la
      primera ejecución: copia nueva en `backups\`).
    - **4b, la línea en simulación**: `ejecutar_codigo` con
