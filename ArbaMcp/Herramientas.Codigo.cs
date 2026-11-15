@@ -130,6 +130,12 @@ namespace ArbaMcp
         /// se quita lo que está en la carpeta de AutoCAD (CodigoReferencias.FiltrarPlataforma: lo de Autodesk entra solo si
         /// ya está cargado) y, venga de donde venga, solo entra lo que es un ensamblado .NET legible
         /// (CodigoReferencias.EsEnsambladoAdministrado).
+        /// Además, con la carpeta de AutoCAD se añaden siempre por ruta las cinco DLL que referencia el plugin
+        /// (CodigoReferencias.RutasAutodesk: acdbmgd, accoremgd, acmgd, ACA\AecBaseMgd y C3D\AeccDbMgd), cargadas o no:
+        /// AecBaseMgd y AeccDbMgd están en subcarpetas que nunca entran en TRUSTED_PLATFORM_ASSEMBLIES, y si no estaban
+        /// cargadas al compilar, el alias Civ daba CS0234 en todo script (o CS0012 si faltaba solo AecBaseMgd). Darlas a
+        /// Roslyn por ruta solo lee sus metadatos: no las carga en Civil 3D. La lista se guarda en caché solo cuando ya
+        /// tiene las cinco (CodigoReferencias.TieneLasDeAutodesk).
         /// </summary>
         private static string[] ReferenciasCodigo()
         {
@@ -159,17 +165,17 @@ namespace ArbaMcp
                         if (n.StartsWith("System.", StringComparison.OrdinalIgnoreCase) || n == "netstandard.dll" || n == "mscorlib.dll") Agregar(f);
                     }
             }
-            bool hayCivil = false;
             if (dirAcad != null)
+            {
                 foreach (var x in cargados.Where(x => x.ruta.StartsWith(dirAcad, StringComparison.OrdinalIgnoreCase)))
-                {
                     Agregar(x.ruta);
-                    if (x.a.GetName().Name == "AeccDbMgd") hayCivil = true;
-                }
+                foreach (var rutaDll in CodigoReferencias.RutasAutodesk(dirAcad))
+                    Agregar(rutaDll);
+            }
             Agregar(typeof(Fachada).Assembly.Location);
             Agregar(typeof(CodigoVigilante).Assembly.Location);
             var lista = rutas.Values.ToArray();
-            if (hayCivil) lock (CerrojoCodigo) _referenciasCodigo = lista;
+            if (CodigoReferencias.TieneLasDeAutodesk(rutas.Keys)) lock (CerrojoCodigo) _referenciasCodigo = lista;
             return lista;
         }
 
@@ -360,6 +366,7 @@ namespace ArbaMcp
             private Transaction _t1;
             private int? _nivelT1;
             private bool _identidadFiable;
+            private bool _t1Cerrada;
 
             public PilaTransacciones(Database db, Transaction t0)
             {
@@ -399,8 +406,22 @@ namespace ArbaMcp
                     if (activas.HasValue && _nivelT0.HasValue && activas.Value < _nivelT0.Value) return n;   // ya no hay nada por encima del plugin
                     var arriba = Arriba();
                     if (arriba == null) return n;
-                    try { arriba.Abort(); } catch { }
-                    try { arriba.Dispose(); } catch { }
+                    if (_t1 != null && !_t1Cerrada && MismaTransaccion(arriba, _t1))
+                    {
+                        // La de arriba es F.Tr (ruta de error o tiempo agotado): se aborta y se desecha el objeto .NET
+                        // original, no solo el envoltorio que devuelve TopTransaction (puede ser otro objeto de la misma
+                        // transacción). Si no, el original quedaría para el finalizador, que corre en otro hilo, y
+                        // AutoCAD podría caerse si ese objeto borra una transacción ya terminada.
+                        try { _t1.Abort(); } catch { }
+                        try { _t1.Dispose(); } catch { }
+                        _t1Cerrada = true;
+                        if (!ReferenceEquals(arriba, _t1)) { try { arriba.Dispose(); } catch { } }
+                    }
+                    else
+                    {
+                        try { arriba.Abort(); } catch { }
+                        try { arriba.Dispose(); } catch { }
+                    }
                     n++;
                 }
                 return n;
