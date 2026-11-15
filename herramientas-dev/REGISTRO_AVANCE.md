@@ -268,6 +268,17 @@ Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a
   VALIDACION_1175 coinciden con el código, y la fuente `fachada` siempre ve la línea. Se encargan dos arreglos baratos
   en la misma rama: soltar los manejadores de `eventos_al_cerrar` antes de `t0.Dispose()` y desechar las
   `DBObjectCollection` de `GetAllObjects`.
+- **04:28, 1.17.5 lista para la PC**: `b2656da` (manejadores en un `finally` anidado y `Dispose` de las colecciones;
+  sustituto `DBObjectCollection` con `IDisposable`, que según el catálogo hereda de `DisposableWrapper`). **CI del #46
+  en verde**: xUnit 578/578, CompilarSinCivil con 0 errores, puente y evaluador correctos.
+- **Plan para la mañana del 15/11 (dueño)**:
+  1. Merge del #43 y L.1 con `main` (`ping` 1.17.4).
+  2. L.1 con `tarea/3.4-codigo-objetos-deshacer` (`b2656da`, `ping` 1.17.5) y P con `VALIDACION_1175.md`. Pone
+     `ARBA_MCP_CODIGO=1` en `PRUEBA_1175.dwg`, y **sin ZOOM** entre los pasos 6 y 8.
+  3. Revisar en memoria-firma `normas/tablas/VERIFICAR.md` (prioridad 1) y `normas/casos_prueba/casos_dg2018.md`, y
+     decidir la duda de la Tabla 303.02.
+  4. Fusionar el #45 (documentación) después del #43.
+  Después, si 1175 da OK, fusionar el #46, y si las tablas están al 100 %, lanzar la **4.2 `verificar_norma`**.
 - Etapa 4 sigue bloqueada (15/11): `memoria-firma/normas/fuentes/` solo tiene `.gitkeep`. Los datos de la evaluación
   **ya están** en `memoria-firma/evaluacion/datos_prueba/` (sincronización del 14/11 16:03).
 
