@@ -97,6 +97,7 @@ Reglas:
    - **4a, contar las líneas**: `ejecutar_codigo` con
      `args={"codigo_csharp":"int n = 0;\nforeach (var id in F.EspacioModelo())\n    if (F.Abrir<Entity>(id) is Line) n++;\nreturn n;","pedido":"cuenta las líneas del espacio modelo"}`.
      Si sale `CS0009 ... La imagen PE no contiene metadatos administrados`, es el fallo de la 1.17.2 (referencias de la carpeta de AutoCAD): **para aquí** y comprueba que `ping` da `1.17.3`.
+     Si sale `CS0234` con «'Civil' no existe en el espacio de nombres 'Autodesk'» (en inglés, `The type or namespace name 'Civil' does not exist in the namespace 'Autodesk'`) o `CS0012` con `AecBaseMgd` o `AeccDbMgd`, es un fallo de referencias de la 1.17.3: **para aquí** y copia el error literal en el informe.
      Anota `resultado`: es **N0** (en el dibujo base debería ser `0`). Debe traer `simulado: true` y `copia` (es la
      primera ejecución: copia nueva en `backups\`).
    - **4b, la línea en simulación**: `ejecutar_codigo` con
@@ -164,12 +165,14 @@ Reglas:
    `TimeoutException: El script superó el tiempo límite de 60 s y se detuvo en la línea 4` y contiene
    `No se aplicó nada: la transacción se abortó (era una simulación).` y `Copia de seguridad: `. **Mientras corre**,
    Civil 3D no responde (es lo esperado). Nada más terminar: `ping` responde y `listar_superficies` responde en menos de
-   5 s; la llamada de 4a (contar) da **N0**. Anota el menú Deshacer.
+   5 s; la llamada de 4a (contar) da **N0**. Anota el menú Deshacer. Después espera unos 30 s, llama a `ping`
+   (`"hay_dibujo": true`) y anota en el informe si Civil 3D siguió abierto y estable (sin cierre ni mensaje de error).
 
 10. **Error en tiempo de ejecución con su línea** (no decisivo). `ejecutar_codigo` con
     `args={"codigo_csharp":"var id = F.Alineamiento(\"NO_EXISTE\");\nreturn id;"}`. Esperado: `ok: false` con
     `El script falló en la línea 1: ArgumentException: No existe el alineamiento 'NO_EXISTE'. Usa listar_alineamientos.`
-    y `No se aplicó nada: la transacción se abortó (era una simulación).`
+    y `No se aplicó nada: la transacción se abortó (era una simulación).` Después espera unos 30 s, llama a `ping`
+    (`"hay_dibujo": true`) y anota en el informe si Civil 3D siguió abierto y estable (sin cierre ni mensaje de error).
 
 11. **Parámetros** (no decisivo). `ejecutar_codigo` con
     `args={"codigo_csharp":"return new { capa = F.Texto(\"capa\"), doble = F.Numero(\"largo\") * 2, directo = Parametros.GetProperty(\"capa\").GetString() };","parametros":"{\"capa\":\"0\",\"largo\":50}"}`.
@@ -195,6 +198,7 @@ Para quitar la variable cuando lo pida Jose (no en esta validación): cierra Civ
 - Una tabla paso / resultado (OK, FALLO) / respuesta literal / tiempo (`ms_puente`).
 - Por cada paso marcado: el menú Deshacer antes y después y los archivos de `backups\` antes y después.
 - `datos.eventos_bd`, `datos.compilacion.roslyn` y `datos.compilacion.ms` de la primera y de una ejecución repetida.
+- Pasos 9 y 10: la respuesta del `ping` de unos 30 s después y si Civil 3D siguió abierto y estable.
 - Una lista final de los miembros de la sección 1.16.0 de `miembros_por_verificar_civil3d.md` que pasan a
   `ejecutado en Civil 3D 2027` con la fecha, y los que fallaron con su error literal.
 - Que la variable `ARBA_MCP_CODIGO` quedó en `1`.
