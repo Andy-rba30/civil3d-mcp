@@ -261,6 +261,9 @@ Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a
   sqlite. **Jose debe revisar primero**: la 204.01, leída por el color de las celdas; posibles erratas del PDF
   guardadas tal cual; la discrepancia entre 205.05 y 302.22; los peraltes de 302.02 frente a 304.05; y el alcance de
   Tercera Clase. Regla del PDF: **no seguir a la 4.2 sin el 100 % de las tablas críticas comprobado**.
+- **04:25, CI del #46**: xUnit 577/578. Falla la prueba nueva del alias H3, que ejecutaba el script con un tipo de la
+  biblioteca falsa, que solo existe para compilar (`FileNotFoundException 'AutodeskFalsa'`). Encargado a la hija que
+  esa prueba solo compile. Es un fallo de la prueba, no del plugin.
 - Etapa 4 sigue bloqueada (15/11): `memoria-firma/normas/fuentes/` solo tiene `.gitkeep`. Los datos de la evaluación
   **ya están** en `memoria-firma/evaluacion/datos_prueba/` (sincronización del 14/11 16:03).
 
