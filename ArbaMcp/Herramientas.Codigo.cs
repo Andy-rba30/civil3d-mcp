@@ -41,6 +41,8 @@ namespace ArbaMcp
         private static readonly object CerrojoCodigo = new object();
         private static CargadorCompilador _cargadorCodigo;
         private static string[] _referenciasCodigo;
+        private static string _diagnosticoReferencias;   // null si la última lista armada tenía la carpeta de AutoCAD y las cinco DLL
+        private static bool _referenciasRegistradas;     // ya se escribió en el historial el resumen de la primera lista
 
         private static void RegistrarCodigo()
         {
@@ -79,7 +81,13 @@ namespace ArbaMcp
             long msCompilacion = reloj.ElapsedMilliseconds;
             Historial.Registrar("ejecutar_codigo: " + (compilado.Ok ? "compilado" : "no compila") + " (" + compilado.Lineas + " líneas, " + msCompilacion + " ms"
                 + (compilado.DeCache ? ", de la caché" : "") + (compilado.ReferenciasFallidas.Length > 0 ? ", referencias que no se pudieron leer: " + string.Join("; ", compilado.ReferenciasFallidas) : "") + ")");
-            if (!compilado.Ok) throw new ArgumentException(compilado.Mensaje);
+            if (!compilado.Ok)
+            {
+                // Si las referencias del plugin están incompletas, una línea más para diagnosticarlo de una vez (1.17.4)
+                string diagnostico;
+                lock (CerrojoCodigo) diagnostico = _diagnosticoReferencias;
+                throw new ArgumentException(diagnostico == null ? compilado.Mensaje : compilado.Mensaje + "\n" + diagnostico);
+            }
 
             // 2. Hilo principal, contexto Documento. Si Civil 3D sigue ocupado, se descarta sin ejecutarse.
             Pendiente pendiente = null;
@@ -136,6 +144,12 @@ namespace ArbaMcp
         /// cargadas al compilar, el alias Civ daba CS0234 en todo script (o CS0012 si faltaba solo AecBaseMgd). Darlas a
         /// Roslyn por ruta solo lee sus metadatos: no las carga en Civil 3D. La lista se guarda en caché solo cuando ya
         /// tiene las cinco (CodigoReferencias.TieneLasDeAutodesk).
+        /// Desde 1.17.4: la carpeta de AutoCAD sale de la ubicación de acdbmgd (typeof(Database), ya cargado porque el
+        /// plugin lo usa) y, si no se puede leer, de los ensamblados cargados sin distinguir mayúsculas
+        /// (CodigoReferencias.CarpetaDeAutoCAD): en Civil 3D 2027 el nombre de ensamblado es «Acdbmgd» y la comparación
+        /// exacta de la 1.17.3 nunca encontraba la carpeta (CS0234 en el paso 4a de VALIDACION_116). Cada vez que se arma
+        /// la lista se guarda el diagnóstico (CodigoReferencias.DiagnosticoReferencias), que se añade a los errores de
+        /// compilación si está incompleta, y la primera vez se escribe un resumen en el historial.
         /// </summary>
         private static string[] ReferenciasCodigo()
         {
@@ -152,7 +166,10 @@ namespace ArbaMcp
             }
             var cargados = AppDomain.CurrentDomain.GetAssemblies().Where(x => !x.IsDynamic).Select(x => new { a = x, ruta = Ubicacion(x) })
                 .Where(x => !string.IsNullOrEmpty(x.ruta)).ToList();
-            string dirAcad = cargados.Where(x => x.a.GetName().Name == "acdbmgd").Select(x => Path.GetDirectoryName(x.ruta)).FirstOrDefault();
+            string rutaAcdb = Ubicacion(typeof(Database).Assembly);
+            string dirAcad = string.IsNullOrEmpty(rutaAcdb) ? null : Path.GetDirectoryName(rutaAcdb);
+            if (string.IsNullOrEmpty(dirAcad))
+                dirAcad = CodigoReferencias.CarpetaDeAutoCAD(cargados.Select(x => (nombre: x.a.GetName().Name, ruta: x.ruta)));
             string dirRuntime = Path.GetDirectoryName(typeof(object).Assembly.Location);
             if (AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") is string tpa)
                 foreach (var r in CodigoReferencias.FiltrarPlataforma(tpa.Split(Path.PathSeparator), dirAcad, dirRuntime)) Agregar(r);
@@ -175,7 +192,16 @@ namespace ArbaMcp
             Agregar(typeof(Fachada).Assembly.Location);
             Agregar(typeof(CodigoVigilante).Assembly.Location);
             var lista = rutas.Values.ToArray();
-            if (CodigoReferencias.TieneLasDeAutodesk(rutas.Keys)) lock (CerrojoCodigo) _referenciasCodigo = lista;
+            string diagnostico = CodigoReferencias.DiagnosticoReferencias(dirAcad, rutas.Keys);
+            bool registrar;
+            lock (CerrojoCodigo)
+            {
+                _diagnosticoReferencias = diagnostico;
+                if (CodigoReferencias.TieneLasDeAutodesk(rutas.Keys)) _referenciasCodigo = lista;
+                registrar = !_referenciasRegistradas;
+                _referenciasRegistradas = true;
+            }
+            if (registrar) Historial.Registrar("ejecutar_codigo: " + CodigoReferencias.ResumenReferencias(lista.Length, dirAcad, rutas.Keys));
             return lista;
         }
 
