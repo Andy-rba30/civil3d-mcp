@@ -160,6 +160,9 @@ Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a
 - **Aviso al dueño enviado (15/11): ronda B lista para retomar en la PC**, con L.1 (`tarea/ronda-b`, `18a747b`) y P:
   VALIDACION_116 desde el paso 0 (`ping` 1.17.3) y luego desde el **paso 4** sobre el mismo `PRUEBA_116.dwg`, después
   117 → 1171 → 1172 → evaluación.
+- **L.1 OK en la PC** (15/11): `tarea/ronda-b` en `18a747b`, versión 1.17.3, compilación Release con las DLL reales
+  sin errores ni avisos, `dotnet test` 558/558, pytest del puente 166, puente reiniciado y MCP `civil3d` reconectado,
+  `ARBA_MCP_CODIGO=1`, `ESTADO_PC.md` al día. Falta el Prompt P.
 - Etapa 4 sigue bloqueada (15/11): `memoria-firma/normas/fuentes/` solo tiene `.gitkeep`. Los datos de la evaluación
   **ya están** en `memoria-firma/evaluacion/datos_prueba/` (sincronización del 14/11 16:03).
 
