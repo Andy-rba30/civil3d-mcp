@@ -124,6 +124,12 @@ namespace ArbaMcp
         /// cargadas desde la carpeta de AutoCAD (por Assembly.Location; no se fuerza ninguna carga desde este hilo),
         /// ArbaMcp.dll y ArbaMcp.Nucleo.dll. Lo que el script puede usar de verdad lo decide la lista blanca. Se guarda
         /// la lista cuando ya incluye AeccDbMgd.
+        /// Desde 1.17.3: en acad.exe la lista TRUSTED_PLATFORM_ASSEMBLIES trae también todos los .exe y .dll de la carpeta
+        /// de AutoCAD, nativos incluidos (slidelib.exe, accoreconsole.exe, w3dtk_wt.dll...), y Roslyn daba un CS0009 por
+        /// cada uno al compilar (282 errores en el informe de VALIDACION_116 del 14/11/2026, paso 4a). Por eso de esa lista
+        /// se quita lo que está en la carpeta de AutoCAD (CodigoReferencias.FiltrarPlataforma: lo de Autodesk entra solo si
+        /// ya está cargado) y, venga de donde venga, solo entra lo que es un ensamblado .NET legible
+        /// (CodigoReferencias.EsEnsambladoAdministrado).
         /// </summary>
         private static string[] ReferenciasCodigo()
         {
@@ -134,13 +140,18 @@ namespace ArbaMcp
                 if (string.IsNullOrEmpty(ruta) || !File.Exists(ruta)) return;
                 string nombre = Path.GetFileNameWithoutExtension(ruta);
                 if (nombre.StartsWith("Microsoft.CodeAnalysis", StringComparison.OrdinalIgnoreCase)) return;
-                if (!rutas.ContainsKey(nombre)) rutas[nombre] = ruta;
+                if (rutas.ContainsKey(nombre)) return;
+                if (!CodigoReferencias.EsEnsambladoAdministrado(ruta)) return;
+                rutas[nombre] = ruta;
             }
+            var cargados = AppDomain.CurrentDomain.GetAssemblies().Where(x => !x.IsDynamic).Select(x => new { a = x, ruta = Ubicacion(x) })
+                .Where(x => !string.IsNullOrEmpty(x.ruta)).ToList();
+            string dirAcad = cargados.Where(x => x.a.GetName().Name == "acdbmgd").Select(x => Path.GetDirectoryName(x.ruta)).FirstOrDefault();
+            string dirRuntime = Path.GetDirectoryName(typeof(object).Assembly.Location);
             if (AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") is string tpa)
-                foreach (var r in tpa.Split(Path.PathSeparator)) Agregar(r);
+                foreach (var r in CodigoReferencias.FiltrarPlataforma(tpa.Split(Path.PathSeparator), dirAcad, dirRuntime)) Agregar(r);
             else
             {
-                string dirRuntime = Path.GetDirectoryName(typeof(object).Assembly.Location);
                 if (dirRuntime != null)
                     foreach (var f in Directory.GetFiles(dirRuntime, "*.dll"))
                     {
@@ -148,9 +159,6 @@ namespace ArbaMcp
                         if (n.StartsWith("System.", StringComparison.OrdinalIgnoreCase) || n == "netstandard.dll" || n == "mscorlib.dll") Agregar(f);
                     }
             }
-            var cargados = AppDomain.CurrentDomain.GetAssemblies().Where(x => !x.IsDynamic).Select(x => new { a = x, ruta = Ubicacion(x) })
-                .Where(x => !string.IsNullOrEmpty(x.ruta)).ToList();
-            string dirAcad = cargados.Where(x => x.a.GetName().Name == "acdbmgd").Select(x => Path.GetDirectoryName(x.ruta)).FirstOrDefault();
             bool hayCivil = false;
             if (dirAcad != null)
                 foreach (var x in cargados.Where(x => x.ruta.StartsWith(dirAcad, StringComparison.OrdinalIgnoreCase)))
