@@ -212,7 +212,11 @@ Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a
   - **1172 OK**: elige `Contours 1m and 5m (Background)` (`aplicados: true`). Aviso menor: «No se pudo releer el estilo
     de la superficie creada (Entity.StyleId)».
   - **Evaluación: 10 de 10 OK** en 284 s; la tarea 1 aplica las curvas de 1 y 5 m y la tarea 8 da 0,21 % y 0,06 %.
-  - Informes en la PC (116, 117, 1171, 1172 y dos YAML de la evaluación); falta subirlos al repositorio.
+  - Informes (116, 117, 1171, 1172 y dos YAML de la evaluación) subidos por el agente instalador en `informes/ronda-b`
+    (`875f11b`), revisados (solo rutas genéricas de prueba, sin token) y llevados a `tarea/ronda-b` (avance directo), así
+    que entran en `main` con el PR #43.
+  - Recomendado al dueño: «Verificación OK» y fusión del #43; los dos hallazgos de la 116 van como corrección aparte, que
+    se probará con la ronda C.
 - Etapa 4 sigue bloqueada (15/11): `memoria-firma/normas/fuentes/` solo tiene `.gitkeep`. Los datos de la evaluación
   **ya están** en `memoria-firma/evaluacion/datos_prueba/` (sincronización del 14/11 16:03).
 
@@ -315,5 +319,9 @@ y todavía **no están en el repositorio**: hay que pedírselos al dueño o al a
 - `ejecutar_codigo` (revisión previa del 15/11): alias para `TransactionManager` en los using por defecto y el duplicado
   en la biblioteca falsa de las pruebas (H3); comprobar en Civil 3D si algún miembro heredado de
   `GraphicsInterface.Drawable` sale bloqueado por la lista blanca (H4).
+- `ejecutar_codigo` (informe 116 de la 1.17.4): `despues.objetos_creados` da 0 con una línea creada, en simulación y
+  en real (la detección de `datos.objetos.creados` no funciona en Civil 3D), y un `_.UNDO 1` tras la escritura real no
+  quitó la línea. Hay que investigarlo y probarlo con la ronda C.
+- `crear_superficie_tin` (informe 1172): aviso «No se pudo releer el estilo de la superficie creada (Entity.StyleId)».
 - `crear_secciones`: comprobar si los nombres de **grupo** también deben ser únicos en todo el dibujo (propuesta de la
   hija de la 1.14.2) y añadir en `datos.lineas[].secciones` el nombre de la superficie del dibujo junto a `SourceName`.
