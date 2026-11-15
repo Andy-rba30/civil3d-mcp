@@ -121,6 +121,26 @@ Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a
 - **Integración prevista de la ronda B**: `tarea/3.1` → `tarea/3.2` → + `tarea/2.11` + `tarea/2.12` en una sola rama
   (versión **1.17.2**). Orden en la PC: VALIDACION_116 → 117 → 1171 → 1172 → evaluación (5.2-D/PC).
 
+### Ronda B en la PC: primer intento (14/11/2026, noche) y corrección 1.17.3
+- **VALIDACION_116 detenida en el paso 4a** (`id_log` `20261114-194520-06c83b`). Pasos 0 a 3 OK (`ping` 1.17.2,
+  `ARBA_MCP_CODIGO=1`). El 4a (contar líneas, simulación) dio 282 errores **CS0009** «La imagen PE no contiene metadatos
+  administrados» (`slidelib.exe`, `QtWebEngineProcess.exe`, `w3dtk_wt.dll`...): no se ejecutó nada, sin copia
+  (`backups\` siguió en 12) ni entrada en Deshacer. El informe completo se pidió como texto; aún no hay archivo.
+- **Diagnóstico**: en acad.exe, `TRUSTED_PLATFORM_ASSEMBLIES` trae todos los `.dll` y `.exe` de la carpeta de AutoCAD
+  (también nativos) y `ReferenciasCodigo()` los pasaba todos a Roslyn. En Linux no sale: el TPA del testhost solo trae
+  ensamblados .NET.
+- **15/11 01:37, corrección 1.17.3 aprobada por el dueño** y encargada a la hija `session_01XnJWqafDo6REoPEUhS9Tds`
+  (Opus, esfuerzo extra alto) en la **misma rama `tarea/ronda-b`** (PR #43): `ArbaMcp.Nucleo/CodigoReferencias.cs`
+  (comprobación de metadatos con `PEReader` y filtro por carpeta: de AutoCAD solo lo ya cargado), uso en
+  `ReferenciasCodigo()`, pruebas `CodigoReferenciasPruebas.cs`, versión 1.17.3 y `ping` esperado en VALIDACION_116, 117,
+  1171 y 1172. Sin VALIDACION_1173: en la PC se repite el paso 0 de la 116 y se sigue **desde el paso 4**.
+- **Revisión previa en paralelo** (solo lectura, la orquestadora): buscar otros fallos que solo saldrían en acad.exe
+  (contexto aislado de Roslyn, carga del ensamblado del script, CS0012, biblioteca falsa frente a la API real) antes de
+  volver a la PC. El dueño pidió (15/11) **probar en su PC solo cuando sea necesario**: no se le avisa hasta tener la
+  1.17.3 subida, con la CI en verde y la revisión resuelta.
+- Etapa 4 sigue bloqueada (15/11): `memoria-firma/normas/fuentes/` solo tiene `.gitkeep`. Los datos de la evaluación
+  **ya están** en `memoria-firma/evaluacion/datos_prueba/` (sincronización del 14/11 16:03).
+
 ## Historial de la ronda A (14/11/2026)
 
 **En `main`**: versión **1.11.0**, validada. **Ronda A probada en la PC el 14/11/2026** sobre la rama
@@ -215,8 +235,6 @@ y todavía **no están en el repositorio**: hay que pedírselos al dueño o al a
 - Tabla por progresivas frente a la superficie de volumen: corte 16,6 %, relleno 4,1 % (informe 1143). Manda la
   superficie; investigar si limitar las áreas al tramo donde existe la Datum (fuera de la TIN de la Datum la sección
   sigue teniendo puntos hasta ±30 m).
-- Crear de verdad `memoria-firma/evaluacion/datos_prueba/` (`puntos_terreno.csv`, `eje_polilinea.dxf`,
-  `pvi_rasante.csv`): hoy solo tiene `.gitkeep`.
 - La evaluación marca OK comprobaciones manuales que no hace (curvas de la tarea 1, cálculo manual de la 8, informe de
   Civil 3D de la 9): aclararlo en `tareas.yaml` o en el prompt de evaluación.
 - `crear_secciones`: comprobar si los nombres de **grupo** también deben ser únicos en todo el dibujo (propuesta de la
