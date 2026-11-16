@@ -121,6 +121,167 @@ Sesiones hijas (Opus, esfuerzo extra alto), cada una presenta su plan y espera a
 - **Integración prevista de la ronda B**: `tarea/3.1` → `tarea/3.2` → + `tarea/2.11` + `tarea/2.12` en una sola rama
   (versión **1.17.2**). Orden en la PC: VALIDACION_116 → 117 → 1171 → 1172 → evaluación (5.2-D/PC).
 
+### Ronda B en la PC: primer intento (14/11/2026, noche) y corrección 1.17.3
+- **VALIDACION_116 detenida en el paso 4a** (`id_log` `20261114-194520-06c83b`). Pasos 0 a 3 OK (`ping` 1.17.2,
+  `ARBA_MCP_CODIGO=1`). El 4a (contar líneas, simulación) dio 282 errores **CS0009** «La imagen PE no contiene metadatos
+  administrados» (`slidelib.exe`, `QtWebEngineProcess.exe`, `w3dtk_wt.dll`...): no se ejecutó nada, sin copia
+  (`backups\` siguió en 12) ni entrada en Deshacer. El informe completo se pidió como texto; aún no hay archivo.
+- **Diagnóstico**: en acad.exe, `TRUSTED_PLATFORM_ASSEMBLIES` trae todos los `.dll` y `.exe` de la carpeta de AutoCAD
+  (también nativos) y `ReferenciasCodigo()` los pasaba todos a Roslyn. En Linux no sale: el TPA del testhost solo trae
+  ensamblados .NET.
+- **15/11 01:37, corrección 1.17.3 aprobada por el dueño** y encargada a la hija `session_01XnJWqafDo6REoPEUhS9Tds`
+  (Opus, esfuerzo extra alto) en la **misma rama `tarea/ronda-b`** (PR #43): `ArbaMcp.Nucleo/CodigoReferencias.cs`
+  (comprobación de metadatos con `PEReader` y filtro por carpeta: de AutoCAD solo lo ya cargado), uso en
+  `ReferenciasCodigo()`, pruebas `CodigoReferenciasPruebas.cs`, versión 1.17.3 y `ping` esperado en VALIDACION_116, 117,
+  1171 y 1172. Sin VALIDACION_1173: en la PC se repite el paso 0 de la 116 y se sigue **desde el paso 4**.
+- **Revisión previa en paralelo** (solo lectura, la orquestadora): buscar otros fallos que solo saldrían en acad.exe
+  (contexto aislado de Roslyn, carga del ensamblado del script, CS0012, biblioteca falsa frente a la API real) antes de
+  volver a la PC. El dueño pidió (15/11) **probar en su PC solo cuando sea necesario**: no se le avisa hasta tener la
+  1.17.3 subida, con la CI en verde y la revisión resuelta.
+- **01:48, 1.17.3 subida** por la hija (`4830c75`; código y pruebas `e2d0c3a`, versión `5a89e79`). Su contenedor no tenía
+  red para .NET ni PyPI: no corrió ninguna prueba; la **CI del PR #43 dio verde** en los tres trabajos (xUnit +
+  CompilarSinCivil, puente, evaluador). `uv.lock` cambiado a mano en la línea de la versión (como en las subidas
+  anteriores; `uv lock --check` lo acepta).
+- **Resultado de la revisión previa**: **H1** (medio) AeccDbMgd (`C3D\`) y AecBaseMgd (`ACA\`) solo entran en las
+  referencias si ya están cargadas (nunca estuvieron en el TPA) → CS0234 con el alias `Civ`, y la caché se congela sin
+  AecBaseMgd (CS0012); **H2** (bajo, impacto alto) con un script que falla, `t1` no recibe su propio Abort/Dispose (se
+  aborta otro envoltorio de `TopTransaction`) → posible cierre de Civil 3D por el finalizador. Menores, como propuestas:
+  **H3** `TransactionManager` y `Surface` ambiguos con los using por defecto en la API real (CS0104 en scripts del
+  agente); **H4** `DBObject` hereda de `GraphicsInterface.Drawable` en la API real: un miembro heredado y no
+  sobrescrito podría salir bloqueado por la lista blanca (comprobar en Civil 3D).
+- **El dueño aprobó incluir H1 y H2 en la 1.17.3** (sin subir versión: aún no se instaló). Encargado a la misma hija con
+  el plan aprobado: las cinco DLL del plugin por ruta (esquema de los HintPath) y caché solo con las cinco; `_t1` con su
+  propio Abort/Dispose en `AbortarEncimaDe`; en VALIDACION_116, aviso de CS0234/CS0012 en el 4a y `ping` 30 s después
+  de los pasos con error o tiempo agotado.
+- **02:49, H1 y H2 subidos** por la hija (`18a747b`; núcleo y pruebas `ce4d4df`, plugin `715d3e4`), versión 1.17.3.
+  Revisados por la orquestadora. **CI del PR #43 en verde**: xUnit 558/558, CompilarSinCivil 0 errores, puente 166,
+  evaluador OK. La hija tocó además una frase de `README.md` (la de la 1.17.3, que con H1 quedaba falsa): aceptado.
+  Descripción del PR #43 actualizada a 1.17.3 (título, tabla, pruebas, «Para el agente instalador» y «Para Jose»).
+- **Aviso al dueño enviado (15/11): ronda B lista para retomar en la PC**, con L.1 (`tarea/ronda-b`, `18a747b`) y P:
+  VALIDACION_116 desde el paso 0 (`ping` 1.17.3) y luego desde el **paso 4** sobre el mismo `PRUEBA_116.dwg`, después
+  117 → 1171 → 1172 → evaluación.
+- **L.1 OK en la PC** (15/11): `tarea/ronda-b` en `18a747b`, versión 1.17.3, compilación Release con las DLL reales
+  sin errores ni avisos, `dotnet test` 558/558, pytest del puente 166, puente reiniciado y MCP `civil3d` reconectado,
+  `ARBA_MCP_CODIGO=1`, `ESTADO_PC.md` al día. Falta el Prompt P.
+- **Prompt P con la 1.17.3: VALIDACION_116 detenida otra vez en el paso 4a** (`id_log` `20261114-220719-440eae`,
+  1399 ms). Paso 0 OK (`ping` 1.17.3, 58 herramientas en el MCP). El 4a da **un solo error**: `CS0234 'Civil' no
+  existe en el espacio de nombres 'Autodesk'`. `backups\` siguió en 12. El agente guardó
+  `informe_validacion_116_20261114.md` en la PC (todavía no está en el repositorio).
+- **Diagnóstico confirmado con el catálogo** (`memoria-firma`, tabla `ensamblados`): en Civil 3D 2027 el **nombre de
+  ensamblado** de `acdbmgd.dll` es **`Acdbmgd`** (y el de `acmgd.dll`, `Acmgd`). `ReferenciasCodigo()` buscaba la carpeta
+  de AutoCAD con `GetName().Name == "acdbmgd"`, que distingue mayúsculas, así que `dirAcad` era siempre `null`. Eso
+  explica los dos informes: con la 1.17.2, sin filtro por carpeta, salieron los 282 CS0009 y el CS0234 quedó escondido;
+  con la 1.17.3 el filtro de metadatos quitó los CS0009, pero sin `dirAcad` no entraron las cinco DLL ni lo cargado de
+  AutoCAD (`C3D\` y `ACA\` nunca están en el TPA). Es la única comparación así: el resto usa `OrdinalIgnoreCase`.
+- **Corrección 1.17.4** encargada a la misma hija, con el plan aprobado por la orquestadora (decisión vigente: correcciones
+  pequeñas tras un informe):
+  - `dirAcad` sale de `typeof(Database).Assembly.Location`, y si no, de `CodigoReferencias.CarpetaDeAutoCAD`, que busca
+    el nombre sin distinguir mayúsculas.
+  - Si la compilación falla sin las cinco DLL, el error dice qué falta. La primera vez que se arma la lista, deja una
+    línea en el historial.
+  - Pruebas con `Acdbmgd`, versión 1.17.4 y `ping` esperado en las cuatro VALIDACION.
+- **03:14, 1.17.4 subida** por la hija (`b0287f8`; núcleo y pruebas `3cb047b`, plugin `c5a2ad3`, versión `0262240`).
+  Revisada por la orquestadora: `dirAcad` sale de `typeof(Database).Assembly`, con `CarpetaDeAutoCAD` como respaldo;
+  `DiagnosticoReferencias` se añade al error si la compilación falla, y `ResumenReferencias` va al historial la primera
+  vez. Hay 6 pruebas nuevas.
+- **CI del PR #43 en verde sobre `b0287f8`**: xUnit 564/564, CompilarSinCivil 0 errores, puente y evaluador OK.
+  Descripción del PR actualizada a 1.17.4. **Aviso al dueño enviado**: L.1 con `b0287f8` (`ping` 1.17.4) y P (116 desde
+  el paso 4, luego 117 → 1171 → 1172 → evaluación).
+- **L.1 de la 1.17.4 OK en la PC** (15/11): `b0287f8`, compilación Release sin errores ni avisos, `dotnet test` 564/564,
+  pytest del puente 166, puente reiniciado y MCP `civil3d` reconectado, `ARBA_MCP_CODIGO=1`. Falta el Prompt P.
+- **Prompt P con la 1.17.4: VALIDACION_116 OK** (pasos decisivos 0, 4, 6, 8 y 9). Paso 9: `TimeoutException` a los
+  60 s (`ms_puente` 60086) y Civil 3D estable (`ping` justo después y 30 s después). Paso 10: error del script en la
+  línea 1 y `ping` estable 30 s después. Informe en la PC: `informe_validacion_116_20261114.md`.
+  **VALIDACION_117 en curso**: pasos 0 a 6 OK; el agente espera a Jose en el paso 2 (capa `MCP Receta A`, color 3,
+  para `aprobar_resultado`) y en el paso 7 (frase literal «Sí, guárdala como receta»).
+- **VALIDACION_117 partes A y B OK.** Parte A (pasos 0 a 10): receta `crear_capa_con_color` guardada con la frase
+  literal de Jose y subida con L.2 (commit `5456524` de memoria-firma). Parte B, en una conversación **nueva** del agente
+  (paso 11, decisivo): `buscar_api` («crear capa color») da la receta la primera; luego `ejecutar_receta` simulada
+  (`veces_usada` 0, `sumada` false), Jose confirma y se ejecuta de verdad (`veces_usada` 1). Paso 13: `MCP Receta C`
+  con el color por defecto 7, `veces_usada` 2. Paso 14: `colour` rechazado sin llamar al plugin. Pasos 15 y 16: log
+  con los pedidos y YAML con `veces_usada: 2`. Falta la parte C (17 a 20: comando `buscar_api`, quitar
+  `ARBA_MCP_CODIGO`, comprobar que queda desactivada y L.2), y después 1171, 1172 y la evaluación.
+- **Ronda B terminada en la PC (14/11, ~22:52 hora de la PC) con la 1.17.4 (`b0287f8`)**:
+  - **116 OK** en los pasos decisivos. **Hallazgos**: en 4b y 5a, `despues.objetos_creados: 0` aunque la línea se creó
+    (se esperaba 1: la detección de objetos creados no funcionó); 5c: tras `_.UNDO 1` el conteo da N0 + 1 (la línea
+    **no** se quitó).
+  - **117 OK global** (partes A, B y C; L.2 final con el commit `7083d1e` de memoria-firma; `ARBA_MCP_CODIGO` quitada y
+    la herramienta desactivada otra vez).
+  - **1171 OK**: diferencia de la tabla con la superficie de volumen de **0,31 % en corte y 0,05 % en relleno** (antes,
+    16,58 % y 4,13 %).
+  - **1172 OK**: elige `Contours 1m and 5m (Background)` (`aplicados: true`). Aviso menor: «No se pudo releer el estilo
+    de la superficie creada (Entity.StyleId)».
+  - **Evaluación: 10 de 10 OK** en 284 s; la tarea 1 aplica las curvas de 1 y 5 m y la tarea 8 da 0,21 % y 0,06 %.
+  - Informes (116, 117, 1171, 1172 y dos YAML de la evaluación) subidos por el agente instalador en `informes/ronda-b`
+    (`875f11b`), revisados (solo rutas genéricas de prueba, sin token) y llevados a `tarea/ronda-b` (avance directo), así
+    que entran en `main` con el PR #43.
+  - Recomendado al dueño: «Verificación OK» y fusión del #43; los dos hallazgos de la 116 van como corrección aparte, que
+    se probará con la ronda C.
+- **15/11 ~04:00: el dueño dio «Verificación OK» de la ronda B.** El PR #43 pasó a «listo»; el **Merge lo hace el
+  dueño**, y después L.1 con `main` (`ping` 1.17.4). Sesiones hijas lanzadas para la noche (Opus, esfuerzo extra alto):
+  - `session_01XnJWqbZr8U8ayr9SDd4PUP`: **corrección 1.17.5** en `tarea/3.4-codigo-objetos-deshacer`, que parte de
+    `tarea/ronda-b`: objetos creados en 0, `_.UNDO 1` tras `ejecutar_codigo` y el alias H3, con `VALIDACION_1175.md`.
+    Necesita la PC, así que se prueba en la próxima instalación.
+  - `session_01XnJWqbXgf2DcUmEDfvbkhM`: **hallazgos de la ronda B**, solo documentación, en
+    `tarea/3.5-hallazgos-ronda-b`: la tabla de miembros, los hechos validados de `CLAUDE.md` y la sección 0 de la hoja
+    de ruta. Se fusiona sin la PC.
+- **15/11 ~04:05, Etapa 4 desbloqueada**: el dueño indicó el PDF de su repositorio público `Andy-rba30/Normas`
+  (`normas/Manual.de.Carreteras.DG-2018.pdf`: 285 páginas, con texto) y pidió que los 5 casos los prepare Claude con la
+  norma; él los revisa. Dos sesiones sobre memoria-firma, directo en `main`:
+  - `session_01XnJWqYUqvDdqAqByaDyacY`: **4.1** (prompt literal, con notas). Sin copiar el PDF: un `FUENTE.md` con su
+    ubicación y el SHA-256. Produce `dg2018.sqlite`, `VERSION.md`, el script, `LEEME.md` y `VERIFICAR.md` con imágenes.
+  - `session_01XnJWqaBA6s29sWjXdYLDjf`: **5 casos de prueba** en `normas/casos_prueba/`, sacados directamente del PDF y
+    sin usar lo de la 4.1, para que sirvan de comprobación independiente.
+  - Aviso al dueño: el repositorio `Normas` es público y contiene normas de AASHTO y ASTM con derechos de autor.
+- **04:12, hallazgos de la ronda B terminados**: **PR #45** en borrador (`tarea/3.5-hallazgos-ronda-b`, `c20a5d2`), solo
+  documentación, revisado por la orquestadora. Se fusiona **después del #43**, porque depende de él. Plan de la 1.17.5
+  aprobado a las 04:10: cinco fuentes de detección con `datos.objetos.fuente_deteccion` y `datos.deshacer` (`UNDOCTL`,
+  `DBMOD`, `CMDNAMES`), y el alias H3 confirmado con el catálogo (la `TransactionManager` de ApplicationServices deriva
+  de la de DatabaseServices). Hipótesis del Deshacer: el `ZOOM` que pedía el paso 5a. VALIDACION_1175 pide no hacer
+  ZOOM y anotar el menú Deshacer.
+- **04:14, 5 casos DG-2018 terminados** (memoria-firma `main`, `d082973`, en `normas/casos_prueba/casos_dg2018.md` y
+  `.yaml`, con 30 ejemplos de «Cumple» y «No cumple»):
+  1. radio mínimo a 40, 60 y 80 km/h: 50, 125 y 230 m (Tabla 302.02, pág. 129);
+  2. peralte con R 125 m: 8 %, y con R 3000 m: 2 %;
+  3. visibilidad de parada a 80 km/h: 130, 144 y 118 m (Tabla 205.01 y 205.01-A);
+  4. pendiente máxima: 8 % (Tabla 303.01);
+  5. curva vertical: convexa 77 m (K 11) y cóncava 144 m (K 18).
+  **Duda para Jose**: la Tabla 303.02 (convexa) no sale de la fórmula del texto (h2 = 0,15 m): la fórmula da 125 m y
+  la tabla 77 m, con una h2 implícita de unos 0,60 m. El caso sigue la tabla; el ejemplo de borde queda
+  `pendiente_de_decision`. Otras observaciones: 302.02 frente a 302.04 a 50 km/h (85 m y 80 m); erratas en 304.05 y en
+  205.01 a 120 km/h.
+- **04:22, 1.17.5 terminada**: **PR #46** en borrador (`tarea/3.4-codigo-objetos-deshacer`, `14a3c08`; depende del #43).
+  Incluye `CodigoCambios.cs` y `CodigoDeshacer` con 14 pruebas, las cinco fuentes de detección, `datos.deshacer` y el
+  alias H3, con `VALIDACION_1175.md`. Nada compilado en la nube: lo cubre la CI. Revisión previa de solo lectura en
+  marcha, por el riesgo nuevo de que la línea entre en Creados y salte el aviso «ATENCIÓN» tras abortar.
+- **04:24, 4.1 terminada** (memoria-firma `main`, `026a363`; Actions en verde). Se extrajeron 33 tablas y figuras, con
+  1483 valores, 33 fórmulas con su sección y página y 33 observaciones. Contenido: `dg2018.sqlite`,
+  `extraer_dg2018.py` (repetible; comprueba el SHA-256 del PDF), `LEEME.md`, `VERSION.md` (R.D. 03-2018-MTC/14, «a
+  confirmar por Jose»), `VERIFICAR.md` con 34 imágenes y `normas/fuentes/FUENTE.md`. Los 5 casos coinciden con el
+  sqlite. **Jose debe revisar primero**: la 204.01, leída por el color de las celdas; posibles erratas del PDF
+  guardadas tal cual; la discrepancia entre 205.05 y 302.22; los peraltes de 302.02 frente a 304.05; y el alcance de
+  Tercera Clase. Regla del PDF: **no seguir a la 4.2 sin el 100 % de las tablas críticas comprobado**.
+- **04:25, CI del #46**: xUnit 577/578. Falla la prueba nueva del alias H3, que ejecutaba el script con un tipo de la
+  biblioteca falsa, que solo existe para compilar (`FileNotFoundException 'AutodeskFalsa'`). Encargado a la hija que
+  esa prueba solo compile. Es un fallo de la prueba, no del plugin.
+- **04:27, prueba H3 corregida** (`790f951`). **Revisión previa de la 1.17.5**: nada de confianza alta; los textos de
+  VALIDACION_1175 coinciden con el código, y la fuente `fachada` siempre ve la línea. Se encargan dos arreglos baratos
+  en la misma rama: soltar los manejadores de `eventos_al_cerrar` antes de `t0.Dispose()` y desechar las
+  `DBObjectCollection` de `GetAllObjects`.
+- **04:28, 1.17.5 lista para la PC**: `b2656da` (manejadores en un `finally` anidado y `Dispose` de las colecciones;
+  sustituto `DBObjectCollection` con `IDisposable`, que según el catálogo hereda de `DisposableWrapper`). **CI del #46
+  en verde**: xUnit 578/578, CompilarSinCivil con 0 errores, puente y evaluador correctos.
+- **Plan para la mañana del 15/11 (dueño)**:
+  1. Merge del #43 y L.1 con `main` (`ping` 1.17.4).
+  2. L.1 con `tarea/3.4-codigo-objetos-deshacer` (`b2656da`, `ping` 1.17.5) y P con `VALIDACION_1175.md`. Pone
+     `ARBA_MCP_CODIGO=1` en `PRUEBA_1175.dwg`, y **sin ZOOM** entre los pasos 6 y 8.
+  3. Revisar en memoria-firma `normas/tablas/VERIFICAR.md` (prioridad 1) y `normas/casos_prueba/casos_dg2018.md`, y
+     decidir la duda de la Tabla 303.02.
+  4. Fusionar el #45 (documentación) después del #43.
+  Después, si 1175 da OK, fusionar el #46, y si las tablas están al 100 %, lanzar la **4.2 `verificar_norma`**.
+- Etapa 4 sigue bloqueada (15/11): `memoria-firma/normas/fuentes/` solo tiene `.gitkeep`. Los datos de la evaluación
+  **ya están** en `memoria-firma/evaluacion/datos_prueba/` (sincronización del 14/11 16:03).
+
 ## Historial de la ronda A (14/11/2026)
 
 **En `main`**: versión **1.11.0**, validada. **Ronda A probada en la PC el 14/11/2026** sobre la rama
@@ -215,9 +376,14 @@ y todavía **no están en el repositorio**: hay que pedírselos al dueño o al a
 - Tabla por progresivas frente a la superficie de volumen: corte 16,6 %, relleno 4,1 % (informe 1143). Manda la
   superficie; investigar si limitar las áreas al tramo donde existe la Datum (fuera de la TIN de la Datum la sección
   sigue teniendo puntos hasta ±30 m).
-- Crear de verdad `memoria-firma/evaluacion/datos_prueba/` (`puntos_terreno.csv`, `eje_polilinea.dxf`,
-  `pvi_rasante.csv`): hoy solo tiene `.gitkeep`.
 - La evaluación marca OK comprobaciones manuales que no hace (curvas de la tarea 1, cálculo manual de la 8, informe de
   Civil 3D de la 9): aclararlo en `tareas.yaml` o en el prompt de evaluación.
+- `ejecutar_codigo` (revisión previa del 15/11): alias para `TransactionManager` en los using por defecto y el duplicado
+  en la biblioteca falsa de las pruebas (H3); comprobar en Civil 3D si algún miembro heredado de
+  `GraphicsInterface.Drawable` sale bloqueado por la lista blanca (H4).
+- `ejecutar_codigo` (informe 116 de la 1.17.4): `despues.objetos_creados` da 0 con una línea creada, en simulación y
+  en real (la detección de `datos.objetos.creados` no funciona en Civil 3D), y un `_.UNDO 1` tras la escritura real no
+  quitó la línea. Hay que investigarlo y probarlo con la ronda C.
+- `crear_superficie_tin` (informe 1172): aviso «No se pudo releer el estilo de la superficie creada (Entity.StyleId)».
 - `crear_secciones`: comprobar si los nombres de **grupo** también deben ser únicos en todo el dibujo (propuesta de la
   hija de la 1.14.2) y añadir en `datos.lineas[].secciones` el nombre de la superficie del dibujo junto a `SourceName`.
