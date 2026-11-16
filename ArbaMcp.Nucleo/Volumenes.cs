@@ -77,6 +77,46 @@ namespace ArbaMcp.Nucleo
         public double Desde, Hasta;
     }
 
+    /// <summary>Un tramo de desplazamientos [Desde, Hasta] de una sección (X de sus puntos).</summary>
+    public sealed class TramoDesplazamientos
+    {
+        public double Desde, Hasta;
+        public double Ancho => Hasta - Desde;
+        public TramoDesplazamientos() { }
+        public TramoDesplazamientos(double desde, double hasta) { Desde = desde; Hasta = hasta; }
+    }
+
+    /// <summary>
+    /// Recorte de una sección a las superficies (desde 1.17.1): del tramo común de las dos secciones (Desde a Hasta), los
+    /// tramos en que existen de verdad la Datum y el terreno (Volumenes.Recortar), cuántos desplazamientos se probaron y
+    /// el ancho descartado.
+    /// </summary>
+    public sealed class RecorteSeccion
+    {
+        /// <summary>Tramo común de las dos secciones.</summary>
+        public double Desde, Hasta;
+        /// <summary>Tramos dentro de las dos superficies, de izquierda a derecha y sin solaparse.</summary>
+        public List<TramoDesplazamientos> Tramos = new List<TramoDesplazamientos>();
+        /// <summary>Desplazamientos distintos en que se preguntó si existen las superficies.</summary>
+        public int PuntosProbados;
+        public double AnchoComun => Math.Max(0, Hasta - Desde);
+        public double AnchoValido => Tramos.Sum(t => t.Ancho);
+        public double AnchoDescartado => Math.Max(0, AnchoComun - AnchoValido);
+        /// <summary>True si se descarta más que la precisión del recorte (0,01).</summary>
+        public bool Recortada => AnchoDescartado > Volumenes.PrecisionRecorte;
+    }
+
+    /// <summary>Resumen del recorte de las líneas de un grupo (bloque tabla_progresivas.recorte).</summary>
+    public sealed class ResumenRecorte
+    {
+        /// <summary>Líneas con recorte (las que tienen las dos secciones y se solapan).</summary>
+        public int Lineas;
+        public int LineasRecortadas, LineasSinTramoValido, LineasConVariosTramos, PuntosProbados;
+        /// <summary>Media del ancho descartado en las líneas recortadas (0 si ninguna).</summary>
+        public double AnchoMedioDescartado;
+        public double AnchoMaximoDescartado;
+    }
+
     /// <summary>Una línea de muestreo con las áreas de su sección (null si le falta la sección de alguna superficie).</summary>
     public sealed class SeccionLinea
     {
@@ -85,6 +125,8 @@ namespace ArbaMcp.Nucleo
         public AreasSeccion Areas;
         /// <summary>Por qué no tiene áreas (falta la sección de 'Terreno', no se solapan...); null si las tiene.</summary>
         public string Falta;
+        /// <summary>Recorte de la sección a las superficies (1.17.1); null si no se recortó.</summary>
+        public RecorteSeccion Recorte;
         public SeccionLinea() { }
         public SeccionLinea(string nombre, double progresiva, AreasSeccion areas, string falta = null) { Nombre = nombre; Progresiva = progresiva; Areas = areas; Falta = falta; }
     }
@@ -121,6 +163,8 @@ namespace ArbaMcp.Nucleo
         /// <summary>Ordenada del diagrama de masas: corte ajustado acumulado − relleno ajustado acumulado.</summary>
         public double Masa;
         public string Falta;
+        /// <summary>Ancho del tramo común que no se cuenta porque una de las superficies no existe ahí (1.17.1); null sin recorte.</summary>
+        public double? AnchoDescartado;
     }
 
     /// <summary>Tabla de volúmenes por progresivas (método de las áreas medias).</summary>
@@ -263,8 +307,10 @@ namespace ArbaMcp.Nucleo
     /// de esponjamiento y compactación, resumen de corte, relleno y neto con la convención del plugin (corte ajustado =
     /// corte × esponjamiento, CutFactor; relleno ajustado = relleno × compactación, FillFactor; neto = corte − relleno),
     /// detección del signo del neto de Civil 3D, y la tabla por progresivas: áreas de corte y relleno de cada sección
-    /// (terreno frente a Datum) y volúmenes entre líneas por áreas medias, con acumulados y ordenada de masas. Se prueba
-    /// en ArbaMcp.Pruebas con datos sintéticos.
+    /// (terreno frente a Datum) y volúmenes entre líneas por áreas medias, con acumulados y ordenada de masas. Desde
+    /// 1.17.1 las áreas se cuentan solo en los tramos de desplazamiento en que existen las dos superficies (Recortar, con
+    /// una función «existe en x» que el plugin hace con Surface.FindElevationAtXY), como la superficie de volumen. Se
+    /// prueba en ArbaMcp.Pruebas con datos sintéticos y con la línea 0+000.00 del informe 1.14.3.
     /// </summary>
     public static class Volumenes
     {
@@ -272,7 +318,9 @@ namespace ArbaMcp.Nucleo
         public const string SufijoDatum = " - Datum";
         public const string SufijoVolumen = " - Volumen";
         public const string TipoVolumenTin = "TinVolume";
-        public const string Metodo = "áreas medias entre las secciones de la superficie base (terreno) y la de comparación (Datum) de cada línea de muestreo, calculadas por el plugin; no es la tabla de materiales de Civil 3D";
+        public const string Metodo = "áreas medias entre las secciones de la superficie base (terreno) y la de comparación (Datum) de cada línea de muestreo, calculadas por el plugin solo en los tramos de desplazamiento en que existen las dos superficies (desde 1.17.1); no es la tabla de materiales de Civil 3D";
+        /// <summary>Cómo se recorta cada sección a las superficies (1.17.1), para la respuesta.</summary>
+        public const string MetodoRecorte = "Surface.FindElevationAtXY de la Datum y del terreno en Alignment.PointLocation(pk, desplazamiento), en los puntos de las dos secciones, en el punto medio de cada tramo y cada 5 m como mucho; los bordes se afinan por bisección hasta 0,01 m, del lado de dentro";
         public const string Convencion = "corte ajustado = corte × factor_esponjamiento (CutFactor de Civil 3D); relleno ajustado = relleno × factor_compactacion (FillFactor); neto = corte ajustado − relleno ajustado (positivo: sobra material; negativo: falta y hay que traer préstamo)";
         public const string Unidades = "unidades del dibujo al cubo (m³ si el dibujo está en metros)";
         /// <summary>Límite superior de un factor: por encima es casi seguro un error de escritura (por ejemplo 125 en vez de 1,25).</summary>
@@ -540,16 +588,26 @@ namespace ArbaMcp.Nucleo
         /// desplazamiento, no suman área). Si el terreno y el Datum se cruzan dentro de un tramo, el área se reparte en el
         /// cruce. Null si alguna sección tiene menos de dos puntos válidos o no se solapan.
         /// </summary>
-        public static AreasSeccion Areas(IEnumerable<Punto2> terreno, IEnumerable<Punto2> datum)
+        public static AreasSeccion Areas(IEnumerable<Punto2> terreno, IEnumerable<Punto2> datum) => Areas(terreno, datum, null);
+
+        /// <summary>
+        /// Como Areas(terreno, datum), pero desde 1.17.1 solo cuenta el área dentro de 'validos' (los tramos en que existen
+        /// las dos superficies, de Recortar). Sin 'validos' (null) cuenta todo el tramo común, igual que hasta la 1.14.3; con
+        /// una lista vacía, corte y relleno salen 0 (la superficie de volumen tampoco cuenta ahí). Desde y Hasta siguen
+        /// siendo el tramo común de las dos secciones.
+        /// </summary>
+        public static AreasSeccion Areas(IEnumerable<Punto2> terreno, IEnumerable<Punto2> datum, IEnumerable<TramoDesplazamientos> validos)
         {
             var t = Tramos(terreno);
             var d = Tramos(datum);
             if (t.Count == 0 || d.Count == 0) return null;
             double desde = Math.Max(t[0].X0, d[0].X0), hasta = Math.Min(t[t.Count - 1].X1, d[d.Count - 1].X1);
             if (hasta - desde < 1e-9) return null;
+            var v = validos?.Where(x => x != null && Finito(x.Desde) && Finito(x.Hasta) && x.Hasta - x.Desde > 1e-9).ToList();
 
             var cortes = new List<double> { desde, hasta };
             foreach (var s in t.Concat(d)) { cortes.Add(s.X0); cortes.Add(s.X1); }
+            if (v != null) foreach (var x in v) { cortes.Add(x.Desde); cortes.Add(x.Hasta); }
             var xs = cortes.Where(x => x >= desde - 1e-12 && x <= hasta + 1e-12).OrderBy(x => x).ToList();
             var limpios = new List<double>();
             foreach (var x in xs) if (limpios.Count == 0 || x - limpios[limpios.Count - 1] > 1e-9) limpios.Add(x);
@@ -558,6 +616,7 @@ namespace ArbaMcp.Nucleo
             for (int i = 0; i + 1 < limpios.Count; i++)
             {
                 double a = limpios[i], b = limpios[i + 1];
+                if (v != null && !Dentro(v, (a + b) / 2)) continue;   // fuera de las superficies: no suma (1.17.1)
                 var st = TramoQueCubre(t, a, b);
                 var sd = TramoQueCubre(d, a, b);
                 if (st == null || sd == null) continue;   // hueco en una sección (no pasa con secciones continuas)
@@ -599,6 +658,144 @@ namespace ArbaMcp.Nucleo
         {
             foreach (var s in tramos) if (s.X0 <= a + 1e-9 && s.X1 >= b - 1e-9) return s;
             return null;
+        }
+
+        private static bool Dentro(List<TramoDesplazamientos> tramos, double x)
+        {
+            foreach (var s in tramos) if (x >= s.Desde - 1e-12 && x <= s.Hasta + 1e-12) return true;
+            return false;
+        }
+
+        // ------------------------------------------------------------------ recorte a las superficies (1.17.1)
+        /// <summary>Precisión de los bordes del recorte (unidades del dibujo): la bisección para cuando el borde está acotado en 0,01.</summary>
+        public const double PrecisionRecorte = 0.01;
+        /// <summary>Separación máxima entre dos desplazamientos probados antes de afinar los bordes (unidades del dibujo).</summary>
+        public const double PasoMaximoRecorte = 5;
+
+        /// <summary>Tramo común de desplazamientos de las dos secciones; null si alguna tiene menos de dos puntos válidos o no se solapan.</summary>
+        public static TramoDesplazamientos TramoComun(IEnumerable<Punto2> terreno, IEnumerable<Punto2> datum)
+        {
+            var t = Tramos(terreno);
+            var d = Tramos(datum);
+            if (t.Count == 0 || d.Count == 0) return null;
+            double desde = Math.Max(t[0].X0, d[0].X0), hasta = Math.Min(t[t.Count - 1].X1, d[d.Count - 1].X1);
+            return hasta - desde < 1e-9 ? null : new TramoDesplazamientos(desde, hasta);
+        }
+
+        /// <summary>
+        /// Desplazamientos que se prueban antes de afinar los bordes: los extremos del tramo, los desplazamientos dados que
+        /// caen dentro (los puntos de las dos secciones), el punto medio entre cada dos consecutivos y, donde aún queden a
+        /// más de 'pasoMaximo', puntos repartidos para que ningún hueco lo pase. Ordenados y sin repetir.
+        /// </summary>
+        public static List<double> MuestrasRecorte(double desde, double hasta, IEnumerable<double> desplazamientos, double pasoMaximo = PasoMaximoRecorte)
+        {
+            if (!Finito(desde) || !Finito(hasta) || hasta - desde < 1e-9) return new List<double>();
+            var b = new List<double> { desde, hasta };
+            foreach (var x in desplazamientos ?? new List<double>()) if (Finito(x) && x > desde && x < hasta) b.Add(x);
+            b = Unicos(b);
+            var conMedios = new List<double>();
+            for (int i = 0; i < b.Count; i++)
+            {
+                conMedios.Add(b[i]);
+                if (i + 1 < b.Count) conMedios.Add((b[i] + b[i + 1]) / 2);
+            }
+            bool conPaso = Finito(pasoMaximo) && pasoMaximo > 0;
+            var r = new List<double>();
+            for (int i = 0; i < conMedios.Count; i++)
+            {
+                r.Add(conMedios[i]);
+                if (!conPaso || i + 1 >= conMedios.Count) continue;
+                double hueco = conMedios[i + 1] - conMedios[i];
+                int n = (int)Math.Ceiling(hueco / pasoMaximo - 1e-9);
+                for (int k = 1; k < n; k++) r.Add(conMedios[i] + hueco * k / n);
+            }
+            return Unicos(r);
+        }
+
+        /// <summary>Lista ordenada y sin valores a menos de 1e-9 entre sí.</summary>
+        private static List<double> Unicos(IEnumerable<double> xs)
+        {
+            var l = new List<double>();
+            foreach (var x in xs.OrderBy(v => v)) if (l.Count == 0 || x - l[l.Count - 1] > 1e-9) l.Add(x);
+            return l;
+        }
+
+        /// <summary>
+        /// Recorte de una sección (1.17.1): del tramo común de las dos secciones, los tramos en que 'existe' (las dos
+        /// superficies tienen cota en ese desplazamiento) es cierto. Prueba MuestrasRecorte (los puntos de las dos
+        /// secciones, los puntos medios y cada 'pasoMaximo' como mucho) y, entre dos muestras con distinto resultado, afina
+        /// el borde por bisección hasta 'precision'; el borde queda del lado de dentro (nunca se cuenta un trozo sin
+        /// comprobar). Cada desplazamiento se pregunta una sola vez; si 'existe' lanza, cuenta como que no existe. Null si las
+        /// secciones no se solapan.
+        /// </summary>
+        public static RecorteSeccion RecortarSeccion(IEnumerable<Punto2> terreno, IEnumerable<Punto2> datum, Func<double, bool> existe,
+            double precision = PrecisionRecorte, double pasoMaximo = PasoMaximoRecorte)
+        {
+            var comun = TramoComun(terreno, datum);
+            if (comun == null) return null;
+            var xs = (terreno ?? new List<Punto2>()).Concat(datum ?? new List<Punto2>()).Select(p => p.X);
+            return Recortar(comun.Desde, comun.Hasta, xs, existe, precision, pasoMaximo);
+        }
+
+        /// <summary>Recorte del tramo [desde, hasta] según 'existe' (ver RecortarSeccion); 'desplazamientos': los puntos de las secciones.</summary>
+        public static RecorteSeccion Recortar(double desde, double hasta, IEnumerable<double> desplazamientos, Func<double, bool> existe,
+            double precision = PrecisionRecorte, double pasoMaximo = PasoMaximoRecorte)
+        {
+            if (existe == null) throw new ArgumentNullException(nameof(existe));
+            var r = new RecorteSeccion { Desde = desde, Hasta = hasta };
+            var m = MuestrasRecorte(desde, hasta, desplazamientos, pasoMaximo);
+            if (m.Count == 0) return r;
+            if (!Finito(precision) || precision <= 0) precision = PrecisionRecorte;
+
+            var probados = new Dictionary<double, bool>();
+            bool Existe(double x)
+            {
+                if (probados.TryGetValue(x, out bool v)) return v;
+                try { v = existe(x); } catch { v = false; }
+                probados[x] = v;
+                r.PuntosProbados++;
+                return v;
+            }
+
+            var estados = m.Select(Existe).ToList();
+            double? inicio = estados[0] ? m[0] : (double?)null;
+            for (int i = 0; i + 1 < m.Count; i++)
+            {
+                bool a = estados[i];
+                if (a == estados[i + 1]) continue;
+                double lo = m[i], hi = m[i + 1];   // lo tiene el estado 'a' y hi el contrario
+                while (hi - lo > precision)
+                {
+                    double c = (lo + hi) / 2;
+                    if (Existe(c) == a) lo = c; else hi = c;
+                }
+                if (a) { AgregarTramo(r, inicio.Value, lo); inicio = null; }   // sale: lo es el último desplazamiento dentro
+                else inicio = hi;                                              // entra: hi es el primero dentro
+            }
+            if (inicio.HasValue) AgregarTramo(r, inicio.Value, m[m.Count - 1]);
+            return r;
+        }
+
+        private static void AgregarTramo(RecorteSeccion r, double desde, double hasta)
+        {
+            if (hasta - desde > 1e-9) r.Tramos.Add(new TramoDesplazamientos(desde, hasta));
+        }
+
+        /// <summary>Resumen del recorte de las líneas de un grupo (las null no cuentan).</summary>
+        public static ResumenRecorte ResumirRecorte(IEnumerable<RecorteSeccion> recortes)
+        {
+            var l = (recortes ?? new List<RecorteSeccion>()).Where(x => x != null).ToList();
+            var recortadas = l.Where(x => x.Recortada).ToList();
+            return new ResumenRecorte
+            {
+                Lineas = l.Count,
+                LineasRecortadas = recortadas.Count,
+                LineasSinTramoValido = l.Count(x => x.Tramos.Count == 0),
+                LineasConVariosTramos = l.Count(x => x.Tramos.Count > 1),
+                PuntosProbados = l.Sum(x => x.PuntosProbados),
+                AnchoMedioDescartado = recortadas.Count == 0 ? 0 : recortadas.Average(x => x.AnchoDescartado),
+                AnchoMaximoDescartado = l.Count == 0 ? 0 : l.Max(x => x.AnchoDescartado)
+            };
         }
 
         /// <summary>Cota de una sección en un desplazamiento (interpolando entre puntos); null si queda fuera.</summary>
@@ -720,7 +917,8 @@ namespace ArbaMcp.Nucleo
                     Progresiva = x.Progresiva,
                     AreaCorte = x.Areas?.Corte,
                     AreaRelleno = x.Areas?.Relleno,
-                    Falta = x.Areas == null ? (x.Falta ?? "sin áreas") : null
+                    Falta = x.Areas == null ? (x.Falta ?? "sin áreas") : null,
+                    AnchoDescartado = x.Recorte?.AnchoDescartado
                 };
                 if (i > 0)
                 {
@@ -756,6 +954,10 @@ namespace ArbaMcp.Nucleo
             if (sinVolumen.Count > 0)
                 tabla.Avisos.Add(sinVolumen.Count + " de " + tabla.Tramos + " tramos no suman volumen porque una de sus líneas no tiene las dos secciones (de pk "
                     + string.Join("; ", sinVolumen.Take(5)) + (sinVolumen.Count > 5 ? "; …" : "") + "). Revisa las fuentes del grupo con listar_lineas_muestreo (fuentes=true).");
+            var sinTramo = l.Where(x => x.Areas != null && x.Recorte != null && x.Recorte.Tramos.Count == 0).ToList();
+            if (sinTramo.Count > 0)
+                tabla.Avisos.Add(sinTramo.Count + " línea" + (sinTramo.Count == 1 ? "" : "s") + " (de pk " + string.Join("; ", sinTramo.Take(5).Select(x => Txt(x.Progresiva))) + (sinTramo.Count > 5 ? "; …" : "")
+                    + ") no tiene" + (sinTramo.Count == 1 ? "" : "n") + " ningún tramo en que existan las dos superficies: su área cuenta 0, como en la superficie de volumen. Si no lo esperabas, revisa con extension_superficie y cota_superficie que la Datum cubre esas progresivas.");
             return tabla;
         }
 

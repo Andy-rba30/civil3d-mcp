@@ -201,6 +201,46 @@ namespace ArbaMcp.Nucleo
     }
 
     /// <summary>
+    /// Lo que el plugin lee de un estilo de superficie del dibujo para elegirlo por sus curvas de nivel (1.17.2):
+    /// nombre, intervalos (SurfaceStyle.ContourStyle) y si dibuja en planta las curvas menores y mayores
+    /// (GetDisplayStylePlan(...).Visible). Lo que no se pudo leer queda en null.
+    /// </summary>
+    public sealed class EstiloCurvas
+    {
+        public string Nombre;
+        public double? Menor, Mayor;
+        /// <summary>True o false si se pudo leer si el estilo dibuja en planta las curvas menores o mayores; null si no.</summary>
+        public bool? MenorVisible, MayorVisible;
+    }
+
+    /// <summary>
+    /// Qué estilo usa crear_superficie_tin cuando se piden intervalos de curvas (1.17.2) y por qué. Se calcula sin
+    /// Civil 3D con SuperficieTin.ElegirEstilo; el plugin solo lee los estilos, nunca los modifica ni crea.
+    /// </summary>
+    public sealed class EleccionEstilo
+    {
+        /// <summary>Sin 'estilo': la herramienta eligió un estilo del dibujo con los intervalos pedidos.</summary>
+        public const string Automatica = "automatica";
+        /// <summary>Con 'estilo': se respeta siempre, coincida o no.</summary>
+        public const string Indicada = "indicada";
+        /// <summary>Sin 'estilo' y ningún estilo del dibujo coincide: el estilo por defecto, como antes de la 1.17.2.</summary>
+        public const string PorDefecto = "por_defecto";
+
+        /// <summary>Nombre del estilo con el que se crea la superficie; null = el estilo por defecto del dibujo.</summary>
+        public string Estilo;
+        /// <summary>Automatica, Indicada o PorDefecto.</summary>
+        public string Eleccion;
+        /// <summary>Explicación para 'avisos' y para intervalos_curvas.motivo.</summary>
+        public string Motivo;
+        /// <summary>Estilo que se usará, tal como se leyó (el elegido, el indicado o el por defecto); null si no se conoce.</summary>
+        public EstiloCurvas Usado;
+        /// <summary>Otros estilos del dibujo con los intervalos pedidos y las curvas no ocultas, en el orden de la regla.</summary>
+        public List<string> OtrosQueCoinciden = new List<string>();
+        /// <summary>Estilos con los intervalos pedidos que no dibujan esas curvas en planta (descartados).</summary>
+        public List<string> DescartadosSinCurvasVisibles = new List<string>();
+    }
+
+    /// <summary>
     /// Reglas de crear_superficie_tin que no dependen de Civil 3D: origen (grupo o archivo), intervalos de curvas,
     /// elección del formato de archivo de puntos, columnas de un formato y aviso sobre los intervalos (viven en el estilo).
     /// </summary>
@@ -306,19 +346,208 @@ namespace ArbaMcp.Nucleo
         /// plugin no modifica estilos existentes. Null si no se pidió ningún intervalo.
         /// </summary>
         public static string AvisoIntervalos(double? menor, double? mayor, string estilo, double? estiloMenor, double? estiloMayor)
+            => AvisoIntervalos(menor, mayor, estilo, estiloMenor, estiloMayor, null, null);
+
+        /// <summary>
+        /// Igual, con lo encontrado al recorrer los estilos del dibujo (1.17.2): 'alternativas' son los estilos que sí
+        /// tienen los intervalos pedidos (null = no se buscó; vacía = no hay ninguno) y 'descartados' los que los tienen
+        /// pero no dibujan esas curvas en planta.
+        /// </summary>
+        public static string AvisoIntervalos(double? menor, double? mayor, string estilo, double? estiloMenor, double? estiloMayor, IList<string> alternativas, IList<string> descartados)
         {
             if (!menor.HasValue && !mayor.HasValue) return null;
-            string pedido = (menor.HasValue ? "menor " + Texto(menor.Value) : "") + (menor.HasValue && mayor.HasValue ? " y " : "") + (mayor.HasValue ? "mayor " + Texto(mayor.Value) : "");
+            string pedido = TextoPedido(menor, mayor);
             string actual = estiloMenor.HasValue || estiloMayor.HasValue
                 ? " El estilo '" + estilo + "' tiene menor " + (estiloMenor.HasValue ? Texto(estiloMenor.Value) : "?") + " y mayor " + (estiloMayor.HasValue ? Texto(estiloMayor.Value) : "?") + "."
                 : "";
-            bool coinciden = (!menor.HasValue || (estiloMenor.HasValue && Math.Abs(estiloMenor.Value - menor.Value) < 1e-6))
-                          && (!mayor.HasValue || (estiloMayor.HasValue && Math.Abs(estiloMayor.Value - mayor.Value) < 1e-6));
+            bool coinciden = Coinciden(menor, mayor, estiloMenor, estiloMayor);
             if (coinciden && (estiloMenor.HasValue || estiloMayor.HasValue))
                 return "Intervalos de curvas pedidos (" + pedido + "): ya coinciden con los del estilo '" + estilo + "', así que no hubo que cambiar nada." + actual;
+            string sinCurvas = descartados != null && descartados.Count > 0
+                ? " Tienen esos intervalos pero no dibujan esas curvas en planta (descartados): " + Lista(descartados) + "."
+                : "";
+            string salida;
+            if (alternativas != null && alternativas.Count > 0)
+                salida = " Estilos del dibujo con esos intervalos: " + Lista(alternativas) + "; pasa uno en 'estilo', o quita 'estilo' y la herramienta elige uno. El estilo indicado se respeta y no se cambia.";
+            else if (alternativas != null)
+                salida = " Ningún estilo de superficie del dibujo tiene esos intervalos con las curvas visibles en planta (tolerancia " + Texto(ToleranciaIntervalos) + "); crea o ajusta uno en Civil 3D (Espacio de herramientas → Configuración → Superficie → Estilos de superficie) o pide otros intervalos.";
+            else
+                salida = " Para verlos así, elige con 'estilo' un estilo del dibujo que ya tenga esos intervalos o ajústalos en Civil 3D (Espacio de herramientas → Configuración → Superficie → Estilos de superficie).";
             return "Intervalos de curvas pedidos (" + pedido + ") sin aplicar: en Civil 3D 2027 los intervalos viven en el estilo de superficie (ContourStyle.MinorContourInterval / MajorContourInterval), no en la superficie, y el plugin no modifica ni crea estilos."
-                 + actual + " Para verlos así, elige con 'estilo' un estilo del dibujo que ya tenga esos intervalos o ajústalos en Civil 3D (Espacio de herramientas → Configuración → Superficie → Estilos de superficie).";
+                 + actual + sinCurvas + salida;
         }
+
+        // ------------------------------------------------------------------ 1.17.2: estilo elegido por sus curvas
+        /// <summary>Diferencia máxima entre el intervalo pedido y el del estilo para que cuenten como iguales.</summary>
+        public const double ToleranciaIntervalos = 0.001;
+
+        /// <summary>Lugar de la API donde viven los intervalos (campo donde_viven de la respuesta).</summary>
+        public const string DondeVivenIntervalos = "SurfaceStyle.ContourStyle (estilo de superficie)";
+
+        /// <summary>True si el intervalo del estilo existe y está a ±0,001 del pedido.</summary>
+        public static bool IntervaloCoincide(double pedido, double? delEstilo)
+            => delEstilo.HasValue && Math.Abs(delEstilo.Value - pedido) <= ToleranciaIntervalos + 1e-9;
+
+        /// <summary>
+        /// True si se pidió al menos un intervalo y cada intervalo pedido coincide (±0,001) con el del estilo. El que no
+        /// se pide no se compara (con solo el menor, vale cualquier mayor).
+        /// </summary>
+        public static bool Coinciden(double? menor, double? mayor, double? estiloMenor, double? estiloMayor)
+        {
+            if (!menor.HasValue && !mayor.HasValue) return false;
+            return (!menor.HasValue || IntervaloCoincide(menor.Value, estiloMenor))
+                && (!mayor.HasValue || IntervaloCoincide(mayor.Value, estiloMayor));
+        }
+
+        /// <summary>
+        /// Si el estilo dibuja en planta las curvas pedidas: false si se sabe que alguna pedida está oculta, true si se
+        /// sabe que todas las pedidas se ven, null si no se pudo leer.
+        /// </summary>
+        public static bool? CurvasVisibles(EstiloCurvas e, double? menor, double? mayor)
+        {
+            if (e == null) return null;
+            var pedidas = new List<bool?>();
+            if (menor.HasValue) pedidas.Add(e.MenorVisible);
+            if (mayor.HasValue) pedidas.Add(e.MayorVisible);
+            if (pedidas.Count == 0) return null;
+            if (pedidas.Any(v => v == false)) return false;
+            if (pedidas.All(v => v == true)) return true;
+            return null;
+        }
+
+        /// <summary>Intervalos pedidos aplicados: el estilo coincide (±0,001) y no se sabe que oculte esas curvas.</summary>
+        public static bool Aplicados(double? menor, double? mayor, EstiloCurvas usado)
+            => usado != null && Coinciden(menor, mayor, usado.Menor, usado.Mayor) && CurvasVisibles(usado, menor, mayor) != false;
+
+        /// <summary>
+        /// Familia de un estilo: el texto del último paréntesis al final del nombre, en minúsculas
+        /// ("Contours 1m and 5m (Background)" → "background"). Null si el nombre no termina en un paréntesis.
+        /// </summary>
+        public static string Familia(string nombre)
+        {
+            string n = (nombre ?? "").Trim();
+            if (!n.EndsWith(")")) return null;
+            int i = n.LastIndexOf('(');
+            if (i < 0) return null;
+            string f = n.Substring(i + 1, n.Length - i - 2).Trim();
+            return f.Length == 0 ? null : f.ToLowerInvariant();
+        }
+
+        /// <summary>
+        /// Estilo con el que se crea la superficie cuando se piden intervalos. Null si no se pidió ninguno (la herramienta
+        /// se comporta como antes de la 1.17.2). Candidatos: los estilos cuyos intervalos coinciden con los pedidos
+        /// (±0,001) y que no se sabe que oculten esas curvas en planta (esos se descartan y se nombran). Orden fijo:
+        /// 1) los que se sabe que dibujan las curvas, antes que los de visibilidad desconocida; 2) el propio estilo por
+        /// defecto; 3) los de su misma familia («Background», «Design»); 4) orden alfabético. Con 'estiloIndicado' se
+        /// respeta siempre y solo se avisa si no coincide; sin candidatos, el estilo por defecto con el aviso de siempre.
+        /// </summary>
+        public static EleccionEstilo ElegirEstilo(IList<EstiloCurvas> estilos, double? menor, double? mayor, string estiloIndicado, string estiloPorDefecto)
+        {
+            if (!menor.HasValue && !mayor.HasValue) return null;
+            var lista = (estilos ?? new List<EstiloCurvas>()).Where(e => e != null && !string.IsNullOrWhiteSpace(e.Nombre)).ToList();
+            string porDefecto = string.IsNullOrWhiteSpace(estiloPorDefecto) ? null : estiloPorDefecto.Trim();
+            string familiaDefecto = Familia(porDefecto);
+            var coincidentes = lista.Where(e => Coinciden(menor, mayor, e.Menor, e.Mayor)).ToList();
+            var descartados = coincidentes.Where(e => CurvasVisibles(e, menor, mayor) == false).Select(e => e.Nombre).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
+            var candidatos = coincidentes.Where(e => CurvasVisibles(e, menor, mayor) != false)
+                .OrderBy(e => CurvasVisibles(e, menor, mayor) == true ? 0 : 1)
+                .ThenBy(e => MismoNombre(e.Nombre, porDefecto) ? 0 : 1)
+                .ThenBy(e => familiaDefecto != null && Familia(e.Nombre) == familiaDefecto ? 0 : 1)
+                .ThenBy(e => e.Nombre, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(e => e.Nombre, StringComparer.Ordinal)
+                .ToList();
+            var r = new EleccionEstilo { DescartadosSinCurvasVisibles = descartados };
+
+            if (!string.IsNullOrWhiteSpace(estiloIndicado))
+            {
+                string indicado = estiloIndicado.Trim();
+                r.Eleccion = EleccionEstilo.Indicada;
+                r.Usado = lista.FirstOrDefault(e => MismoNombre(e.Nombre, indicado));
+                r.Estilo = r.Usado?.Nombre ?? indicado;
+                r.OtrosQueCoinciden = candidatos.Where(e => !MismoNombre(e.Nombre, indicado)).Select(e => e.Nombre).ToList();
+                if (Aplicados(menor, mayor, r.Usado))
+                    r.Motivo = AvisoIntervalos(menor, mayor, r.Estilo, r.Usado.Menor, r.Usado.Mayor) + NotaVisibilidad(r.Usado, menor, mayor);
+                else if (r.Usado != null && Coinciden(menor, mayor, r.Usado.Menor, r.Usado.Mayor))
+                    r.Motivo = "Intervalos de curvas pedidos (" + TextoPedido(menor, mayor) + "): el estilo indicado '" + r.Estilo + "' los tiene, pero no dibuja esas curvas en planta, así que no se verán. El estilo indicado se respeta y no se cambia."
+                             + (r.OtrosQueCoinciden.Count > 0 ? " Estilos del dibujo con esos intervalos y las curvas visibles: " + Lista(r.OtrosQueCoinciden) + "." : "");
+                else
+                    r.Motivo = AvisoIntervalos(menor, mayor, r.Estilo, r.Usado?.Menor, r.Usado?.Mayor, r.OtrosQueCoinciden, null);
+                return r;
+            }
+
+            if (candidatos.Count == 0)
+            {
+                r.Eleccion = EleccionEstilo.PorDefecto;
+                r.Usado = porDefecto == null ? null : lista.FirstOrDefault(e => MismoNombre(e.Nombre, porDefecto));
+                r.Motivo = AvisoIntervalos(menor, mayor, r.Usado?.Nombre ?? porDefecto ?? "por defecto", r.Usado?.Menor, r.Usado?.Mayor, new List<string>(), descartados);
+                return r;
+            }
+
+            var elegido = candidatos[0];
+            r.Eleccion = EleccionEstilo.Automatica;
+            r.Usado = elegido;
+            r.Estilo = elegido.Nombre;
+            r.OtrosQueCoinciden = candidatos.Skip(1).Select(e => e.Nombre).ToList();
+            string porque;
+            if (MismoNombre(elegido.Nombre, porDefecto)) porque = ", que además es el estilo por defecto del dibujo.";
+            else if (familiaDefecto != null && Familia(elegido.Nombre) == familiaDefecto && candidatos.Count > 1)
+                porque = ", de la misma familia («" + FamiliaOriginal(elegido.Nombre) + "») que el estilo por defecto del dibujo '" + porDefecto + "'.";
+            else if (candidatos.Count > 1 && porDefecto == null) porque = "; hay varios y no se pudo leer el estilo por defecto del dibujo, así que se toma el primero por orden alfabético.";
+            else if (candidatos.Count > 1) porque = "; hay varios y ninguno es de la familia del estilo por defecto del dibujo '" + porDefecto + "', así que se toma el primero por orden alfabético.";
+            else porque = " (el único del dibujo con esos intervalos).";
+            r.Motivo = "Intervalos de curvas pedidos (" + TextoPedido(menor, mayor) + ") aplicados sin 'estilo': se usa el estilo '" + elegido.Nombre + "', que tiene menor "
+                     + (elegido.Menor.HasValue ? Texto(elegido.Menor.Value) : "?") + " y mayor " + (elegido.Mayor.HasValue ? Texto(elegido.Mayor.Value) : "?")
+                     + " (tolerancia " + Texto(ToleranciaIntervalos) + ")" + porque
+                     + NotaVisibilidad(elegido, menor, mayor)
+                     + (r.OtrosQueCoinciden.Count > 0 ? " También coinciden: " + Lista(r.OtrosQueCoinciden) + "." : "")
+                     + (descartados.Count > 0 ? " Tienen esos intervalos pero no dibujan esas curvas en planta (descartados): " + Lista(descartados) + "." : "")
+                     + " Pasa 'estilo' para usar otro. No se modificó ni se creó ningún estilo.";
+            return r;
+        }
+
+        /// <summary>
+        /// Bloque intervalos_curvas de la respuesta: lo pedido, si quedó aplicado con el estilo 'usado' (el previsto en la
+        /// simulación, el releído de la superficie en la escritura real) y por qué. Sin intervalos pedidos (eleccion
+        /// null) da el bloque de siempre con aplicados=false.
+        /// </summary>
+        public static Dictionary<string, object> ResumenIntervalos(double? menor, double? mayor, EleccionEstilo eleccion, EstiloCurvas usado)
+        {
+            bool? visibles = CurvasVisibles(usado, menor, mayor);
+            return new Dictionary<string, object>
+            {
+                ["pedido_menor"] = menor,
+                ["pedido_mayor"] = mayor,
+                ["aplicados"] = Aplicados(menor, mayor, usado),
+                ["estilo"] = usado?.Nombre ?? eleccion?.Estilo,
+                ["eleccion"] = eleccion?.Eleccion,
+                ["motivo"] = eleccion?.Motivo,
+                ["otros_que_coinciden"] = eleccion?.OtrosQueCoinciden ?? new List<string>(),
+                ["descartados_sin_curvas_visibles"] = eleccion?.DescartadosSinCurvasVisibles ?? new List<string>(),
+                ["estilo_menor"] = usado?.Menor.HasValue == true ? Argumentos.Redondear(usado.Menor.Value) : null,
+                ["estilo_mayor"] = usado?.Mayor.HasValue == true ? Argumentos.Redondear(usado.Mayor.Value) : null,
+                ["curvas_visibles"] = (menor.HasValue || mayor.HasValue) ? visibles : null,
+                ["tolerancia"] = ToleranciaIntervalos,
+                ["donde_viven"] = DondeVivenIntervalos
+            };
+        }
+
+        private static string NotaVisibilidad(EstiloCurvas e, double? menor, double? mayor)
+            => CurvasVisibles(e, menor, mayor) == null ? " No se pudo comprobar si el estilo dibuja esas curvas en planta: compruébalo en pantalla." : "";
+
+        private static string TextoPedido(double? menor, double? mayor)
+            => (menor.HasValue ? "menor " + Texto(menor.Value) : "") + (menor.HasValue && mayor.HasValue ? " y " : "") + (mayor.HasValue ? "mayor " + Texto(mayor.Value) : "");
+
+        private static bool MismoNombre(string a, string b)
+            => a != null && b != null && string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
+
+        private static string FamiliaOriginal(string nombre)
+        {
+            string n = (nombre ?? "").Trim();
+            int i = n.LastIndexOf('(');
+            return i < 0 || !n.EndsWith(")") ? "" : n.Substring(i + 1, n.Length - i - 2).Trim();
+        }
+
+        private static string Lista(IEnumerable<string> nombres) => string.Join(", ", nombres.Select(x => "'" + x + "'"));
 
         private static bool Empieza(string nombre, string prefijo) => (nombre ?? "").Trim().StartsWith(prefijo, StringComparison.OrdinalIgnoreCase);
         private static string ListaNombres(IEnumerable<FormatoPuntos> f) { var l = f.Select(x => "'" + x.Nombre + "'").ToList(); return l.Count == 0 ? "ninguno" : string.Join(", ", l); }

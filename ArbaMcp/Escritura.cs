@@ -33,6 +33,9 @@ namespace ArbaMcp
     ///  7. Desde 1.7.0, CrearObjeto es el camino común para crear objetos nuevos (superficies, y después alineamientos
     ///     y perfiles) con las mismas reglas: Antes falla si ya existe, copia terminada antes de crear, una transacción,
     ///     relectura y verificación. CambiarCorredor, CambiarSuperficie y LoteCorredor siguen igual para los existentes.
+    ///  8. Desde 1.16.0, ejecutar_codigo pasa 'simular' explícito (su valor por defecto es true, no false) y pide copia
+    ///     también al simular (copiaAlSimular): un script simulado se ejecuta de verdad y se aborta, así que la copia es su
+    ///     protección real. Es la única excepción a "simular no hace copia"; las demás herramientas no cambian.
     /// Todo corre en el hilo principal de AutoCAD, en el contexto de comando del dibujo activo (lo llama el cuerpo de
     /// cada herramienta). La lógica que no toca AutoCAD (comparación, respuestas, copia de disco, poda, línea de log)
     /// está en ArbaMcp.Nucleo y se prueba sin Civil 3D.
@@ -72,12 +75,16 @@ namespace ArbaMcp
         private static readonly UTF8Encoding Utf8SinBom = new UTF8Encoding(false);
 
         // ------------------------------------------------------------------ 1 y 2: comprobaciones y copia
-        /// <summary>Comprueba que se puede escribir en el dibujo activo y, salvo en simulación, inicia la copia de seguridad.</summary>
-        public static Contexto Preparar(string herramienta, JsonElement args, bool conCopia = true)
+        /// <summary>
+        /// Comprueba que se puede escribir en el dibujo activo y, salvo en simulación, inicia la copia de seguridad.
+        /// 'simular' (desde 1.16.0): valor ya leído por la herramienta (null: se lee de args, por defecto false).
+        /// 'copiaAlSimular' (desde 1.16.0, solo ejecutar_codigo): hace la copia también en simulación.
+        /// </summary>
+        public static Contexto Preparar(string herramienta, JsonElement args, bool conCopia = true, bool copiaAlSimular = false, bool? simular = null)
         {
             var doc = AcApp.DocumentManager.MdiActiveDocument;
             if (doc == null) throw new InvalidOperationException("No hay ningún dibujo abierto en Civil 3D.");
-            var ctx = new Contexto { Herramienta = herramienta, Args = args, Simular = LeerSimular(args), Doc = doc };
+            var ctx = new Contexto { Herramienta = herramienta, Args = args, Simular = simular ?? LeerSimular(args), Doc = doc };
 
             int cmdActive = 0;
             try { cmdActive = Convert.ToInt32(AcApp.GetSystemVariable("CMDACTIVE")); } catch { }
@@ -98,7 +105,7 @@ namespace ArbaMcp
                     throw new InvalidOperationException("El archivo " + ruta + " está abierto " + repetidos + " veces en Civil 3D; cierra las copias antes de escribir.");
             }
 
-            if (!ctx.Simular && conCopia) IniciarCopia(ctx);
+            if ((!ctx.Simular || copiaAlSimular) && conCopia) IniciarCopia(ctx);
             return ctx;
         }
 
@@ -218,12 +225,12 @@ namespace ArbaMcp
         /// mcp_log.jsonl (resultado o error, tiempo, id_log) la escribe Herramientas.EjecutarRegistrando, común a todas
         /// las herramientas desde la 1.6.0.
         /// </summary>
-        public static object Ejecutar(string herramienta, JsonElement args, Func<Contexto, object> cuerpo, bool conCopia = true)
+        public static object Ejecutar(string herramienta, JsonElement args, Func<Contexto, object> cuerpo, bool conCopia = true, bool copiaAlSimular = false, bool? simular = null)
         {
             Contexto ctx = null;
             try
             {
-                ctx = Preparar(herramienta, args, conCopia);
+                ctx = Preparar(herramienta, args, conCopia, copiaAlSimular, simular);
                 object respuesta = cuerpo(ctx);
                 // El cuerpo ya esperó antes de escribir; esto garantiza que la información de la copia está completa al responder
                 ctx.EsperarCopia();

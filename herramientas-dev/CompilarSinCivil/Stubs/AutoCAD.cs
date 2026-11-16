@@ -83,6 +83,10 @@ namespace Autodesk.AutoCAD.DatabaseServices
     public class SecurityParameters { }
     public class DBObject : IDisposable
     {
+        // 1.16.0 (ejecutar_codigo): qué hizo el script con cada objeto de la transacción
+        public bool IsNewObject => false;
+        public bool IsModified => false;
+        public bool IsErased => false;
         public ObjectId ObjectId => ObjectId.Null;
         public Handle Handle => new Handle(0);
         public ObjectId OwnerId => ObjectId.Null;   // 1.10.0 (crear_rasante): diccionario que contiene un estilo
@@ -158,11 +162,22 @@ namespace Autodesk.AutoCAD.DatabaseServices
         public DBObject GetObject(ObjectId id, OpenMode modo) => new DBObject();
         public DBObject GetObject(ObjectId id, OpenMode modo, bool openErased) => new DBObject();
         public void AddNewlyCreatedDBObject(DBObject o, bool add) { }
+        public DBObjectCollection GetAllObjects() => new DBObjectCollection();   // 1.16.0 (ejecutar_codigo)
         public void Commit() { }
         public void Abort() { }
         public void Dispose() { }
     }
-    public class TransactionManager { public Transaction StartTransaction() => new Transaction(); }
+    public class TransactionManager
+    {
+        public Transaction StartTransaction() => new Transaction();
+        public Transaction TopTransaction => null;   // 1.16.0 (ejecutar_codigo)
+    }
+    // 1.16.0 (ejecutar_codigo): objetos de una transacción y eventos de la base de datos durante el script
+    public class DBObjectCollection : IEnumerable { public int Count => 0; public IEnumerator GetEnumerator() => new List<DBObject>().GetEnumerator(); }
+    public class ObjectEventArgs : EventArgs { public DBObject DBObject => null; }
+    public delegate void ObjectEventHandler(object sender, ObjectEventArgs e);
+    public class ObjectErasedEventArgs : EventArgs { public DBObject DBObject => null; public bool Erased => true; }
+    public delegate void ObjectErasedEventHandler(object sender, ObjectErasedEventArgs e);
     // 1.9.0 (crear_perfil_terreno_y_vista)
     public struct Extents3d { public Point3d MinPoint => new Point3d(); public Point3d MaxPoint => new Point3d(); }
     public class Database
@@ -178,6 +193,10 @@ namespace Autodesk.AutoCAD.DatabaseServices
         public TransactionManager TransactionManager => new TransactionManager();
         public void SaveAs(string ruta, bool bBakAndRename, DwgVersion version, SecurityParameters sec) { }
         public bool TryGetObjectId(Handle h, out ObjectId id) { id = ObjectId.Null; return false; }
+        // 1.16.0 (ejecutar_codigo): apoyo para saber qué creó, modificó o borró el script
+        public event ObjectEventHandler ObjectAppended;
+        public event ObjectEventHandler ObjectModified;
+        public event ObjectErasedEventHandler ObjectErased;
     }
 }
 

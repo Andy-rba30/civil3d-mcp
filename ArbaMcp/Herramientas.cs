@@ -449,6 +449,7 @@ namespace ArbaMcp
             RegistrarSecciones();       // 1.13.0: crear_secciones (Herramientas.Secciones.cs)
             RegistrarVolumenes();       // 1.14.0: calcular_volumenes (Herramientas.Volumenes.cs)
             RegistrarPis();             // 1.15.0: listar_pis (Herramientas.Alineamientos.Pis.cs)
+            RegistrarCodigo();          // 1.16.0: ejecutar_codigo (Herramientas.Codigo.cs y Fachada.cs)
         }
 
         // ------------------------------------------------------------------ herramientas genéricas adicionales

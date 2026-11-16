@@ -3,7 +3,8 @@
 contra la API de Civil 3D 2027. Es una herramienta del puente (Python), no del plugin: funciona con Civil 3D cerrado.
 
 Qué consulta, y en este orden:
-  1. Recetas: `recetas/*.md` (procedimientos paso a paso).
+  1. Recetas: `recetas/*.md` (procedimientos paso a paso) y, desde 1.17.0, las recetas de código `recetas/*.yaml`
+     con su `*.cs` (scripts de `ejecutar_codigo` que guardó `guardar_receta` y que reutiliza `ejecutar_receta`).
   2. Glosario: `catalogo/glosario.yaml` (español → clase o miembro de la API, con estado `confirmado` o
      `por confirmar`). Si el YAML no existe pero la tabla `glosario` del catálogo tiene filas, se usa la tabla.
   3. Catálogo: `catalogo/catalogo_c3d2027.sqlite` (tipos, métodos, propiedades y parámetros públicos de las DLL de
@@ -241,9 +242,61 @@ def expandir_consulta(consulta: str, glosario: list[dict], excluir: set[str] | N
 
 
 # ---------------------------------------------------------------------------------------------- recetas
+def _leer_texto(ruta: str) -> str | None:
+    try:
+        with open(ruta, "r", encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def _receta_de_codigo(carpeta: str, archivo_yaml: str) -> dict | None:
+    """Datos de una receta de código (1.17.0): el .yaml que escribe guardar_receta y su .cs. Devuelve el texto donde
+    buscar (nombre, pedido, notas, parámetros y código) y lo que se muestra; None si el .yaml no se puede leer."""
+    contenido = _leer_texto(os.path.join(carpeta, archivo_yaml))
+    if contenido is None:
+        return None
+    try:
+        import yaml
+        datos = yaml.safe_load(contenido)
+    except Exception:
+        return None
+    if not isinstance(datos, dict):
+        return None
+    base = archivo_yaml[: -len(".yaml")]
+    codigo = _leer_texto(os.path.join(carpeta, base + ".cs"))
+    parametros = [p for p in (datos.get("parametros") or []) if isinstance(p, dict) and p.get("nombre")]
+    try:
+        veces = max(0, int(datos.get("veces_usada") or 0))
+    except (TypeError, ValueError):
+        veces = 0
+    pedido = str(datos.get("pedido") or "").strip()
+    notas = str(datos.get("notas") or "").strip()
+    texto = "\n".join([base, pedido, notas, codigo or ""] +
+                      [f"{p.get('nombre')} {p.get('descripcion') or ''}" for p in parametros])
+
+    def describir(p: dict) -> str:
+        if p.get("obligatorio"):
+            return f"{p['nombre']} ({p.get('tipo')}, obligatorio)"
+        if p.get("por_defecto") is not None:
+            return f"{p['nombre']} ({p.get('tipo')}, por defecto {p['por_defecto']})"
+        return f"{p['nombre']} ({p.get('tipo')}, opcional)"
+
+    lineas = [f"receta de código: ejecutar_receta nombre={base} (simular=true primero) · veces usada {veces} · "
+              f"Civil 3D {datos.get('version_civil3d') or '?'} · {datos.get('fecha') or '?'}",
+              "parámetros: " + (", ".join(describir(p) for p in parametros) or "ninguno")]
+    if notas:
+        lineas.append("notas: " + notas.splitlines()[0])
+    if codigo is None:
+        lineas.insert(0, f"AVISO: falta {base}.cs; ejecutar_receta no podrá usarla hasta que vuelva a estar")
+    return {"archivo": f"{archivo_yaml} + {base}.cs", "titulo": pedido or base, "lineas": lineas[:4],
+            "texto": texto, "veces_usada": veces}
+
+
 def buscar_recetas(carpeta: str | None, consulta: str, coincidencias: list[dict], limite: int) -> list[dict]:
-    """Recetas (.md) que contienen alguna palabra útil de la consulta o un término del glosario que coincidió.
-    Ordenadas por número de palabras distintas que coinciden; cada una con nombre, título y primeras líneas."""
+    """Recetas que contienen alguna palabra útil de la consulta o un término del glosario que coincidió: las de
+    procedimiento (.md) y, desde 1.17.0, las de código (.yaml + .cs). Ordenadas por número de palabras distintas que
+    coinciden y, a igualdad, por veces usada; cada una con archivo, título y primeras líneas."""
     if not carpeta or limite <= 0:
         return []
     buscados = list(_palabras_utiles(consulta))
@@ -256,23 +309,26 @@ def buscar_recetas(carpeta: str | None, consulta: str, coincidencias: list[dict]
         return []
     encontradas = []
     for nombre in sorted(os.listdir(carpeta)):
-        if not nombre.lower().endswith(".md"):
+        if nombre.lower().endswith(".yaml"):
+            receta = _receta_de_codigo(carpeta, nombre)
+            if receta is None:
+                continue
+            texto = normalizar(receta.pop("texto"))
+        elif nombre.lower().endswith(".md"):
+            contenido = _leer_texto(os.path.join(carpeta, nombre))
+            if contenido is None:
+                continue
+            texto = normalizar(nombre + "\n" + contenido)
+            lineas = [l.strip() for l in contenido.splitlines() if l.strip()]
+            titulo = next((l.lstrip("# ").strip() for l in lineas if l.startswith("#")), lineas[0] if lineas else nombre)
+            cuerpo = [l for l in lineas if l.lstrip("# ").strip() != titulo][:3]
+            receta = {"archivo": nombre, "titulo": titulo, "lineas": cuerpo, "veces_usada": 0}
+        else:
             continue
-        ruta = os.path.join(carpeta, nombre)
-        try:
-            with open(ruta, "r", encoding="utf-8", errors="replace") as f:
-                contenido = f.read()
-        except OSError:
-            continue
-        texto = normalizar(nombre + "\n" + contenido)
-        aciertos = sum(1 for b in buscados if _contiene_palabra(texto, b))
-        if aciertos == 0:
-            continue
-        lineas = [l.strip() for l in contenido.splitlines() if l.strip()]
-        titulo = next((l.lstrip("# ").strip() for l in lineas if l.startswith("#")), lineas[0] if lineas else nombre)
-        cuerpo = [l for l in lineas if l.lstrip("# ").strip() != titulo][:3]
-        encontradas.append({"archivo": nombre, "titulo": titulo, "lineas": cuerpo, "aciertos": aciertos})
-    encontradas.sort(key=lambda r: (-r["aciertos"], r["archivo"]))
+        receta["aciertos"] = sum(1 for b in buscados if _contiene_palabra(texto, b))
+        if receta["aciertos"]:
+            encontradas.append(receta)
+    encontradas.sort(key=lambda r: (-r["aciertos"], -r["veces_usada"], r["archivo"]))
     return encontradas[:limite]
 
 

@@ -18,7 +18,10 @@ namespace ArbaMcp
     /// GetVolumeProperties y devuelve corte, relleno y neto (neto = corte − relleno, convención del plugin; el signo del
     /// neto de Civil 3D va aparte). Además, si hay un grupo de líneas de muestreo con secciones de las dos superficies
     /// (crear_secciones), calcula la tabla por progresivas LEYENDO esas secciones (Section.SectionPoints) y aplicando
-    /// áreas medias en ArbaMcp.Nucleo.Volumenes: no crea listas de materiales ni usa ejecutar_comando. Vía alternativa no
+    /// áreas medias en ArbaMcp.Nucleo.Volumenes: no crea listas de materiales ni usa ejecutar_comando. Desde 1.17.1 el área
+    /// de cada línea se cuenta solo en los tramos de desplazamiento en que existen la Datum y el terreno
+    /// (Surface.FindElevationAtXY en Alignment.PointLocation, bordes por bisección), como la superficie de volumen: la
+    /// sección de una superficie de corredor llega hasta el ancho de la línea aunque su TIN acabe antes. Vía alternativa no
     /// usada (propuesta para una 1.14.x): las listas de materiales de la API (SampleLineGroup.MaterialLists,
     /// QTOMaterialList, GetTotalVolumeResultDataForMaterialList), ver miembros_por_verificar_civil3d.md, sección 1.14.0.
     /// </summary>
@@ -364,6 +367,45 @@ namespace ArbaMcp
             catch { return null; }
         }
 
+        /// <summary>
+        /// True si la Datum y el terreno tienen cota en (pk, desplazamiento) del eje (1.17.1): Alignment.PointLocation y
+        /// Surface.FindElevationAtXY, primero la Datum (la que suele acabar antes) y solo si existe, el terreno. Fuera de una
+        /// TIN FindElevationAtXY lanza (informe 1.14.3, paso 4: null a ±5 m en la línea 0+000.00): cuenta como que no existe.
+        /// </summary>
+        private static bool ExistenLasDos(CivAlignment al, CivSurface datum, CivSurface terreno, double pk, double desplazamiento)
+        {
+            try
+            {
+                double x = 0, y = 0;
+                al.PointLocation(pk, desplazamiento, ref x, ref y);
+                double zd = datum.FindElevationAtXY(x, y);
+                if (double.IsNaN(zd) || double.IsInfinity(zd)) return false;
+                double zt = terreno.FindElevationAtXY(x, y);
+                return !double.IsNaN(zt) && !double.IsInfinity(zt);
+            }
+            catch { return false; }
+        }
+
+        /// <summary>
+        /// Recorte de la sección de una línea a las dos superficies (1.17.1, ArbaMcp.Nucleo.Volumenes.RecortarSeccion). Supone,
+        /// como la comprobación del supuesto de ejes, que la X de la sección es el desplazamiento de PointLocation (línea
+        /// perpendicular al eje, como las de crear_secciones). Null si la progresiva no se leyó o las secciones no se solapan.
+        /// </summary>
+        private static RecorteSeccion RecorteDeLinea(CivAlignment al, CivSurface terreno, CivSurface datum, double pk, List<Punto2> pt, List<Punto2> pd)
+            => double.IsNaN(pk) || double.IsInfinity(pk) ? null : Volumenes.RecortarSeccion(pt, pd, x => ExistenLasDos(al, datum, terreno, pk, x));
+
+        /// <summary>El tramo válido de una línea para puntos_secciones.tramo_valido (1.17.1); null si no hay recorte.</summary>
+        private static object DescribirRecorte(RecorteSeccion r)
+            => r == null ? null : new
+            {
+                desde_comun = N(r.Desde),
+                hasta_comun = N(r.Hasta),
+                tramos = r.Tramos.Select(t => new { desde = N(t.Desde), hasta = N(t.Hasta) }).ToList(),
+                ancho_valido = N(r.AnchoValido),
+                ancho_descartado = N(r.AnchoDescartado),
+                puntos_probados = r.PuntosProbados
+            };
+
         private static object PuntoXY(Punto2 p) => new { x = N(p.X), y = N(p.Y) };
 
         /// <summary>Lo que dice Civil 3D de una sección y sus puntos, para puntos_secciones.</summary>
@@ -445,7 +487,9 @@ namespace ArbaMcp
                             cota_superficie = Opt(c.CotaSuperficie),
                             diferencia = Opt(c.Diferencia)
                         }).ToList(),
-                        comprobacion_completa = completa
+                        comprobacion_completa = completa,
+                        // 1.17.1: dónde existen las dos superficies en esta línea (solo diagnóstico; no cambia la comprobación)
+                        tramo_valido = DescribirRecorte(Seguro(() => RecorteDeLinea(al, terreno, datum, l.Pk, pt, pd), null))
                     };
                 if (fuera != null)
                 {
@@ -464,15 +508,20 @@ namespace ArbaMcp
 
         /// <summary>
         /// Lee las secciones de cada línea del grupo, comprueba el supuesto de ejes (ComprobarSupuestoEjes; si no se cumple,
-        /// 'supuesto.Motivo' lo dice y la tabla no da números) y calcula sus áreas (ArbaMcp.Nucleo.Volumenes.Areas).
+        /// 'supuesto.Motivo' lo dice y la tabla no da números) y calcula sus áreas (ArbaMcp.Nucleo.Volumenes.Areas). Desde
+        /// 1.17.1, solo en los tramos en que existen las dos superficies (RecorteDeLinea); si el recorte de una línea falla,
+        /// esa línea se calcula en todo el tramo común y se avisa en 'avisos'.
         /// </summary>
         private static List<SeccionLinea> SeccionesDelGrupo(Transaction tr, GrupoTabla g, CivSurface terreno, CivSurface datum, SuperficieTabla t, SuperficieTabla d,
-            out SupuestoEjes supuesto, out object identificacion)
+            List<string> avisos, out SupuestoEjes supuesto, out object identificacion)
         {
             string nT = t.Nombre, nD = d.Nombre;
             var leidas = LeerLineas(tr, g, t, d);
             identificacion = DiagnosticoIdentificacion(tr, g, leidas, t, d);
             supuesto = ComprobarSupuestoEjes(tr, g, leidas, terreno, datum, t, d);
+            var al = (CivAlignment)tr.GetObject(g.IdEje, OpenMode.ForRead);
+            bool recortar = supuesto.Motivo == null;   // si el supuesto de ejes no se cumple, la tabla sale sin números: no se recorta
+            var sinRecorte = new List<string>();
             var lineas = new List<SeccionLinea>();
             foreach (var l in leidas)
             {
@@ -485,13 +534,25 @@ namespace ArbaMcp
                     lineas.Add(new SeccionLinea(nombre, pk, null, "falta la sección de " + (st == null ? "'" + nT + "'" : "") + (st == null && sd == null ? " y de " : "") + (sd == null ? "'" + nD + "'" : "")));
                     continue;
                 }
-                var areas = Volumenes.Areas(PuntosSeccion(st), PuntosSeccion(sd));
-                lineas.Add(new SeccionLinea(nombre, pk, areas, areas == null ? "las secciones de '" + nT + "' y '" + nD + "' no se solapan" : null));
+                var pt = PuntosSeccion(st);
+                var pd = PuntosSeccion(sd);
+                RecorteSeccion recorte = null;
+                if (recortar)
+                {
+                    try { recorte = RecorteDeLinea(al, terreno, datum, pk, pt, pd); }
+                    catch (Exception ex) { Historial.Registrar(HerramientaCalcularVolumenes + ": no se pudo recortar la línea " + nombre + ": " + ex.Message); }
+                }
+                var areas = Volumenes.Areas(pt, pd, recorte?.Tramos);
+                if (recortar && recorte == null && areas != null && !double.IsNaN(pk)) sinRecorte.Add(nombre);
+                lineas.Add(new SeccionLinea(nombre, pk, areas, areas == null ? "las secciones de '" + nT + "' y '" + nD + "' no se solapan" : null) { Recorte = recorte });
             }
+            if (sinRecorte.Count > 0)
+                avisos.Add("En " + sinRecorte.Count + " línea" + (sinRecorte.Count == 1 ? "" : "s") + " (" + string.Join(", ", sinRecorte.Take(5)) + (sinRecorte.Count > 5 ? ", …" : "")
+                    + ") no se pudo recortar la sección a las superficies: su área se cuenta en todo el tramo común de las dos secciones, como hasta la 1.14.3 (mira leer_historial).");
             return lineas;
         }
 
-        private static object TablaComoRespuesta(GrupoTabla g, TablaVolumenes t, string motivo, int comprobadas, ResumenVolumenes r)
+        private static object TablaComoRespuesta(GrupoTabla g, TablaVolumenes t, string motivo, int comprobadas, ResumenVolumenes r, ResumenRecorte rr)
         {
             var supuesto = new { comprobado = motivo == null && comprobadas > 0, lineas_comprobadas_con_la_superficie = comprobadas, motivo };
             if (motivo != null || t == null)
@@ -506,6 +567,20 @@ namespace ArbaMcp
                 numero_lineas = t.Filas.Count,
                 tramos = t.Tramos,
                 tramos_sin_volumen = t.TramosSinVolumen,
+                // 1.17.1: cuánto de las secciones quedó fuera de las superficies y no se cuenta
+                recorte = rr == null ? null : new
+                {
+                    metodo = Volumenes.MetodoRecorte,
+                    precision = Volumenes.PrecisionRecorte,
+                    paso_maximo = Volumenes.PasoMaximoRecorte,
+                    lineas = rr.Lineas,
+                    lineas_recortadas = rr.LineasRecortadas,
+                    lineas_sin_tramo_valido = rr.LineasSinTramoValido,
+                    lineas_con_varios_tramos = rr.LineasConVariosTramos,
+                    ancho_medio_descartado = N(rr.AnchoMedioDescartado),
+                    ancho_maximo_descartado = N(rr.AnchoMaximoDescartado),
+                    puntos_probados = rr.PuntosProbados
+                },
                 totales = new { corte = N(t.Corte), relleno = N(t.Relleno), corte_ajustado = N(t.CorteAjustado), relleno_ajustado = N(t.RellenoAjustado), neto = N(t.Neto) },
                 diferencia_con_superficie_pct = r == null ? null : new
                 {
@@ -525,7 +600,8 @@ namespace ArbaMcp
                     corte_acumulado = N(f.CorteAcumulado),
                     relleno_acumulado = N(f.RellenoAcumulado),
                     masa = N(f.Masa),
-                    falta = f.Falta
+                    falta = f.Falta,
+                    ancho_descartado = Opt(f.AnchoDescartado)
                 }).ToList()
             };
         }
@@ -546,7 +622,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = HerramientaCalcularVolumenes,
-                Descripcion = "Calcula los volúmenes de corte y relleno entre el terreno y la superficie Datum del corredor: crea una superficie de volumen TIN (TinVolumeSurface.Create, base = terreno, comparación = Datum), le pone factor_esponjamiento como CutFactor y factor_compactacion como FillFactor, la reconstruye y devuelve corte, relleno y neto sin ajustar y ajustados (corte ajustado = corte × esponjamiento; relleno ajustado = relleno × compactación; neto = corte − relleno: positivo sobra material, negativo falta) y el nombre de la superficie creada, todo en una sola entrada de Deshacer. Sin 'terreno' usa la única superficie TIN que no es de corredor ni de volumen; sin 'datum', la '<corredor> - Datum' del corredor pedido o del único corredor (errores claros si hay varias). Si hay un grupo de líneas de muestreo con secciones de las dos superficies (crear_secciones), añade la tabla por progresivas: áreas de corte y relleno de cada sección y volúmenes entre líneas por áreas medias, con los factores, acumulados y ordenada de masas (la calcula el plugin leyendo las secciones; no es la tabla de materiales de Civil 3D). Relee la superficie y comprueba tipo, factores, base y comparación, y que corte o relleno no sean 0 (si no, error sin reintentar). Con simular=true solo comprueba e informa (sin copia ni cambios). Si ya existe una superficie con ese nombre, error sin tocar nada.",
+                Descripcion = "Calcula los volúmenes de corte y relleno entre el terreno y la superficie Datum del corredor: crea una superficie de volumen TIN (TinVolumeSurface.Create, base = terreno, comparación = Datum), le pone factor_esponjamiento como CutFactor y factor_compactacion como FillFactor, la reconstruye y devuelve corte, relleno y neto sin ajustar y ajustados (corte ajustado = corte × esponjamiento; relleno ajustado = relleno × compactación; neto = corte − relleno: positivo sobra material, negativo falta) y el nombre de la superficie creada, todo en una sola entrada de Deshacer. Sin 'terreno' usa la única superficie TIN que no es de corredor ni de volumen; sin 'datum', la '<corredor> - Datum' del corredor pedido o del único corredor (errores claros si hay varias). Si hay un grupo de líneas de muestreo con secciones de las dos superficies (crear_secciones), añade la tabla por progresivas: áreas de corte y relleno de cada sección, solo donde existen las dos superficies, y volúmenes entre líneas por áreas medias, con los factores, acumulados y ordenada de masas (la calcula el plugin leyendo las secciones; no es la tabla de materiales de Civil 3D). Relee la superficie y comprueba tipo, factores, base y comparación, y que corte o relleno no sean 0 (si no, error sin reintentar). Con simular=true solo comprueba e informa (sin copia ni cambios). Si ya existe una superficie con ese nombre, error sin tocar nada.",
                 Parametros =
                 {
                     P("terreno", "string", "Superficie base (terreno natural). Si falta: la única superficie TIN que no es de corredor ni de volumen (ver listar_superficies)"),
@@ -755,7 +831,7 @@ namespace ArbaMcp
                                 {
                                     var terreno = (CivSurface)tr.GetObject(idTerreno, OpenMode.ForRead);
                                     var datumSu = (CivSurface)tr.GetObject(idDatum, OpenMode.ForRead);
-                                    var lineas = SeccionesDelGrupo(tr, grupo, terreno, datumSu, supT, supD, out SupuestoEjes supuesto, out identificacionDespues);
+                                    var lineas = SeccionesDelGrupo(tr, grupo, terreno, datumSu, supT, supD, avisosTabla, out SupuestoEjes supuesto, out identificacionDespues);
                                     string motivo = supuesto.Motivo;
                                     int comprobadas = supuesto.Comprobadas;
                                     puntosDespues = supuesto.Diagnostico;
@@ -770,7 +846,7 @@ namespace ArbaMcp
                                         if (comprobadas == 0)
                                             avisosTabla.Add("No se pudo comprobar con las superficies '" + e.Terreno + "' y '" + e.Datum + "' que los puntos de sección son (desplazamiento, cota): en ninguna línea se pudieron comparar las cotas de las dos secciones con las de sus superficies (mira puntos_secciones). Revisa la tabla con las vistas de sección.");
                                     }
-                                    tabla = TablaComoRespuesta(grupo, t, motivo, comprobadas, resumen);
+                                    tabla = TablaComoRespuesta(grupo, t, motivo, comprobadas, resumen, t == null ? null : Volumenes.ResumirRecorte(lineas.Select(x => x.Recorte)));
                                     if (t != null && resumen != null)
                                     {
                                         double? dc = Volumenes.DiferenciaPorcentaje(t.CorteAjustado, resumen.Corte), dr = Volumenes.DiferenciaPorcentaje(t.RellenoAjustado, resumen.Relleno);

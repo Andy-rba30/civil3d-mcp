@@ -92,16 +92,84 @@ namespace ArbaMcp
                 + ". En Civil 3D se ven en Espacio de herramientas → Configuración → Superficie → Estilos de superficie.");
         }
 
-        /// <summary>Intervalos de curvas (menor, mayor) del estilo de superficie; null si no se pueden leer.</summary>
-        private static (double? menor, double? mayor) IntervalosDelEstilo(Transaction tr, ObjectId idEstilo)
+        /// <summary>
+        /// Lo que se lee de un estilo de superficie para elegirlo por sus curvas (1.17.2): nombre (DBObject.Name, validado
+        /// en 1.10.1), intervalos (SurfaceStyle.ContourStyle, validado en 1.7.0) y si dibuja en planta las curvas menores y
+        /// mayores. Solo lectura: nunca se modifica un estilo. Null si el id está vacío; lo que no se pueda leer queda en null.
+        /// 'errores' recoge el primer fallo de lectura para anotarlo una sola vez en el historial.
+        /// </summary>
+        private static EstiloCurvas LeerEstiloCurvas(Transaction tr, ObjectId idEstilo, List<string> errores = null)
+        {
+            if (idEstilo.IsNull) return null;
+            var e = new EstiloCurvas { Nombre = NombreDeEstilo(tr, idEstilo) };
+            Civ.Styles.SurfaceStyle st = null;
+            try { st = tr.GetObject(idEstilo, OpenMode.ForRead) as Civ.Styles.SurfaceStyle; }
+            catch (Exception ex) { errores?.Add("abrir el estilo '" + e.Nombre + "': " + ex.Message); }
+            if (st == null) return e;
+            try { var cs = st.ContourStyle; e.Menor = cs.MinorContourInterval; e.Mayor = cs.MajorContourInterval; }
+            catch (Exception ex) { errores?.Add("intervalos del estilo '" + e.Nombre + "' (ContourStyle): " + ex.Message); }
+            e.MenorVisible = CurvasEnPlanta(st, "MinorContour", e.Nombre, errores);
+            e.MayorVisible = CurvasEnPlanta(st, "MajorContour", e.Nombre, errores);
+            return e;
+        }
+
+        /// <summary>
+        /// Si el estilo dibuja en planta ese componente (1.17.2): SurfaceStyle.GetDisplayStylePlan(SurfaceDisplayStyleType)
+        /// → DisplayStyle.Visible. El catálogo no da los valores del enumerado, así que el valor se resuelve por su nombre
+        /// ("MinorContour", "MajorContour") con Api.IntentarInvocar. Null (visibilidad desconocida) si el método, el valor
+        /// o Visible no se pueden leer: la elección sigue y el aviso pide comprobarlo en pantalla.
+        /// </summary>
+        private static bool? CurvasEnPlanta(Civ.Styles.SurfaceStyle st, string componente, string nombreEstilo, List<string> errores)
         {
             try
             {
-                if (idEstilo.IsNull || !(tr.GetObject(idEstilo, OpenMode.ForRead) is Civ.Styles.SurfaceStyle st)) return (null, null);
-                var cs = st.ContourStyle;
-                return (cs.MinorContourInterval, cs.MajorContourInterval);
+                if (!Api.IntentarInvocar(st, out object ds, new[] { "GetDisplayStylePlan" }, componente) || ds == null)
+                {
+                    errores?.Add("GetDisplayStylePlan(" + componente + ") no existe o no admite ese valor (estilo '" + nombreEstilo + "')");
+                    return null;
+                }
+                if (Api.IntentarLeer(ds, out object v, "Visible") && v is bool b) return b;
+                errores?.Add("DisplayStyle.Visible no legible (" + componente + ", estilo '" + nombreEstilo + "')");
+                return null;
             }
-            catch (Exception ex) { Historial.Registrar("crear_superficie_tin: no se pudieron leer los intervalos del estilo: " + ex.Message); return (null, null); }
+            catch (Exception ex) { errores?.Add("visibilidad de " + componente + " del estilo '" + nombreEstilo + "': " + ex.Message); return null; }
+        }
+
+        /// <summary>Todos los estilos de superficie del dibujo (Styles.SurfaceStyles) leídos con LeerEstiloCurvas, y su id por nombre (1.17.2).</summary>
+        private static List<EstiloCurvas> LeerEstilosCurvas(Transaction tr, Dictionary<string, ObjectId> idsPorNombre)
+        {
+            var lista = new List<EstiloCurvas>();
+            var errores = new List<string>();
+            foreach (object o in (System.Collections.IEnumerable)CivilApplication.ActiveDocument.Styles.SurfaceStyles)
+            {
+                if (!(o is ObjectId id) || id.IsNull) continue;
+                var e = LeerEstiloCurvas(tr, id, errores);
+                if (e == null || string.IsNullOrWhiteSpace(e.Nombre)) continue;
+                lista.Add(e);
+                if (!idsPorNombre.ContainsKey(e.Nombre)) idsPorNombre[e.Nombre] = id;
+            }
+            if (errores.Count > 0)
+                Historial.Registrar("crear_superficie_tin: lectura parcial de los estilos de superficie (" + errores.Count + " fallos; el primero: " + errores[0] + "). Lo que no se pudo leer cuenta como desconocido.");
+            return lista;
+        }
+
+        /// <summary>
+        /// Nombre del estilo de superficie por defecto del dibujo (1.17.2): GetSettings&lt;SettingsSurface&gt;().Styles
+        /// (ojo: Styles, no StyleSettings) → SurfaceStyleId.Value con DBObject.Name, o Surface.Value si el id no da nombre.
+        /// Null si no se puede leer: la regla de la familia no se aplica y se elige por orden alfabético.
+        /// </summary>
+        private static string EstiloSuperficiePorDefecto(Transaction tr)
+        {
+            try
+            {
+                var ajustes = CivilApplication.ActiveDocument.Settings.GetSettings<Autodesk.Civil.Settings.SettingsSurface>().Styles;
+                string nombre = null;
+                ObjectId id = ajustes.SurfaceStyleId.Value;
+                if (!id.IsNull) nombre = NombreDeEstilo(tr, id);
+                if (string.IsNullOrWhiteSpace(nombre)) nombre = ajustes.Surface.Value;
+                return string.IsNullOrWhiteSpace(nombre) ? null : nombre.Trim();
+            }
+            catch (Exception ex) { Historial.Registrar("crear_superficie_tin: no se pudo leer el estilo de superficie por defecto (SettingsSurface.Styles): " + ex.Message); return null; }
         }
 
         /// <summary>Extensión y número de puntos de una superficie (Surface.GetGeneralProperties), con los mismos nombres que extension_superficie.</summary>
@@ -607,16 +675,16 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = "crear_superficie_tin",
-                Descripcion = "Crea una superficie TIN nueva (TinSurface.Create) a partir de un grupo de puntos del dibujo (PointGroupsDefinition.AddPointGroup) o de un archivo de puntos de texto (PointFilesDefinition.AddPointFile con un formato de archivo de puntos del dibujo, por ejemplo 'PENZD (comma delimited)'), la reconstruye y devuelve puntos, triángulos y extensión. Indica exactamente uno: 'grupo_puntos' o 'archivo'. Si ya existe una superficie con ese nombre responde error sin tocar nada. Los intervalos de curvas de nivel viven en el estilo de superficie (no en la superficie): no se modifica ningún estilo; si se piden, la respuesta lo explica en 'avisos'.",
+                Descripcion = "Crea una superficie TIN nueva (TinSurface.Create) a partir de un grupo de puntos del dibujo (PointGroupsDefinition.AddPointGroup) o de un archivo de puntos de texto (PointFilesDefinition.AddPointFile con un formato de archivo de puntos del dibujo, por ejemplo 'PENZD (comma delimited)'), la reconstruye y devuelve puntos, triángulos y extensión. Indica exactamente uno: 'grupo_puntos' o 'archivo'. Si ya existe una superficie con ese nombre responde error sin tocar nada. Los intervalos de curvas de nivel viven en el estilo de superficie (no en la superficie) y no se modifica ni se crea ningún estilo: si se piden sin 'estilo', se usa un estilo del dibujo que ya tenga esos intervalos (±0,001) y dibuje esas curvas en planta (si hay varios: el estilo por defecto si coincide, luego su misma familia, luego orden alfabético); con 'estilo' se respeta siempre y solo se avisa si no coincide. La respuesta lo explica en 'intervalos_curvas' y en 'avisos'.",
                 Parametros =
                 {
                     P("nombre", "string", "Nombre de la superficie nueva (no debe existir)", true),
                     P("grupo_puntos", "string", "Nombre de un grupo de puntos del dibujo (Prospector → Grupos de puntos). Excluyente con 'archivo'"),
                     P("archivo", "string", "Ruta completa, en la PC de Civil 3D, de un archivo de puntos de texto (PENZD, ENZ...). Excluyente con 'grupo_puntos'"),
                     P("formato_archivo", "string", "Nombre de un formato de archivo de puntos del dibujo, por ejemplo 'PENZD (comma delimited)'. Si falta, se elige uno por las columnas y el separador del archivo y se dice cuál"),
-                    P("estilo", "string", "Estilo de superficie del dibujo. Si falta, el estilo por defecto del dibujo"),
-                    P("intervalo_curvas_menor", "number", "Intervalo de curvas menores pedido (solo informativo: vive en el estilo, ver avisos)"),
-                    P("intervalo_curvas_mayor", "number", "Intervalo de curvas mayores pedido (solo informativo: vive en el estilo, ver avisos)"),
+                    P("estilo", "string", "Estilo de superficie del dibujo; se respeta siempre. Si falta y se piden intervalos, un estilo del dibujo con esos intervalos; si no, el estilo por defecto del dibujo"),
+                    P("intervalo_curvas_menor", "number", "Intervalo de curvas menores pedido, por ejemplo 1. Sin 'estilo', se elige un estilo del dibujo que ya lo tenga (no se modifica ningún estilo; ver intervalos_curvas)"),
+                    P("intervalo_curvas_mayor", "number", "Intervalo de curvas mayores pedido, por ejemplo 5. Sin 'estilo', se elige un estilo del dibujo que ya lo tenga (no se modifica ningún estilo; ver intervalos_curvas)"),
                     P("simular", "boolean", "Con true devuelve lo que haría sin tocar nada (ni copia): antes/despues previstos con el número de puntos del archivo o del grupo")
                 },
                 Ejecutar = a => Escritura.Ejecutar("crear_superficie_tin", a, ctx =>
@@ -649,16 +717,44 @@ namespace ArbaMcp
                     Dictionary<string, object> extension = null;
                     (double? menor, double? mayor) delEstilo = (null, null);
                     string textoOrigen = esArchivo ? "el archivo '" + archivo + "'" : "el grupo de puntos '" + grupo + "'";
+                    // 1.17.2: con intervalos pedidos se recorren los estilos del dibujo (solo lectura) para elegir o avisar
+                    bool hayIntervalos = menor.HasValue || mayor.HasValue;
+                    EleccionEstilo eleccion = null;
+                    Dictionary<string, object> resumenIntervalos = null;
+                    var esperado = new Dictionary<string, object> { ["existe"] = true };
+                    string accionBase = "Crear la superficie TIN '" + nombre + "' desde " + textoOrigen;
+                    Escritura.Creacion creacion = null;
 
                     try
                     {
-                        return Escritura.CrearObjeto(ctx, new Escritura.Creacion
+                        creacion = new Escritura.Creacion
                         {
-                            Accion = "Crear la superficie TIN '" + nombre + "' desde " + textoOrigen + (string.IsNullOrWhiteSpace(estilo) ? " con el estilo por defecto del dibujo" : " con el estilo '" + estilo + "'") + " y reconstruirla",
+                            Accion = accionBase + (!string.IsNullOrWhiteSpace(estilo) ? " con el estilo '" + estilo + "'"
+                                : hayIntervalos ? " con un estilo del dibujo que tenga las curvas pedidas (o el estilo por defecto si no hay ninguno)"
+                                : " con el estilo por defecto del dibujo") + " y reconstruirla",
                             Antes = tr =>
                             {
                                 if (!BuscarSuperficieONull(tr, nombre).IsNull) throw new ArgumentException("Ya existe la superficie '" + nombre + "'. Usa listar_superficies.");
-                                if (!string.IsNullOrWhiteSpace(estilo)) { idEstilo = BuscarEstiloSuperficie(tr, estilo); estiloUsado = estilo; delEstilo = IntervalosDelEstilo(tr, idEstilo); }
+                                if (!string.IsNullOrWhiteSpace(estilo))
+                                {
+                                    idEstilo = BuscarEstiloSuperficie(tr, estilo); estiloUsado = estilo;
+                                    var info = LeerEstiloCurvas(tr, idEstilo);
+                                    delEstilo = (info?.Menor, info?.Mayor);
+                                }
+                                if (hayIntervalos)
+                                {
+                                    var idsPorNombre = new Dictionary<string, ObjectId>(StringComparer.OrdinalIgnoreCase);
+                                    var estilos = LeerEstilosCurvas(tr, idsPorNombre);
+                                    eleccion = SuperficieTin.ElegirEstilo(estilos, menor, mayor, estiloUsado, EstiloSuperficiePorDefecto(tr));
+                                    if (eleccion.Eleccion == EleccionEstilo.Automatica && idsPorNombre.TryGetValue(eleccion.Estilo, out ObjectId idElegido))
+                                    {
+                                        // Se crea con el estilo elegido; la relectura debe dar ese estilo (regla 4: si no, error sin reintentar)
+                                        idEstilo = idElegido; estiloUsado = eleccion.Estilo;
+                                        delEstilo = (eleccion.Usado?.Menor, eleccion.Usado?.Mayor);
+                                        esperado["estilo"] = estiloUsado;
+                                        creacion.Accion = accionBase + " con el estilo '" + estiloUsado + "' (elegido por sus curvas de nivel) y reconstruirla";
+                                    }
+                                }
                                 if (esArchivo)
                                 {
                                     formatos = Civ.PointFileFormatCollection.GetPointFileFormats(db);
@@ -694,11 +790,15 @@ namespace ArbaMcp
                                     ["estilo"] = estiloUsado ?? "(estilo por defecto del dibujo)"
                                 };
                                 if (esArchivo) { p["formato_archivo"] = formatoUsado; if (resumen.Extension != null) p["extension"] = resumen.Extension.ComoDiccionario(); }
-                                string aviso = SuperficieTin.AvisoIntervalos(menor, mayor, estiloUsado ?? "por defecto", delEstilo.menor, delEstilo.mayor);
-                                if (aviso != null) ctx.Avisos.Add(aviso);
+                                if (eleccion != null)
+                                {
+                                    // La simulación no devuelve 'datos': la elección del estilo va en 'despues' y en 'avisos'
+                                    p["intervalos_curvas"] = SuperficieTin.ResumenIntervalos(menor, mayor, eleccion, eleccion.Usado);
+                                    if (eleccion.Motivo != null) ctx.Avisos.Add(eleccion.Motivo);
+                                }
                                 return p;
                             },
-                            Esperado = new Dictionary<string, object> { ["existe"] = true },
+                            Esperado = esperado,
                             Crear = tr =>
                             {
                                 var id = idEstilo.IsNull ? Civ.TinSurface.Create(db, nombre) : Civ.TinSurface.Create(nombre, idEstilo);
@@ -714,13 +814,16 @@ namespace ArbaMcp
                                 extension = ExtensionDe(su, out puntos);
                                 try { triangulos = ((Civ.TinSurface)su).GetTinProperties().NumberOfTriangles; }
                                 catch (Exception ex) { ctx.Avisos.Add("No se pudo leer el número de triángulos (TinSurface.GetTinProperties): " + ex.Message); }
-                                estiloUsado = Api.Leer<string>(su, estiloUsado, "StyleName") ?? estiloUsado;
-                                if (idEstilo.IsNull)
+                                // El estilo se relee de la superficie creada (Entity.StyleId), con sus intervalos y su visibilidad
+                                var releido = LeerEstiloCurvas(tr, Api.Leer<ObjectId>(su, ObjectId.Null, "StyleId"));
+                                estiloUsado = Api.Leer<string>(su, null, "StyleName") ?? releido?.Nombre ?? estiloUsado;
+                                if (releido != null) delEstilo = (releido.Menor, releido.Mayor);
+                                else if (eleccion != null) ctx.Avisos.Add("No se pudo releer el estilo de la superficie creada (Entity.StyleId): 'intervalos_curvas' usa el estilo previsto.");
+                                resumenIntervalos = SuperficieTin.ResumenIntervalos(menor, mayor, eleccion, releido ?? eleccion?.Usado);
+                                if (eleccion != null && eleccion.Eleccion == EleccionEstilo.PorDefecto)
                                 {
-                                    // Estilo por defecto: ahora sí se sabe cuál es, y se leen sus intervalos para el aviso
-                                    var idSt = Api.Leer<ObjectId>(su, ObjectId.Null, "StyleId");
-                                    delEstilo = IntervalosDelEstilo(tr, idSt);
-                                    string aviso = SuperficieTin.AvisoIntervalos(menor, mayor, estiloUsado ?? "por defecto", delEstilo.menor, delEstilo.mayor);
+                                    // Estilo por defecto: ahora sí se sabe cuál es, y el aviso se rehace con sus intervalos releídos
+                                    string aviso = SuperficieTin.AvisoIntervalos(menor, mayor, estiloUsado ?? "por defecto", delEstilo.menor, delEstilo.mayor, new List<string>(), eleccion.DescartadosSinCurvasVisibles);
                                     ctx.Avisos.RemoveAll(x => x.StartsWith("Intervalos de curvas pedidos"));
                                     if (aviso != null) ctx.Avisos.Add(aviso);
                                 }
@@ -755,17 +858,11 @@ namespace ArbaMcp
                                 puntos,
                                 triangulos = triangulos < 0 ? (object)null : triangulos,
                                 extension,
-                                intervalos_curvas = new
-                                {
-                                    pedido_menor = menor, pedido_mayor = mayor,
-                                    aplicados = false,
-                                    donde_viven = "SurfaceStyle.ContourStyle (estilo de superficie)",
-                                    estilo_menor = delEstilo.menor.HasValue ? N(delEstilo.menor.Value) : null,
-                                    estilo_mayor = delEstilo.mayor.HasValue ? N(delEstilo.mayor.Value) : null
-                                },
+                                intervalos_curvas = resumenIntervalos,
                                 archivo_resumen = resumen?.ComoDiccionario()
                             }
-                        });
+                        };
+                        return Escritura.CrearObjeto(ctx, creacion);
                     }
                     finally { try { formatos?.Dispose(); } catch { } }
                 })

@@ -10,7 +10,7 @@ Con Civil 3D cerrado, en PowerShell dentro de esta carpeta:
 powershell -ExecutionPolicy Bypass -File .\instalar.ps1
 ```
 
-Compila e instala el paquete en `%APPDATA%\Autodesk\ApplicationPlugins\ArbaMcp.bundle` (desde 1.3.0, dos DLL: `ArbaMcp.dll` y `ArbaMcp.Nucleo.dll`). Requiere Visual Studio 2026 con .NET 10 y Civil 3D 2027 en la ruta indicada en `C3DPath` del `.csproj`. Compilar desde Visual Studio también instala.
+Compila e instala el paquete en `%APPDATA%\Autodesk\ApplicationPlugins\ArbaMcp.bundle` (desde 1.3.0, dos DLL: `ArbaMcp.dll` y `ArbaMcp.Nucleo.dll`; desde 1.16.0 además `Contents\roslyn\`, el compilador de `ejecutar_codigo`, que viene de NuGet y nunca va junto a `ArbaMcp.dll`). Requiere Visual Studio 2026 con .NET 10 y Civil 3D 2027 en la ruta indicada en `C3DPath` del `.csproj`. Compilar desde Visual Studio también instala.
 
 ## Seguridad
 
@@ -58,14 +58,16 @@ Copia el PNG de tu icono a `Recursos\ARBA_BTN_MCP.png` (32×32) y recompila. Ver
 
 - `ARBA_MCP_PORT`: puerto (por defecto 8765).
 - `ARBA_MCP=0`: desactiva el servidor.
+- `ARBA_MCP_CODIGO=1` (desde 1.16.0): activa `ejecutar_codigo`, que viene **desactivada**. Es una variable de usuario de Windows y se lee al arrancar Civil 3D: `[Environment]::SetEnvironmentVariable('ARBA_MCP_CODIGO','1','User')` y reiniciar Civil 3D; para quitarla, `[Environment]::SetEnvironmentVariable('ARBA_MCP_CODIGO',$null,'User')` y reiniciar. Solo cuando el dueño lo pida.
 
 ## Herramientas
 
 - Generales: `ping`, `listar_alineamientos`, `listar_perfiles`, `listar_pvis`, `listar_pis` (1.15.0; tabla de PI de un eje: progresiva, coordenadas, deflexión y, si hay curva, radio, longitud, PC y PT), `listar_superficies`, `abrir_dibujo`, `ejecutar_comando` (último recurso; espera a que el comando termine, con tiempo límite y `undo` opcional; desde 1.10.1 conserva los espacios finales, que equivalen a Enter y cierran órdenes interactivas como `_.PLINE`), `leer_historial`, `leer_log`, `aprobar_resultado` (1.6.0; anota en el log que el usuario aprobó una llamada, no toca el dibujo), `leer_variable`, `capturar_pantalla`.
 - Lectura por API .NET: `listar_corredores`, `listar_regiones`, `listar_objetivos`, `listar_ensamblajes`, `listar_intersecciones`, `listar_lineas_muestreo`, `estado_corredor` (desde 1.14.1 cada contorno trae `es_extension_corredor`; `usar_como_exterior`, con el mismo valor, es obsoleto), `punto_a_pk`, `pk_a_punto`, `cota_superficie`, `extension_superficie` (extensión, centro y sistema de coordenadas, para georreferenciar Revit), `interseccion_ejes`.
 - Escritura por API .NET (todas con `simular`): `asignar_ensamblaje_region`, `asignar_objetivo`, `asignar_objetivos` (lote), `asignar_objetivos_superficie`, `deshacer_objetivos` (1.3.3), `dividir_region`, `establecer_rango_region`, `establecer_frecuencia`, `establecer_frecuencias` (lote), `agregar_estacion_region`, `reconstruir_corredor`, `agregar_superficie_corredor`, `agregar_codigo_superficie_corredor`, `agregar_contorno_superficie_corredor`, `agregar_linea_rotura_superficie`, `pegar_superficie`, `reconstruir_superficie`, `crear_superficie_tin` (1.7.0; superficie TIN nueva desde un grupo de puntos o un archivo de puntos), `crear_alineamiento_desde_polilinea` (1.8.0; eje nuevo desde una polilínea 2D de tangentes con una curva por PI), `crear_perfil_terreno_y_vista` (1.9.0; perfil de terreno de un eje sobre una superficie y su vista de perfil, en una sola entrada de Deshacer; desde 1.14.1, sin `punto_insercion`, la vista va a la derecha del eje y de sus vistas de perfil, no de todo el dibujo), `crear_rasante` (1.10.0; rasante o perfil de diseño FG desde una lista de PVI con curvas verticales), `crear_corredor` (1.11.0; corredor nuevo con eje, rasante y ensamblaje existentes, frecuencia, objetivos de superficie de los taludes y reconstrucción, en una sola entrada de Deshacer; devuelve `estado_corredor` y `restaurar`; desde 1.14.1 pone el corredor en la capa de corredores de la configuración del dibujo, o avisa si no la encuentra), `crear_superficies_corredor` (1.12.0; superficies Top y Datum de un corredor existente, como líneas de rotura, con corrección de voladizo y contorno de la extensión del corredor, y reconstrucción, en una sola entrada de Deshacer; devuelve los nombres y `estado_corredor`), `crear_secciones` (1.13.0; grupo de líneas de muestreo cada X m con anchos izquierdo y derecho, fuentes muestreadas y una vista de sección por línea en cuadrícula de N filas por columna, en una sola entrada de Deshacer; desde 1.14.1, sin `punto_insercion`, las vistas van a la derecha del eje y de sus vistas de perfil y de sección; desde 1.14.2, si algún nombre de línea ya existe en el dibujo, las líneas del grupo llevan delante el nombre del grupo, porque Civil 3D no deja repetirlos), `calcular_volumenes` (1.14.0; superficie de volumen TIN entre el terreno y la Datum del corredor con los factores de esponjamiento y compactación, y corte, relleno y neto, en una sola entrada de Deshacer; con la tabla por progresivas calculada leyendo las secciones de un grupo de líneas de muestreo; desde 1.14.2 encuentra la sección de la Datum, que Civil 3D nombra `<corredor> <superficie>`, y devuelve `identificacion_secciones`; desde 1.14.3 comprueba los puntos de las secciones con el ancho de la línea y las cotas de las superficies, y devuelve `puntos_secciones`), `guardar_dibujo`, `guardar_copia`.
+- Ejecución de código (1.16.0, **desactivada por defecto**, `ARBA_MCP_CODIGO=1`): `ejecutar_codigo` (compila un fragmento de C# con Roslyn y lo ejecuta en el hilo principal con el dibujo bloqueado; lista blanca revisada antes de compilar, sin red, procesos, archivos fuera de `%LOCALAPPDATA%\ArbaMcp\scripts`, reflexión, hilos ni comandos; `simular=true` por defecto, con copia de seguridad también al simular; tiempo límite cooperativo de 60 s; lo que devuelve con `return` sale en `resultado`). Va después de las herramientas específicas y de las recetas y antes de `ejecutar_comando`.
 - Exportación por comando (no hay API): `exportar_landxml`, `exportar_imx`.
-- Del **puente**, no del plugin (desde 1.5.0): `buscar_api` (busca recetas, glosario y catálogo de la API en el repositorio privado `memoria-firma`; funciona con Civil 3D cerrado; desde 1.14.1, como comando escribe en UTF-8 aunque la consola sea cp1252; ver *Herramientas del puente* en `CONTRATO.md`).
+- Del **puente**, no del plugin (desde 1.5.0): `buscar_api` (busca recetas, glosario y catálogo de la API en el repositorio privado `memoria-firma`; funciona con Civil 3D cerrado; desde 1.14.1, como comando escribe en UTF-8 aunque la consola sea cp1252; desde 1.17.0 muestra primero también las recetas de código), `guardar_receta` (1.17.0; guarda un script de `ejecutar_codigo` que funcionó como receta `.cs` + `.yaml` en `memoria-firma\recetas\`, solo con la aprobación explícita del dueño; sin ella devuelve la vista previa) y `ejecutar_receta` (1.17.0; reutiliza una receta con `ejecutar_codigo`, `simular=true` por defecto, y suma `veces_usada` solo en una ejecución real correcta); ver *Herramientas del puente* en `CONTRATO.md`.
 
 El contrato completo, con parámetros, respuestas y ejemplos `curl`, está en `CONTRATO.md`. Otros plugins pueden registrar sus propias herramientas (ver el final de ese archivo).
 
@@ -87,16 +89,19 @@ Herramientas.Corredores.Superficies.cs  Corredores: superficies Top y Datum con 
 Herramientas.Secciones.cs    Líneas de muestreo y vistas de sección: grupo, líneas cada X m, fuentes y vistas en cuadrícula (1.13.0)
 Herramientas.Volumenes.cs    Volúmenes: superficie de volumen TIN terreno-Datum con factores y tabla por progresivas por áreas medias (1.14.0)
 Herramientas.Seguridad.cs    leer_log, aprobar_resultado, guardar_dibujo, guardar_copia
+Herramientas.Codigo.cs       ejecutar_codigo (1.16.0): activación, compilación, ejecución en transacción propia, qué cambió, verificación
+Fachada.cs        La F de los scripts de ejecutar_codigo: dibujo, transacción, búsquedas por nombre, mensajes, parámetros y archivos
 Escritura.cs      Reglas de seguridad de escritura: comprobaciones, copia de disco en hilo aparte, mcp_log.jsonl, simular, antes/después; desde 1.7.0, CrearObjeto (camino común para crear objetos nuevos)
 Restauraciones.cs Pila en memoria, por dibujo, de lo que había antes de cada escritura de objetivos, también la de crear_corredor (la usa deshacer_objetivos)
 Bundle/           PackageContents.xml para la carga automática
-instalar.ps1      Compila e instala las dos DLL
+instalar.ps1      Compila e instala las dos DLL (y, desde 1.16.0, Roslyn en Contents\roslyn)
 CONTRATO.md       Contrato para escribir el puente MCP
 Recursos/         Iconos de los botones
 pruebas/          probar_servidor.py: seguridad, ejecutar_comando, "Civil 3D ocupado" y, con --dwg, lectura/escritura; --fase 13 para lo nuevo de 1.3.0
 
 ../ArbaMcp.Nucleo/     Biblioteca .NET 10 sin AutoCAD: Http y Autorizacion, Argumentos, Catalogo, Verificacion, Copias y CopiaSeguridad,
-                       RegistroEscritura, Registro401, Lotes, Pendiente y Planificador, Api (reflexión). Se prueba sin Civil 3D.
+                       RegistroEscritura, Registro401, Lotes, Pendiente y Planificador, Api (reflexión); desde 1.16.0, Codigo* (lista
+                       blanca, compilador con Roslyn, tiempo límite, ejecución aislada de ejecutar_codigo). Se prueba sin Civil 3D.
 ../ArbaMcp.Pruebas/    xUnit sobre el núcleo (dotnet test ArbaMcp.Pruebas)
 ../herramientas-dev/CompilarSinCivil/  Compila los .cs del plugin contra sustitutos de la API para cazar errores de nombres sin Civil 3D
 ```
