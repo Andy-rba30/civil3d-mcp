@@ -156,6 +156,30 @@ namespace ArbaMcp.Pruebas
         }
 
         [Fact]
+        public void TransactionManager_ConLosUsingPorDefecto_NoEsAmbiguo()
+        {
+            // 1.17.5 (H3): el alias manda sobre los using de ApplicationServices y DatabaseServices. Solo se compila: la
+            // biblioteca falsa de Autodesk es una referencia de compilación y no se carga al ejecutar.
+            var r = Scripts.CompilarBien("TransactionManager tm = null;\nDatabase db = null;\nDocument doc = null;\n"
+                + "if (db != null) tm = db.TransactionManager;\nif (doc != null) tm = doc.TransactionManager;\nreturn tm == null;");
+            Assert.True(r.Ok, r.Mensaje);
+            Assert.DoesNotContain(r.Errores, e => e.Contains("CS0104"));
+            Assert.DoesNotContain("CS0104", r.Mensaje ?? "");
+        }
+
+        [Fact]
+        public void TransactionManager_SinElAlias_DaCS0104()
+        {
+            // Contraste: lo que pasaba hasta la 1.17.4 con los dos using
+            var op = Scripts.Opciones();
+            op.Usings = OpcionesCompilacion.UsingsPorDefecto.Where(u => !u.StartsWith("TransactionManager =", StringComparison.Ordinal)).ToList();
+            Assert.Equal(OpcionesCompilacion.UsingsPorDefecto.Length - 1, op.Usings.Count);
+            var r = Scripts.Compilar("TransactionManager tm = null;\nreturn tm == null;", op);
+            Assert.False(r.Ok);
+            Assert.Contains("CS0104", r.Mensaje);
+        }
+
+        [Fact]
         public void Cargador_SinLaCarpetaDeRoslyn_DiceQueReinstale()
         {
             var cargador = new CargadorCompilador(Path.Combine(Path.GetTempPath(), "no_existe_" + Guid.NewGuid().ToString("N")), typeof(CodigoPuerta).Assembly.Location);

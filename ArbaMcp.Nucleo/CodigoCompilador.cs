@@ -20,6 +20,10 @@ namespace ArbaMcp.Nucleo
         /// <summary>
         /// Using por defecto. Los tipos de Civil 3D van con el alias Civ (Civ.Alignment, Civ.Surface): con un using de
         /// Autodesk.Civil.DatabaseServices, Entity, DBObject o Surface serían ambiguos con los de AutoCAD.
+        /// Desde 1.17.5, el alias TransactionManager: el nombre existe en ApplicationServices (accoremgd, la del
+        /// documento) y en DatabaseServices (acdbmgd, su base, la de Database.TransactionManager), y con los dos using
+        /// «TransactionManager tm = F.Db.TransactionManager;» daba CS0104 (nombre ambiguo). Un alias manda sobre los
+        /// using de espacio de nombres, y la de DatabaseServices admite también Document.TransactionManager (derivada).
         /// </summary>
         public static readonly string[] UsingsPorDefecto =
         {
@@ -33,6 +37,7 @@ namespace ArbaMcp.Nucleo
             "Autodesk.AutoCAD.Geometry",
             "Civ = Autodesk.Civil.DatabaseServices",
             "AcApp = Autodesk.AutoCAD.ApplicationServices.Application",
+            "TransactionManager = Autodesk.AutoCAD.DatabaseServices.TransactionManager",
         };
 
         public string TipoFachada = "ArbaMcp.Fachada";

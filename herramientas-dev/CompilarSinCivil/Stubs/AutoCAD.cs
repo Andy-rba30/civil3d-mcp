@@ -173,7 +173,7 @@ namespace Autodesk.AutoCAD.DatabaseServices
         public Transaction TopTransaction => null;   // 1.16.0 (ejecutar_codigo)
     }
     // 1.16.0 (ejecutar_codigo): objetos de una transacción y eventos de la base de datos durante el script
-    public class DBObjectCollection : IEnumerable { public int Count => 0; public IEnumerator GetEnumerator() => new List<DBObject>().GetEnumerator(); }
+    public class DBObjectCollection : IEnumerable, IDisposable { public int Count => 0; public IEnumerator GetEnumerator() => new List<DBObject>().GetEnumerator(); public void Dispose() { } }   // Dispose: 1.17.5
     public class ObjectEventArgs : EventArgs { public DBObject DBObject => null; }
     public delegate void ObjectEventHandler(object sender, ObjectEventArgs e);
     public class ObjectErasedEventArgs : EventArgs { public DBObject DBObject => null; public bool Erased => true; }

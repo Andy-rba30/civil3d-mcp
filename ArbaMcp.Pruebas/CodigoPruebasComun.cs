@@ -144,9 +144,13 @@ namespace Autodesk.AutoCAD.EditorInput
 }
 namespace Autodesk.AutoCAD.ApplicationServices
 {
+    // 1.17.5 (H3): como en la API real (catálogo), el nombre TransactionManager existe aquí (accoremgd) y en
+    // DatabaseServices (acdbmgd), y esta deriva de aquella. Con los dos using, sin el alias, daba CS0104.
+    public class TransactionManager : Autodesk.AutoCAD.DatabaseServices.TransactionManager { }
     public class Document
     {
         public Autodesk.AutoCAD.DatabaseServices.Database Database => null;
+        public TransactionManager TransactionManager => null;
         public Autodesk.AutoCAD.EditorInput.Editor Editor => null;
         public void SendStringToExecute(string comando, bool activate, bool wrapUpInactiveDoc, bool echoCommand) { }
     }
@@ -243,6 +247,9 @@ namespace Autodesk.Civil.DatabaseServices
         public static OpcionesCompilacion Opciones() => new OpcionesCompilacion { TipoFachada = TipoFachada };
 
         public static ResultadoCompilacion Compilar(string codigo) => CodigoCompilador.Compilar(codigo, Refs.Value, Opciones());
+
+        /// <summary>Compila con otras opciones (por ejemplo, otros using por defecto).</summary>
+        public static ResultadoCompilacion Compilar(string codigo, OpcionesCompilacion opciones) => CodigoCompilador.Compilar(codigo, Refs.Value, opciones);
 
         /// <summary>Compila y comprueba que compila; si no, la prueba falla con el mensaje para el agente.</summary>
         public static ResultadoCompilacion CompilarBien(string codigo)

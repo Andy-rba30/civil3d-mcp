@@ -34,6 +34,8 @@ namespace ArbaMcp
 
         internal readonly List<string> Mensajes = new List<string>();
         internal readonly List<string> Leidos = new List<string>();
+        /// <summary>Lo que el script añadió con F.Agregar (desde 1.17.5, fuente 'fachada' de datos.objetos.fuente_deteccion).</summary>
+        internal readonly List<ObjectId> Agregados = new List<ObjectId>();
 
         internal Fachada(Document doc, Transaction tr, JsonElement parametros, bool simulando, string carpeta)
         {
@@ -126,7 +128,10 @@ namespace ArbaMcp
             }
         }
 
-        /// <summary>Añade una entidad nueva al espacio modelo en la transacción del script y devuelve su ObjectId.</summary>
+        /// <summary>
+        /// Añade una entidad nueva al espacio modelo en la transacción del script y devuelve su ObjectId. Desde 1.17.5 el
+        /// plugin anota ese ObjectId (Agregados): es la forma segura de contarla en datos.objetos.creados.
+        /// </summary>
         public ObjectId Agregar(Entity entidad)
         {
             Revisar();
@@ -135,6 +140,7 @@ namespace ArbaMcp
             var modelo = (BlockTableRecord)_tr.GetObject(bloques[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
             var id = modelo.AppendEntity(entidad);
             _tr.AddNewlyCreatedDBObject(entidad, true);
+            Agregados.Add(id);
             return id;
         }
 
