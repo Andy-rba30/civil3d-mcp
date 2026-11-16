@@ -291,7 +291,8 @@ Los prompts que no tocan Civil 3D (solo documentación, scripts de la nube o el 
   corredor de `crear_corredor` (informe 1.14.1, paso 5). Tampoco se quitaron las superficies Top y Datum de
   `crear_superficies_corredor` (informe 1.12.0, paso 10) ni el perfil de terreno de `crear_perfil_terreno_y_vista`
   (informe 1.14.1, paso 8), pero en esos dos casos hubo un `_.ZOOM` entre la creación y el `_.UNDO 1`, que pudo ser lo
-  deshecho: hay que repetirlo sin el zoom.
+  deshecho: hay que repetirlo sin el zoom. Tampoco quitó la línea que dibujó `ejecutar_codigo` con `simular=false`
+  (informe 1.16.0, paso 5c: el conteo dio N0 + 1); está pendiente, más abajo.
 - Los nombres de las líneas de muestreo deben ser **únicos en todo el dibujo**, no solo en su eje: `SampleLine.Create`
   rechaza uno repetido con `Sample line name should not duplicate.` y no crea nada (14/11/2026, informe 1.13.0, paso 9,
   y la evaluación automática de ese día, con un eje sin grupos). Desde la 1.14.2, `crear_secciones` antepone el nombre
@@ -312,16 +313,52 @@ Los prompts que no tocan Civil 3D (solo documentación, scripts de la nube o el 
   exactamente los sin ajustar × factor (14/11/2026, informe 1.14.0, paso 6 y preguntas 1 y 2).
 - La tabla por progresivas de `calcular_volumenes` (áreas medias entre líneas de muestreo) no da lo mismo que la
   superficie de volumen: en la prueba salió un 16,6 % más de corte y un 4,1 % más de relleno (14/11/2026, informe
-  1.14.3, paso 4). Es lo observado, no un fallo: **manda la superficie de volumen**.
+  1.14.3, paso 4). Es lo observado, no un fallo: **manda la superficie de volumen**. Desde la 1.17.1 las áreas solo
+  cuentan donde existen la Datum y el terreno, y la diferencia baja a **0,31 %** en corte y **0,05 %** en relleno
+  (informe 1.17.1, paso 4: se recortaron las 43 líneas). En la evaluación con la 1.17.4, sobre otro dibujo, salió 0,21 %
+  y 0,06 % (tarea 8). Sigue mandando la superficie.
 - `listar_pis`: `AlignmentEntity.SubEntityCount`, `AlignmentEntity[int]` y `AlignmentSubEntityArc.PIPoint` funcionan y
   el PI de Civil 3D coincide con el calculado (`diferencia_pi_civil3d: 0` en las tres curvas); `Alignment.PointLocation`
   en el final exacto de cada entidad da los PC y PT correctos (14/11/2026, informe 1.15.0, pasos 2 y 4).
 - Los intervalos de las curvas de nivel de `crear_superficie_tin` viven en el **estilo** de la superficie: con el estilo
   por defecto (`Contours 5m and 25m (Background)`) no se aplican los 1 y 5 m pedidos (`aplicados: false`); la
   herramienta lo avisa y propone un estilo con esos intervalos, como `Contours 1m and 5m (Design)` (14/11/2026, flujo
-  completo, paso 4).
+  completo, paso 4). Desde la 1.17.2, con 1 y 5 m y sin `estilo`, la herramienta elige sola un estilo del dibujo con
+  esos intervalos: `Contours 1m and 5m (Background)` (`aplicados: true`), de la familia del estilo por defecto, antes
+  que el `(Design)`; con `estilo` lo respeta y solo avisa (informe 1.17.2, pasos 1, 2 y 4). Queda un aviso menor: «No se
+  pudo releer el estilo de la superficie creada (Entity.StyleId)» (pasos 2 y 4).
 - **Flujo vial completo** (14/11/2026, flujo completo, con la 1.14.1): el agente hizo las 8 escrituras de la receta,
   cada una con su simulación previa y su `aprobar_resultado`, en **117 s** frente a unos 130 min a mano (pasos 12 y 15).
   La evaluación automática del mismo día dio **10 de 10** OK con la 1.15.0, pero el agente no hizo tres comprobaciones
   manuales del banco: las curvas cada 1 y 5 m (tarea 1), el cálculo manual del volumen (tarea 8) y el informe de
-  alineamiento de Civil 3D (tarea 9).
+  alineamiento de Civil 3D (tarea 9). Con la 1.17.4 la evaluación volvió a dar **10 de 10** OK, en **284 s** sumando las
+  diez tareas; la tarea 10, el flujo completo en una sola corrida, tardó 140 s frente a 7800 s a mano (14/11/2026,
+  `informes/informe_evaluacion_20261114_2252.yaml`).
+- En acad.exe, `TRUSTED_PLATFORM_ASSEMBLIES` trae **todos** los `.dll` y `.exe` de la carpeta de AutoCAD, también los
+  nativos (`slidelib.exe`, `QtWebEngineProcess.exe`, `w3dtk_wt.dll`...), pero **no** los de las subcarpetas `C3D\`
+  (`AeccDbMgd`) y `ACA\` (`AecBaseMgd`). Pasarlos todos a Roslyn dio 282 `CS0009` «La imagen PE no contiene metadatos
+  administrados» (14/11/2026, primer intento de la validación 1.16.0, con la 1.17.2, paso 4a). En la nube no sale: el
+  TPA del proceso de pruebas solo trae ensamblados .NET.
+- El **nombre de ensamblado** de `acdbmgd.dll` es `Acdbmgd`, y el de `acmgd.dll`, `Acmgd` (catálogo de la API).
+  Compararlo con `"acdbmgd"` distinguiendo mayúsculas no encuentra la carpeta de AutoCAD: con la 1.17.3 eso dejó fuera
+  `AeccDbMgd` y salió `CS0234` «'Civil' no existe en el espacio de nombres 'Autodesk'» (14/11/2026, segundo intento de
+  la validación 1.16.0, paso 4a). Desde la 1.17.4 la carpeta sale de `typeof(Database).Assembly`.
+- **Roslyn 5.0.0** (`Microsoft.CodeAnalysis.CSharp`, en `Contents\roslyn\`) compila dentro de Civil 3D 2027 con las
+  referencias de la 1.17.4: la primera compilación tardó 2541 ms y la repetida salió de la caché en 0 ms (14/11/2026,
+  informe 1.16.0, pasos 0, 4a y 4c).
+- `ejecutar_codigo` (14/11/2026, informe 1.16.0): el **tiempo límite de 60 s** corta un script en bucle
+  (`TimeoutException` a los 60086 ms, «se detuvo en la línea 4») y Civil 3D sigue estable: `ping` responde justo después
+  y 30 s más tarde (paso 9); con un error del script, lo mismo (paso 10). La lista blanca rechaza la red, los hilos, los
+  procesos y los archivos fuera de la carpeta permitida, sin copia ni Deshacer (pasos 6 y 7). Sin `ARBA_MCP_CODIGO`,
+  `ejecutar_codigo` y `ejecutar_receta` responden «ejecutar_codigo está desactivada» sin compilar nada (informe 1.17.0,
+  paso 19).
+- **Recetas** (14/11/2026, informe 1.17.0): `guardar_receta` solo guarda con la aprobación literal del dueño y no
+  sobrescribe (pasos 4, 7 y 8). `buscar_api` devuelve la receta guardada la primera (paso 9). En una **conversación
+  nueva**, el agente la encuentra con otras palabras y la reutiliza con `ejecutar_receta`, primero simulada y luego
+  real; `veces_usada` pasa de 0 a 1 y a 2 (pasos 11 y 13). Un parámetro que la receta no tiene se rechaza sin llamar al
+  plugin (paso 14).
+- **Pendiente** en `ejecutar_codigo` (14/11/2026, informe 1.16.0): la detección de objetos creados da **0** con una
+  línea creada (`despues.objetos_creados: 0` y `datos.objetos.creados: []`, en simulación y en real, pasos 4b y 5a),
+  aunque `datos.eventos_bd` dice `vigilados`. Además, un `_.UNDO 1` tras la escritura real **no** quitó la línea (paso
+  5c, conteo N0 + 1). Los investiga la corrección 1.17.5 (`tarea/3.4-codigo-objetos-deshacer`). Hasta que se valide,
+  `objetos.creados` no es fiable y no hay que contar con Ctrl+Z para quitar lo que dibuja un script.
