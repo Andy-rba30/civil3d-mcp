@@ -31,6 +31,8 @@ namespace Autodesk.Civil.ApplicationServices
 namespace Autodesk.Civil
 {
     public enum DrawingUnitType { Feet, Meters }
+    // 1.21.0 (crear_bordes_calzada): tipo de transición de una región de ensanchamiento; sin valores (solo ToString())
+    public enum TransitionType { }
     // 1.8.0: valores de la configuración (PropertyObjectId.Value, PropertyString.Value)
     public class PropertyObjectId { public ObjectId Value { get; set; } }
     public class PropertyString { public string Value { get; set; } }
@@ -236,7 +238,45 @@ namespace Autodesk.Civil.DatabaseServices
         public static ObjectId Create(Autodesk.Civil.ApplicationServices.CivilDocument doc, PolylineOptions opciones, string nombre, ObjectId sitio, ObjectId capa, ObjectId estilo, ObjectId etiquetas) => ObjectId.Null;
         public AlignmentEntityCollection Entities => new AlignmentEntityCollection();
         public string SiteName => "";
+        // 1.21.0 (crear_bordes_calzada, listar_bordes_calzada): alineamientos desplazados (confirmados en el catálogo, por verificar)
+        public static ObjectId CreateOffsetAlignment(string alignmentName, ObjectId parentAlignmentId, double offset, ObjectId styleId) => ObjectId.Null;
+        public bool IsOffsetAlignment => false;
+        public OffsetAlignmentInfo OffsetAlignmentInfo => new OffsetAlignmentInfo();
+        public ObjectIdCollection GetChildOffsetAlignmentIds() => new ObjectIdCollection();
     }
+    // ---- 1.21.0 (crear_bordes_calzada): datos de un alineamiento desplazado, regiones de ensanchamiento y transiciones.
+    // Los enumerados van vacíos a propósito: el catálogo no trae sus valores y el plugin solo usa ToString().
+    public enum EntitySideType { }
+    public enum AlignmentRegionType { }
+    public class OffsetAlignmentInfo
+    {
+        public void AddWidening(double startStation, double endStation, double offsetDistance) { }
+        public double NominalOffset { get; set; }
+        public EntitySideType Side => default;
+        public ObjectId ParentAlignmentId => ObjectId.Null;
+        public AlignmentRegionCollection Regions => new AlignmentRegionCollection();
+    }
+    public class AlignmentRegionCollection : IEnumerable<AlignmentRegion>
+    {
+        public int Count => 0;
+        public AlignmentRegion this[int i] => new AlignmentRegion();
+        public IEnumerator<AlignmentRegion> GetEnumerator() => new List<AlignmentRegion>().GetEnumerator();
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+    public class AlignmentRegion
+    {
+        public double StartStation { get; set; } public double EndStation { get; set; } public double Length { get; set; }
+        public double Offset { get; set; } public double OffsetDist { get; set; } public double IncreasedWidth { get; set; }
+        public AlignmentRegionType RegionType { get; set; }
+        public AlignmentTransition EntryTransition => new AlignmentTransition();
+        public AlignmentTransition ExitTransition => new AlignmentTransition();
+    }
+    public class AlignmentTransition
+    {
+        public TransitionDescriptionBase TransitionDescription => new TransitionDescriptionBase();
+        public Autodesk.Civil.TransitionType TransitionType { get; set; }
+    }
+    public class TransitionDescriptionBase { public double StartStation { get; set; } public double EndStation { get; set; } public double Length { get; set; } }
     // ---- 1.8.0 (crear_alineamiento_desde_polilinea): polilínea de origen, entidades del eje y sitios
     public struct PolylineOptions { public ObjectId PlineId { get; set; } public bool AddCurvesBetweenTangents { get; set; } public bool EraseExistingEntities { get; set; } }
     public enum AlignmentEntityType { Line, Arc, Spiral }
