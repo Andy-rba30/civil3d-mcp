@@ -506,6 +506,28 @@ namespace ArbaMcp.Nucleo
         }
 
         /// <summary>
+        /// Aviso de la relectura del estilo de la superficie recién creada (1.17.6). Null si fue bien o si no se pidieron
+        /// intervalos (entonces intervalos_curvas sale con aplicados=false, como siempre, y no hace falta el estilo releído).
+        /// 'falloId': por qué no se obtuvo el id del estilo (Entity.StyleId lanzó o vino vacío); null si se obtuvo.
+        /// 'releido': el estilo leído de ese id (null si no hubo id). 'primerError': el primer fallo al leer ese estilo.
+        /// Hasta la 1.17.5 el aviso salía siempre: el id se leía por reflexión, que daba ObjectId.Null sin error
+        /// (Autodesk.Civil.DatabaseServices.Surface vuelve a declarar StyleId solo de escritura; informe 1.17.2, pasos 2 y 4).
+        /// </summary>
+        public static string AvisoRelecturaEstilo(bool hayIntervalos, string falloId, EstiloCurvas releido, double? menor, double? mayor, string primerError)
+        {
+            if (!hayIntervalos) return null;
+            if (releido == null)
+                return "No se pudo releer el estilo de la superficie creada (Entity.StyleId: " + (string.IsNullOrWhiteSpace(falloId) ? "id vacío" : falloId)
+                    + "): 'intervalos_curvas' usa el estilo previsto.";
+            bool faltaMenor = menor.HasValue && !releido.Menor.HasValue, faltaMayor = mayor.HasValue && !releido.Mayor.HasValue;
+            if (faltaMenor || faltaMayor)
+                return "Se releyó el estilo de la superficie creada ('" + (string.IsNullOrWhiteSpace(releido.Nombre) ? "sin nombre legible" : releido.Nombre)
+                    + "'), pero no sus intervalos de curvas (SurfaceStyle.ContourStyle" + (string.IsNullOrWhiteSpace(primerError) ? "" : ": " + primerError)
+                    + "): 'aplicados' no se puede confirmar; compruébalos en Civil 3D.";
+            return null;
+        }
+
+        /// <summary>
         /// Bloque intervalos_curvas de la respuesta: lo pedido, si quedó aplicado con el estilo 'usado' (el previsto en la
         /// simulación, el releído de la superficie en la escritura real) y por qué. Sin intervalos pedidos (eleccion
         /// null) da el bloque de siempre con aplicados=false.
