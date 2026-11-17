@@ -16,7 +16,7 @@ si una tarea choca con alguna, se avisa antes de hacer nada. Está escrito en es
   - `herramientas-dev/`: prompts de validación (`VALIDACION_*.md`), informes (`informes/`), la tabla de miembros de la
     API (`miembros_por_verificar_civil3d.md`), `InspectC3D` (inspección de metadatos de las DLL) y `CompilarSinCivil`
     (compila el plugin contra sustitutos para cazar errores de nombres sin Civil 3D).
-- **Versión actual**: 1.17.5 (la ronda B sobre la 1.15.1: `ejecutar_codigo`, desactivada por defecto con `ARBA_MCP_CODIGO`, de la 1.16.0; las recetas de código `guardar_receta` y `ejecutar_receta` en el puente, de la 1.17.0; la tabla por progresivas de `calcular_volumenes` solo donde existe la Datum, de la 1.17.1; `crear_superficie_tin` que elige un estilo con las curvas pedidas, de la 1.17.2; la corrección de las referencias de `ejecutar_codigo`, sin los `.exe` ni las DLL nativas de la carpeta de AutoCAD, de la 1.17.3; la carpeta de AutoCAD encontrada aunque el ensamblado se llame `Acdbmgd`, de la 1.17.4; y el recuento de lo que crea un script de `ejecutar_codigo`, con la fuente que lo vio, el diagnóstico de Deshacer y el alias `TransactionManager`, de la 1.17.5), con 55 herramientas del plugin (todas con el parámetro `pedido`; `aprobar_resultado` desde 1.6.0; `crear_superficie_tin` desde 1.7.0; `crear_alineamiento_desde_polilinea` desde 1.8.0; `crear_perfil_terreno_y_vista` desde 1.9.0; `crear_rasante` desde 1.10.0; `crear_corredor` desde 1.11.0; `crear_superficies_corredor` desde 1.12.0; `crear_secciones` desde 1.13.0; `calcular_volumenes` desde 1.14.0; `listar_pis` desde 1.15.0; `ejecutar_codigo` desde 1.16.0) más `buscar_api`, `guardar_receta` y `ejecutar_receta` (desde 1.17.0) y el script `exportar_dataset` en el puente. El plugin no se compila en la integración continua porque referencia
+- **Versión actual**: 1.19.1 (la ronda C sobre la 1.17.5: la relectura del estilo en las herramientas que crean objetos y `solo_lectura` en `ejecutar_codigo` y `ejecutar_receta`, de la 1.17.6; `verificar_norma` en el puente, que compara un eje o una rasante con la DG-2018, de la 1.18.0; `velocidad_diseno` en `crear_alineamiento_desde_polilinea`, que propone el radio mínimo de la norma en cada PI, de la 1.19.0; y, con `solo_lectura`, solo métodos de lectura en los objetos del dibujo, de la 1.19.1. Antes, la ronda B sobre la 1.15.1: `ejecutar_codigo`, desactivada por defecto con `ARBA_MCP_CODIGO`, de la 1.16.0; las recetas de código `guardar_receta` y `ejecutar_receta` en el puente, de la 1.17.0; la tabla por progresivas de `calcular_volumenes` solo donde existe la Datum, de la 1.17.1; `crear_superficie_tin` que elige un estilo con las curvas pedidas, de la 1.17.2; la corrección de las referencias de `ejecutar_codigo`, sin los `.exe` ni las DLL nativas de la carpeta de AutoCAD, de la 1.17.3; la carpeta de AutoCAD encontrada aunque el ensamblado se llame `Acdbmgd`, de la 1.17.4; y el recuento de lo que crea un script de `ejecutar_codigo`, con la fuente que lo vio, el diagnóstico de Deshacer y el alias `TransactionManager`, de la 1.17.5), con 55 herramientas del plugin (todas con el parámetro `pedido`; `aprobar_resultado` desde 1.6.0; `crear_superficie_tin` desde 1.7.0; `crear_alineamiento_desde_polilinea` desde 1.8.0; `crear_perfil_terreno_y_vista` desde 1.9.0; `crear_rasante` desde 1.10.0; `crear_corredor` desde 1.11.0; `crear_superficies_corredor` desde 1.12.0; `crear_secciones` desde 1.13.0; `calcular_volumenes` desde 1.14.0; `listar_pis` desde 1.15.0; `ejecutar_codigo` desde 1.16.0) más `buscar_api`, `guardar_receta` y `ejecutar_receta` (desde 1.17.0) y `verificar_norma` (desde 1.18.0), 59 en total, y el script `exportar_dataset` en el puente. El plugin no se compila en la integración continua porque referencia
   las DLL de una instalación local de Civil 3D 2027 (`C3DPath` del `.csproj`); lo que depende de ellas se valida en el
   programa real y se anota en `herramientas-dev/miembros_por_verificar_civil3d.md`.
 - **Objetivo del proyecto**: automatizar el **flujo vial completo** (superficie, alineamiento, perfil, corredor,
@@ -218,14 +218,17 @@ Los prompts que no tocan Civil 3D (solo documentación, scripts de la nube o el 
 - `CorridorSurface.AddPointCode` y `SubassemblyTargetInfo.SubassemblyId` no existen en 2027; `ProfilePVI.Station`
   está obsoleto (se usa `RawStation`). Los detalles y alternativas están en `miembros_por_verificar_civil3d.md`.
 - Nada de la API de AutoCAD se llama fuera del hilo principal; el servidor HTTP solo encola (`ESTABILIDAD.md`).
-- `_.UNDO 1` / Ctrl+Z **no elimina la superficie TIN** creada por API con `crear_superficie_tin`: la entrada de Deshacer
-  existe, pero la entidad `TinSurface` sigue en el dibujo (31/10/2026, informe 1.7.0, paso 10). Pendiente: comprobar si
-  pasa lo mismo con el eje y el perfil (los informes 1.8.0 y 1.9.0 omitieron ese paso, los objetos se conservaron para
-  la validación siguiente) y valorar un deshacer propio, como `deshacer_objetivos`. El informe 1.10.0 aclara una parte:
-  las rasantes creadas con `crear_rasante` **sí** se quitan con `_.UNDO 1` (13/11/2026, paso 10); el eje sigue sin
-  probarse (el `Eje 1` de esa validación se conservó). El informe 1.11.0 añade que el corredor creado con
-  `crear_corredor` **también** se quita del dibujo con un `_.UNDO 1` (13/11/2026, paso 10). Lo que se vio el 14/11/2026
-  está en el hecho «Qué quita `_.UNDO 1`», más abajo; siguen pendientes el eje y el deshacer propio.
+- **`_.UNDO 1` sin zoom quita todo lo que crea el plugin** (17/11/2026, `informe_validacion_deshacer_20261117.md`, con
+  la 1.19.1). Hasta entonces se creía que `_.UNDO 1` / Ctrl+Z no quitaba la superficie TIN (informe 1.7.0, paso 10), ni
+  las superficies Top y Datum (1.12.0), ni el perfil de terreno (1.14.1), ni la superficie de volumen (1.14.0), y el eje
+  no se había probado. Repetido **sin ningún zoom, encuadre ni regeneración** entre la creación y el `_.UNDO 1`, con la
+  entrada de arriba del menú Deshacer en `Executefunction` cada vez, **un solo `_.UNDO 1` quitó**: la TIN de
+  `crear_superficie_tin`, el eje de `crear_alineamiento_desde_polilinea`, el perfil de terreno **y su vista** de
+  `crear_perfil_terreno_y_vista`, las superficies Top y Datum de `crear_superficies_corredor` y la superficie de volumen
+  de `calcular_volumenes` (cada una desaparece de su `listar_*`). Antes ya se sabía que quita las rasantes (1.10.0), el
+  corredor (1.11.0 y 1.14.1), un contorno (1.14.1) y la línea de `ejecutar_codigo` (1.17.5). Lo que fallaba era el zoom:
+  deja su propia entrada (`Zoom`, `Intellizoom`, `Viewcubeaction`) y el `_.UNDO 1` deshacía esa. **No hace falta un
+  deshacer propio de superficies**; sí sigue haciendo falta `deshacer_objetivos` para los objetivos de corredor.
 - Hasta la 1.10.0, `ejecutar_comando` recortaba los espacios finales del texto (`Trim`), así que un comando interactivo
   que necesita un espacio doble final para cerrar la entrada (por ejemplo `_.PLINE ...`) no terminaba; el agente lo
   resolvió con un archivo `.scr` (31/10/2026, informe 1.8.0, paso 0) y en la validación 1.10.0 la polilínea se dibujó a
@@ -252,8 +255,8 @@ Los prompts que no tocan Civil 3D (solo documentación, scripts de la nube o el 
   43 vistas de sección ya existentes (14/11/2026, informe 1.14.1, pasos 6 y 7).
 - `Profile.CreateByLayout` más un `AddPVI` por PVI y una curva por PVI (`AddFreeSymmetricParabolaByPVIAndCurveLength` o
   `AddFreeCircularCurveByPVIAndLength`) en una misma transacción crean la rasante (tipo `FG`) con sus curvas y dejan
-  **una** entrada de Deshacer (13/11/2026, informe 1.10.0, pasos 5, 7 y 9). A diferencia de la TIN, `_.UNDO 1` **sí**
-  quita estos perfiles del dibujo (paso 10).
+  **una** entrada de Deshacer (13/11/2026, informe 1.10.0, pasos 5, 7 y 9). `_.UNDO 1` **sí** quita estos perfiles del
+  dibujo (paso 10).
 - Las pendientes de la API (`ProfileTangent.Grade`, `ProfilePVI.GradeIn`/`GradeOut`) vienen en **tanto por uno**
   (0,025 = 2,5 %), y `Profile.ElevationMax` da la cota del vértice de la parábola, no la del PVI (13/11/2026, informe
   1.10.0, paso 5: 109,5248 frente a 110). Los textos de los enumerados de curvas y PVI están en
@@ -286,14 +289,6 @@ Los prompts que no tocan Civil 3D (solo documentación, scripts de la nube o el 
   del corredor» (`AddCorridorExtentsBoundary`) se puede añadir **antes** de `Rebuild()` y queda `OutsideBoundary`, y la
   superficie nueva se construye sola (`IsBuild` = `true`) (14/11/2026, informe 1.12.0, paso 5 y preguntas 1, 3 y 4).
   `guardar_dibujo` guarda el dibujo sin pulsar Ctrl+S (paso 11).
-- **Qué quita `_.UNDO 1`** (14/11/2026). **No** quita la superficie de volumen de `calcular_volumenes` (informe 1.14.0,
-  paso 12). **Sí** quita un contorno añadido con `agregar_contorno_superficie_corredor` (informe 1.14.1, paso 11) y el
-  corredor de `crear_corredor` (informe 1.14.1, paso 5). Tampoco se quitaron las superficies Top y Datum de
-  `crear_superficies_corredor` (informe 1.12.0, paso 10) ni el perfil de terreno de `crear_perfil_terreno_y_vista`
-  (informe 1.14.1, paso 8), pero en esos dos casos hubo un `_.ZOOM` entre la creación y el `_.UNDO 1`, que pudo ser lo
-  deshecho: hay que repetirlo sin el zoom. La línea que dibuja `ejecutar_codigo` con `simular=false` **sí** se quita con
-  un `_.UNDO 1` si no se toca la vista; en la 1.16.0 no se quitó porque había un zoom de por medio (16/11/2026, informe
-  1.17.5, pasos 8 y 9, más abajo).
 - Los nombres de las líneas de muestreo deben ser **únicos en todo el dibujo**, no solo en su eje: `SampleLine.Create`
   rechaza uno repetido con `Sample line name should not duplicate.` y no crea nada (14/11/2026, informe 1.13.0, paso 9,
   y la evaluación automática de ese día, con un eje sin grupos). Desde la 1.14.2, `crear_secciones` antepone el nombre
@@ -326,8 +321,9 @@ Los prompts que no tocan Civil 3D (solo documentación, scripts de la nube o el 
   herramienta lo avisa y propone un estilo con esos intervalos, como `Contours 1m and 5m (Design)` (14/11/2026, flujo
   completo, paso 4). Desde la 1.17.2, con 1 y 5 m y sin `estilo`, la herramienta elige sola un estilo del dibujo con
   esos intervalos: `Contours 1m and 5m (Background)` (`aplicados: true`), de la familia del estilo por defecto, antes
-  que el `(Design)`; con `estilo` lo respeta y solo avisa (informe 1.17.2, pasos 1, 2 y 4). Queda un aviso menor: «No se
-  pudo releer el estilo de la superficie creada (Entity.StyleId)» (pasos 2 y 4).
+  que el `(Design)`; con `estilo` lo respeta y solo avisa (informe 1.17.2, pasos 1, 2 y 4). El aviso «No se pudo releer
+  el estilo de la superficie creada (Entity.StyleId)» de esa validación ya no sale desde la 1.17.6 (ver «Relectura del
+  estilo», más abajo).
 - **Flujo vial completo** (14/11/2026, flujo completo, con la 1.14.1): el agente hizo las 8 escrituras de la receta,
   cada una con su simulación previa y su `aprobar_resultado`, en **117 s** frente a unos 130 min a mano (pasos 12 y 15).
   La evaluación automática del mismo día dio **10 de 10** OK con la 1.15.0, pero el agente no hizo tres comprobaciones
@@ -366,4 +362,37 @@ Los prompts que no tocan Civil 3D (solo documentación, scripts de la nube o el 
   `_.UNDO 1` quita la línea** (paso 8). Un `_.ZOOM` deja su propia entrada `Zoom` encima, y entonces el primer
   `_.UNDO 1` deshace el zoom (paso 9): eso pasó en la 1.16.0. Cada **simulación** de `ejecutar_codigo`, también un
   simple conteo, deja su propia entrada `Executefunction` y hace copia de seguridad (las excepciones de esta
-  herramienta), así que cuenta al deshacer. El alias `TransactionManager` compila sin CS0104 (paso 10).
+  herramienta), así que cuenta al deshacer; desde la 1.17.6, con `solo_lectura=true`, no (ver «`solo_lectura` de
+  `ejecutar_codigo`», más abajo). El alias `TransactionManager` compila sin CS0104 (paso 10).
+- **Relectura del estilo** (17/11/2026, informes 1176 y 1176_b, con la 1.19.0 y la 1.19.1). Leer el estilo por reflexión
+  fallaba en la TIN porque `Surface` vuelve a declarar `StyleId` solo de escritura. Con enlace directo a
+  `Civil.Entity.StyleId`/`StyleName` (1.17.6) sale el nombre real y sin avisos: TIN `Contours 1m and 5m (Background)`
+  (paso 3) y `Contours 5m and 25m (Background)` cuando se pide (paso 4), eje `Proposed` (paso 13), perfil de terreno
+  `Perfil del terreno existente` con vista `Profile View` (paso 14) y rasante `Design Profile` (paso 15).
+- **`Curve.Extend` sobre un objeto abierto para lectura cierra Civil 3D** (17/11/2026, `informe_validacion_1176_20261117.md`,
+  paso 9, con la 1.19.0). Con `ejecutar_codigo` y `solo_lectura=true`, alargar una `Line` abierta con `F.Abrir<Entity>`
+  no dio `eNotOpenForWrite`: `acad.exe` se cerró (el puente respondió «Error de conexión» a los 19759 ms y Autodesk abrió
+  su informe de error, CER). No se puede contar con que Civil 3D frene una escritura sobre un objeto abierto para lectura.
+  Desde la 1.19.1, con `solo_lectura`, sobre los objetos del dibujo y de Civil 3D solo compilan los métodos de lectura, y
+  el mismo script se rechaza al compilar: `Línea 5, columna 3: [bloqueado: solo lectura]
+  Autodesk.AutoCAD.DatabaseServices.Curve.Extend: ...`, con Civil 3D abierto (`informe_validacion_1176_20261117_b.md`,
+  paso 9). **Sin** `solo_lectura`, un script que olvide `F.Abrir(id, true)` antes de cambiar un objeto puede cerrar Civil
+  3D igual: es un límite conocido.
+- **`solo_lectura` de `ejecutar_codigo`** (17/11/2026, informe 1176_b, con la 1.19.1). Un conteo con `solo_lectura=true`
+  sale con `copia: null`, `datos.deshacer.comando: ""` y `dbmod_antes` igual a `dbmod_despues`, sin entrada nueva en el
+  menú Deshacer ni archivo nuevo en `backups\` (paso 7). Al compilar se rechazan `F.Agregar`, `OpenMode.ForWrite`,
+  `F.Abrir(id, true)`, `LayoutManager.DeleteLayout` y el `OpenMode` escondido en genéricos y delegados (pasos 8a a 8e), y
+  `ejecutar_receta` con una receta que escribe (paso 16, `veces_usada` sin cambio). `Editor.WriteMessage` sí compila y
+  escribe en la línea de comandos (paso 9b). Después de los pasos 7, 8, 9 y 9b, **un solo** `_.UNDO 1` quitó la línea del
+  paso 6: ninguna llamada de solo lectura dejó entrada (paso 10). Sin `solo_lectura`, `Database.AddDBObject`,
+  `XBindXrefs`, `DetachXref` y `(F.Db.Clayer, _) = ...` tampoco compilan (pasos 17a a 17c).
+- **`verificar_norma` y la norma dentro del eje** (17/11/2026, informes 118 y 119, con la 1.19.1 y `dg2018.sqlite` de
+  `memoria-firma` en el commit `518fa70`). `casos_norma_reales.py` da 69 comprobaciones OK y 0 fallos en la PC. Un eje de
+  60 km/h, Tercera Clase, sin pavimentar y con peralte del 8 % con un radio de 80 m sale «No cumple» (125 m, T302.02), y
+  una curva vertical convexa de 50 m con A = 7 % sale «No cumple» (77 m, T303.02). Si falta un dato del proyecto, o la
+  velocidad es 65 (la norma no interpola), responde sin llamar a Civil 3D: el `mcp_log.jsonl` no suma ninguna línea. Sin
+  la base, responde «Falta la base de la norma ...» y la línea de comandos sale con el código 2. `verificar_norma` no deja
+  entrada en Deshacer. Con `velocidad_diseno` 60 y esos datos, `crear_alineamiento_desde_polilinea` propone **215 m** en
+  cada PI (manda la T302.11B: radio mayor que 210 m para prescindir de la curva de transición, redondeado hacia arriba a
+  5 m), crea el eje con una sola entrada de Deshacer y 0 «No cumple»; si la polilínea no deja sitio, pide el mayor radio
+  que cabe (80 m) con un aviso; un radio del usuario (150 m) manda y se avisa (informe 119, pasos 4 a 7).

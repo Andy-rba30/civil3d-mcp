@@ -7,7 +7,7 @@ prompt.
 
 ---
 
-## 0. Avance (actualizado el 16/11/2026, tras la validación de la 1.17.5: Etapa 3 hecha, salvo la 3.3, mensual)
+## 0. Avance (actualizado el 17/11/2026, tras la ronda C con la 1.19.1: Etapas 1 a 5 hechas, salvo la 3.3, mensual)
 
 Leyenda: ✅ hecho y verificado · 🟡 hecho, falta comprobar algo · ⬜ pendiente · ❓ no se puede comprobar desde
 civil3d-mcp (vive en `memoria-firma` o en la PC).
@@ -38,13 +38,13 @@ civil3d-mcp (vive en `memoria-firma` o en la PC).
 | Etapa 3 | Extras: 1.17.1 tabla por progresivas dentro de la Datum · 1.17.2 estilo con las curvas pedidas | ✅ | Informes 1171 (diferencia con la superficie de volumen: 0,31 % en corte y 0,05 % en relleno) y 1172 (elige `Contours 1m and 5m (Background)`) del 14/11/2026 (PR #43) |
 | Etapa 3 | 5.2-D y 5.2-PC con la 1.17.4 | ✅ | Evaluación del 14/11/2026 (22:52): **10 de 10 OK** en 284 s sumando las diez tareas; la tarea 10 (flujo completo) en 140 s frente a 7800 s a mano (`herramientas-dev/informes/informe_evaluacion_20261114_2252.yaml`) |
 | Etapa 3 | 3.3 Promoción de recetas (cada mes) | ⬜ mensual | Se corre cada mes, con L.2 antes; propone herramientas a partir de las recetas usadas 3 veces o más (la de prueba va por 2: informe 117, paso 16) |
-| Etapa 4 | 4.1 Tablas DG-2018 | 🟡 | Hecha en `memoria-firma` el 15/11/2026 (`normas/tablas/`: `dg2018.sqlite`, `VERIFICAR.md`; 5 casos en `normas/casos_prueba/`); falta la revisión de Jose (tablas críticas al 100 %) y decidir la Tabla 303.02 |
-| Etapa 4 | 4.2 `verificar_norma` · 4.3 Norma en el alineamiento | ⬜ | Esperan la revisión de la 4.1 |
+| Etapa 4 | 4.1 Tablas DG-2018 | ✅ | Hecha en `memoria-firma` el 15/11/2026 (`normas/tablas/`: `dg2018.sqlite`, `VERIFICAR.md`; 5 casos en `normas/casos_prueba/`) y ampliada el 17/11/2026; verificación independiente contra el PDF con 0 errores (`518fa70`); Tabla 303.02: manda la tabla, con aviso si la fórmula pide más (decisión de Jose, 17/11/2026). En la PC, `casos_norma_reales.py`: 69 OK, 0 fallos (informe 118, paso 1) |
+| Etapa 4 | 4.2 `verificar_norma` · 4.3 Norma en el alineamiento | ✅ | 1.18.0 y 1.19.0, con la corrección 1.17.6 y la 1.19.1; ronda C validada el 17/11/2026 (informes 1176, 1176_b, 118, 119 y deshacer; PR #48). Hito de la Etapa 4: verifica un eje real y cita la tabla de la norma (radio de 80 m: «No cumple», 125 m, T302.02) y propone 215/215 en el eje con `velocidad_diseno` 60. Quedan a confirmar por Jose algunos criterios propios (ver `REGISTRO_AVANCE.md`) |
 | Continuo | F · L.2 · 5.2 | ❓ | Viven en `memoria-firma` y en la PC |
 
 **Decisión del dueño (13/11/2026): solo 3 rondas de prueba en la PC** para lo que queda: **A** = Etapa 2 completa
 (1.12.0, 1.13.0, 1.14.0, 1.14.1, receta 2.8 y evaluación 5.2), **B** = Etapa 3 (3.1 y 3.2), **C** = Etapa 4 (4.2 y 4.3;
-la 4.1 no necesita la PC). Las rondas A y B están hechas (14/11/2026); queda la C. El estado al día de ramas, PR y
+la 4.1 no necesita la PC). Las tres rondas están hechas: A y B el 14/11/2026 y C el 17/11/2026. El estado al día de ramas, PR y
 sesiones está en `herramientas-dev/REGISTRO_AVANCE.md`.
 
 **Pendientes que no están en la hoja de ruta** (salieron de las validaciones; ver los hechos validados de `CLAUDE.md`).
@@ -66,18 +66,19 @@ Resueltos después:
 - `ejecutar_codigo` cuenta lo que crea un script (`despues.objetos_creados: 1` con una línea, por la fuente `fachada`),
   un solo `_.UNDO 1` quita lo que dibuja si no se toca la vista (en la 1.16.0 lo impidió un zoom) y el alias
   `TransactionManager` compila sin CS0104 (1.17.5, informe 1175 del 16/11/2026, PR #46).
+- **Ronda C** (17/11/2026, PR #48, hallazgos en la tarea 4.4): sin zoom de por medio, un `_.UNDO 1` **sí** quita la TIN, el
+  eje, el perfil de terreno y su vista, las superficies Top y Datum y la superficie de volumen (informe deshacer), así
+  que **no hace falta un deshacer propio de superficies**; `ejecutar_codigo` con `solo_lectura=true` no deja entrada en
+  Deshacer ni hace copia (1.17.6, informe 1176_b, paso 7); el aviso de `Entity.StyleId` de `crear_superficie_tin` ya no
+  sale (1.17.6, paso 3); y `Curve.Extend` sobre un objeto abierto para lectura, que cerró Civil 3D con la 1.19.0, ya no
+  compila con `solo_lectura` (1.19.1, paso 9).
 
 Siguen abiertos:
 
-- Ctrl+Z no quita la superficie TIN (informe 1.7.0), ni las superficies de corredor (informe 1.12.0), ni la superficie de
-  volumen (informe 1.14.0); en cambio, sí quita las rasantes (1.10.0), el corredor (1.11.0), un contorno (1.14.1) y la
-  línea que dibuja `ejecutar_codigo` (1.17.5). Valorar un deshacer propio, como `deshacer_objetivos`.
-- `ejecutar_codigo` (informe 1175): cada simulación, también un simple conteo, deja una entrada `Executefunction` en
-  Deshacer y hace copia de seguridad; valorar si un script que solo lee puede no dejar ninguna, como las demás lecturas.
+- `ejecutar_codigo` **sin** `solo_lectura`: un script que cambie un objeto abierto para lectura (sin `F.Abrir(id, true)`)
+  puede cerrar Civil 3D, como `Curve.Extend` en la ronda C. Valorar una protección también para ese modo.
 - `ejecutar_codigo` (revisión previa del 15/11/2026): comprobar en Civil 3D si algún miembro heredado de
   `GraphicsInterface.Drawable` sale bloqueado por la lista blanca (H4).
-- `crear_superficie_tin` (informe 1172, pasos 2 y 4): aviso «No se pudo releer el estilo de la superficie creada
-  (Entity.StyleId)».
 - La evaluación marca OK comprobaciones manuales que no hace (curvas de la tarea 1, cálculo manual de la 8, informe de
   Civil 3D de la 9): aclararlo en `tareas.yaml` o en el prompt de evaluación.
 

@@ -54,7 +54,32 @@ haya que probar. Usa Opus con esfuerzo extra alto en las sesiones hijas. Actuali
   (plantilla métrica + ensamblaje, sin nada más; anotado en `ESTADO_PC.md`). Una copia reutilizada arrastra líneas de
   muestreo y falla la tarea 7.
 
-## Estado actual (17/11/2026, ronda C lista para la PC)
+## Estado actual (17/11/2026, ronda C cerrada: hoja de ruta programada completa)
+
+**En `main`: versión 1.19.1, 59 herramientas (55 del plugin + 4 del puente), validada en Civil 3D 2027.** El dueño
+escribió «Verificación OK» y el PR #48 (`tarea/ronda-c`) se fusionó el 17/11 (commit `dba04e3`; L.1 con `main` OK en la
+PC: 609/609 xUnit, 261 pytest, `ping` 1.19.1). Ojo: la fusión la hizo el agente instalador con `gh pr merge`, y según
+la regla 11g la hace el dueño desde GitHub; no repetirlo.
+
+Cómo fue la prueba (informes en `herramientas-dev/informes/`, del 17/11/2026):
+- Primera pasada con la 1.19.0 (`informe_validacion_1176_20261117.md`): pasos 0 a 8 OK; en el **paso 9** `Curve.Extend`
+  con `solo_lectura=true` **cerró Civil 3D**. Corrección **1.19.1** en la misma rama (con `solo_lectura`, solo métodos de
+  lectura en los objetos del dibujo), aprobada por el dueño y validada en la segunda pasada.
+- Segunda pasada con la 1.19.1: parte 1 repetida entera (`..._1176_20261117_b.md`), 12 pasos decisivos OK, el paso 9
+  rechazado al compilar con Civil 3D abierto; partes 2 (`..._118_...`), 3 (`..._119_...`) y 4
+  (`..._deshacer_...`) OK. `detalle_validacion_ronda_c_20261117.md` trae las líneas literales del `mcp_log.jsonl`.
+- El primer informe corto del agente traía cifras inventadas («25/25», «64/64», «TypeScript») y un texto de error
+  reconstruido; con las líneas literales del `mcp_log.jsonl` todo cuadró. **Pedir siempre el `error` literal del log**.
+- Parte 4: sin zoom, **un `_.UNDO 1` quita** la TIN, el eje, el perfil y su vista, las superficies Top y Datum y la
+  superficie de volumen: se descarta el deshacer propio de superficies.
+
+Hallazgos pasados a la documentación en la tarea **4.4** (`tarea/4.4-hallazgos-ronda-c`): `CLAUDE.md` (versión y hechos
+validados), tabla de miembros, hoja de ruta (Etapa 4 hecha) y este registro.
+
+**Siguiente**: nada programado en la hoja de ruta. Quedan la 3.3 (cada mes), F, L.2 y 5.2 (continuo), los puntos de la
+norma que Jose debe confirmar (lista en «Estado anterior», abajo) y las «Propuestas pendientes».
+
+## Estado anterior (17/11/2026, ronda C lista para la PC)
 
 **Rama para la PC: `tarea/ronda-c`, versión 1.19.0, 59 herramientas (55 del plugin + 4 del puente).** Junta:
 - `tarea/3.6-correcciones-1176` (hija B, `session_01GF7ZdydzsaLV7WfrxKwhVU`): 1.17.6 + correcciones de la auditoría
@@ -434,7 +459,14 @@ y todavía **no están en el repositorio**: hay que pedírselos al dueño o al a
 
 ## Propuestas pendientes (no están en la hoja de ruta)
 
-- Deshacer propio para las superficies que Ctrl+Z no quita: TIN (1.7.0), superficies de corredor (1.12.0) y de volumen (1.14.0).
+- `ejecutar_codigo` **sin** `solo_lectura`: un script que cambie un objeto abierto para lectura (olvidando
+  `F.Abrir(id, true)`) puede cerrar Civil 3D, como `Curve.Extend` en la ronda C (17/11). Valorar una protección también
+  en ese modo (por ejemplo, avisar al compilar si se llama a un método que no es de lectura sobre un objeto abierto con
+  `F.Abrir` sin `escribir`). Es la propuesta más importante de esta lista.
+- Informe 118, paso 2: el agente dice que `_.-LAYER _M EJE_NORMA  ` (dos espacios) necesitó un Enter más para cerrar;
+  en las partes 1 y 4 el mismo patrón terminó bien. Comprobar en otra prueba antes de cambiar los `VALIDACION_*.md`.
+- El agente instalador fusionó el PR #48 con `gh pr merge` (17/11): anotar en `ESTADO_PC.md` de la PC que la fusión la
+  hace el dueño (regla 11g).
 - El caso "sin `frecuencia`" de VALIDACION_111: lo corta antes la validación del puente (Pydantic), no el plugin.
   Decidir si se cambia el guion.
 - Tabla por progresivas frente a la superficie de volumen: corte 16,6 %, relleno 4,1 % (informe 1143). Manda la
@@ -445,9 +477,8 @@ y todavía **no están en el repositorio**: hay que pedírselos al dueño o al a
 - `ejecutar_codigo` (revisión previa del 15/11): comprobar en Civil 3D si algún miembro heredado de
   `GraphicsInterface.Drawable` sale bloqueado por la lista blanca (H4). El alias H3 quedó resuelto y validado en la
   1.17.5 (16/11).
-- `ejecutar_codigo` (informe 1175): cada simulación, también un simple conteo, deja una entrada `Executefunction` en
-  Deshacer y hace copia de seguridad; valorar que un script que solo lee no deje ninguna. La fuente
-  `transaccion_script` trae objetos pero no marca la línea como nueva (`IsNewObject`): sin aclarar, no bloquea.
-- `crear_superficie_tin` (informe 1172): aviso «No se pudo releer el estilo de la superficie creada (Entity.StyleId)».
+- `ejecutar_codigo` (informe 1175): la fuente `transaccion_script` trae objetos pero no marca la línea como nueva
+  (`IsNewObject`): sin aclarar, no bloquea. (Lo de que un conteo dejaba entrada en Deshacer lo resolvió
+  `solo_lectura`, 1.17.6, validado el 17/11.)
 - `crear_secciones`: comprobar si los nombres de **grupo** también deben ser únicos en todo el dibujo (propuesta de la
   hija de la 1.14.2) y añadir en `datos.lineas[].secciones` el nombre de la superficie del dibujo junto a `SourceName`.
