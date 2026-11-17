@@ -39,8 +39,14 @@ CREATE TABLE reglas (id TEXT PRIMARY KEY, seccion TEXT, pagina_pdf INTEGER, pagi
     regla TEXT, cita_pdf TEXT, referencia TEXT, nota TEXT, imagen TEXT);
 CREATE TABLE relacion_radios (ref TEXT, pagina_pdf INTEGER, orden INTEGER, grupo INTEGER, lado_pdf TEXT,
     radio_entrada_m REAL, salida_max_texto TEXT, salida_max_operador TEXT, salida_max_m REAL, salida_min_m REAL);
+CREATE TABLE sobreancho_reduccion (ref TEXT, pagina_pdf INTEGER, orden INTEGER, lado_pdf TEXT, radio_m REAL,
+    factor_reduccion REAL, factor_texto_pdf TEXT);
 CREATE TABLE tangente_min_mismo_sentido (ref TEXT, pagina_pdf INTEGER, orden INTEGER, velocidad_kmh INTEGER,
     longitud_min_m REAL);
+CREATE TABLE vehiculos_diseno (ref TEXT, pagina_pdf INTEGER, orden INTEGER, tipo_vehiculo TEXT, codigo TEXT,
+    alto_total_m REAL, ancho_total_m REAL, vuelo_lateral_m REAL, ancho_ejes_m REAL, largo_total_m REAL,
+    vuelo_delantero_m REAL, separacion_ejes_texto TEXT, separacion_ejes_json TEXT, n_separaciones INTEGER,
+    vuelo_trasero_m REAL, radio_min_texto_pdf TEXT, radio_min_rueda_exterior_m REAL, l_frontal_eje_trasero_m REAL);
 CREATE TABLE velocidad_diseno (ref TEXT, pagina_pdf INTEGER, orden INTEGER, clasificacion TEXT, orografia TEXT,
     velocidad_kmh INTEGER);
 CREATE VIEW velocidad_diseno_rango AS
@@ -248,6 +254,46 @@ def crear_base(carpeta_memoria: str, sin_tablas: tuple = ()) -> str:
         ("F37", "Longitud con deflexión pequeña", "30*(10 - Delta)", "302.02", 126, 125),
     ]
     ins("formulas", [(i, n, None, e, None, s, pp, pi, None) for i, n, e, s, pp, pi in formulas])
+
+    # Sobreancho (1.21.0), con el esquema de la base 1.2 de la tarea 6.4. T202.01: el código y L
+    # (l_frontal_eje_trasero_m) son de la DG-2018 (VL 4,30, B2 10,55, B3-1 9,95, B4-1 10,95; el articulado T3S3 sin L),
+    # la fila del B2 completa; los nombres de los demás y sus otras columnas son de EJEMPLO o NULL.
+    ins("vehiculos_diseno", [
+        ("T202.01", 28, 1, "Vehículo ligero (ejemplo de nombre)", "VL", None, None, None, None, None, None, None, None, 1,
+         None, None, None, 4.30),
+        ("T202.01", 28, 2, "Ómnibus de dos ejes (B2)", "B2", 4.1, 2.6, 0.0, 2.6, 13.2, 2.3, "8.25", "[8.25]", 1, 2.65,
+         "12.80", 12.8, 10.55),
+        ("T202.01", 28, 3, "Ómnibus de tres ejes (ejemplo de nombre)", "B3-1", None, None, None, None, None, None, None,
+         None, 1, None, None, None, 9.95),
+        ("T202.01", 28, 4, "Ómnibus de cuatro ejes (ejemplo de nombre)", "B4-1", None, None, None, None, None, None, None,
+         None, 1, None, None, None, 10.95),
+        ("T202.01", 28, 5, "Semitrayler (ejemplo de nombre)", "T3S3", None, None, None, None, None, None, None, None, 3,
+         None, None, None, None),
+    ])
+    # T302.20: las filas de 400 y 450 m son de la DG-2018 (la 6.4 las marcó como posible errata); las de 25, 80 y 150 m
+    # son de EJEMPLO, solo para probar la lógica.
+    ins("sobreancho_reduccion", [
+        ("T302.20", 163, 1, None, 25.0, 0.75, "ejemplo"),
+        ("T302.20", 163, 2, None, 80.0, 0.5, "ejemplo"),
+        ("T302.20", 163, 3, None, 150.0, 0.25, "ejemplo"),
+        ("T302.20", 163, 4, None, 400.0, 0.07, "0.07"),
+        ("T302.20", 163, 5, None, 450.0, 0.08, "0.08"),
+    ])
+    for fila in (("T302.20", "tabla", None, "Factores de reducción del sobreancho para anchos de calzada en tangente de "
+                  "7.20 m", "302.09", None, "163", None, None, None, 0, None),
+                 ("T202.01", "tabla", None, "Vehículos de diseño (ejemplo de título)", "202.01", None, "28", None, None,
+                  None, 0, None)):
+        con.execute("INSERT INTO referencias VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", fila)
+    # F46 (expresión de la base 1.2) y F47; reglas de la 302.09 (texto de ejemplo, no citas de la norma)
+    con.executemany("INSERT INTO formulas VALUES (?,?,?,?,?,?,?,?,?)", [
+        ("F46", "Sobreancho", None, "n*(R - (R**2 - L**2)**0.5) + V/(10*R**0.5)", None, "302.09", None, None, None),
+        ("F47", "Sobreancho en el desarrollo", None, "Sa/L*ln", None, "302.09", None, None, None),
+    ])
+    con.executemany("INSERT INTO reglas VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [
+        (i, "302.09", None, None, None, None, None, op, None, num, None, "obligatoria", None, "ejemplo", None, None, None, None)
+        for i, op, num in (("R302.09.02-1", "=", 40), ("R302.09.03-1", "=", None), ("R302.09.03-2", "≥", 0.4),
+                           ("R302.09.03-3", "≤", 80), ("R302.09.03-4", ">", 80))
+    ])
 
     ins("metadatos", [("documento", "DG-2018 (tabla pequeña de ejemplo para pruebas)"), ("script_version", "ejemplo")])
     for tabla in sin_tablas:

@@ -261,6 +261,7 @@ namespace ArbaMcp
         // ------------------------------------------------------------------ registro
         private static void RegistrarAlineamientos()
         {
+            RegistrarBordes();   // 1.21.0: crear_bordes_calzada y listar_bordes_calzada (Herramientas.Alineamientos.Bordes.cs)
             Registrar(new Herramienta
             {
                 Nombre = HerramientaCrearAlineamiento,

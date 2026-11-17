@@ -450,6 +450,7 @@ namespace ArbaMcp
             RegistrarVolumenes();       // 1.14.0: calcular_volumenes (Herramientas.Volumenes.cs)
             RegistrarPis();             // 1.15.0: listar_pis (Herramientas.Alineamientos.Pis.cs)
             RegistrarCodigo();          // 1.16.0: ejecutar_codigo (Herramientas.Codigo.cs y Fachada.cs)
+            RegistrarPeralte();         // 1.20.0: listar_peralte y aplicar_peralte (Herramientas.Alineamientos.Peralte.cs)
         }
 
         // ------------------------------------------------------------------ herramientas genéricas adicionales
