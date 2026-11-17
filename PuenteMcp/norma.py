@@ -15,6 +15,19 @@ Reglas de la herramienta (decisiones del dueño, 17/11/2026):
 - Si dos tablas se contradicen, se aplica el valor más exigente, se informan las dos y se avisa.
 - Nunca se suponen datos del proyecto ni se interpolan velocidades: si falta algo, se pregunta.
 - Tolerancia de coma flotante 0,001: igual cumple, salvo en una desigualdad estricta.
+
+Decisiones del dueño sobre los criterios que estaban pendientes (17/11/2026, tarea 6.9, 1.21.1):
+- Curva de transición: «No cumple» si el radio no supera el de la T302.11 (la A también estricta, como la B: 302.05.07
+  dice «superior»); en Tercera Clase manda la B. Un solo aviso en la respuesta: 302.05.06 podría pedir clotoide aunque
+  el radio supere la T302.11 si el peralte pasa del 3 % (sin cifra: las figuras de peralte aún no están en la base).
+- PI sin curva fuera del cuadro de deflexión sin curva (más de 80 km/h): «No cumple»; con Δ < 59′, pide quitar el PI.
+- Deflexión menor de 0°59′ (302.02): «No cumple» si el PI tiene curva y aviso si va sin curva.
+- Tangente del mismo sentido de 500 m y de 400 m: solo aviso.
+- Pendiente máxima: −1 % por encima de 3000 msnm y después +1 % excepcional.
+- Pendiente media: todas las ventanas de 2000 m o más. Descansos: solo cortan la subida tramos de 2 % o menos que,
+  seguidos, sumen 500 m o más.
+Lo que no está en la base va abajo como cita literal con su página (CITA_*), de la DG-2018 «Revisada y Corregida a
+Enero de 2018».
 """
 import math
 import os
@@ -56,9 +69,9 @@ TABLAS_NECESARIAS = (
 # Umbrales de las reglas del texto de la norma (sección y página en la tabla `reglas` de la base). El script
 # casos_norma_reales.py los compara con `reglas.valor_num` de la base real.
 UMBRALES_REGLAS = {
-    "R302.02-2": 59,         # minutos: deflexión mínima (aviso)
+    "R302.02-2": 59,         # minutos: deflexión mínima («No cumple» con curva, aviso sin curva)
     "R302.02-7": 800,        # m: longitud de curva preferiblemente no mayor (aviso)
-    "R302.02-8": 500,        # m: tangente entre curvas del mismo sentido (aviso, pendiente del dueño)
+    "R302.02-8": 500,        # m: tangente entre curvas del mismo sentido, «superior a 500 m» (aviso)
     "R302.04.05-1": 200,     # m: tangente hasta la que se exige la relación de radios
     "R302.04.05-3": 700,     # m: radio de salida tras una recta larga en autopista
     "R302.06.02-1": 1.5,     # veces: relación de radios de una curva compuesta
@@ -85,6 +98,70 @@ RECTA_LARGA_AUTOPISTA_M = 400.0
 RADIO_CURVA_CERRADA_M = 50.0
 ALTURA_OJO_M = 1.07       # h1 de F26/F27
 ALTURA_OBJETO_M = 0.15    # h2 de F26/F27
+LONGITUD_DESCANSO_M = UMBRALES_REGLAS["R303.03.03-2"]   # m seguidos de 2 % o menos que cortan una subida
+
+
+# Citas literales de la DG-2018 (Revisada y Corregida a Enero de 2018) para lo que la base no trae, con la página
+# impresa y la del PDF (decisiones del dueño del 17/11/2026, tarea 6.9). Los números de las fórmulas de abajo salen de
+# estos textos.
+def _cita_literal(seccion: str, pagina_impresa: str, pagina_pdf: str, texto: str) -> dict:
+    return {"id": seccion, "tipo": "sección", "seccion": seccion, "pagina_impresa": pagina_impresa,
+            "pagina_pdf": pagina_pdf, "cita": texto}
+
+
+CITA_301 = _cita_literal(
+    "301", "124", "125",
+    "Así mismo, las presentes normas no serán consideradas inflexibles y podrá hacerse excepciones, diseñando "
+    "proyectos con características geométricas por debajo de las especificadas, con la condición de obtener "
+    "previamente la autorización del Ministerio de Transportes y Comunicaciones.")
+CITA_302_02_DEFLEXION = _cita_literal(
+    "302.02", "125", "126", "No se usará nunca ángulos de deflexión menores de 59' (minutos).")
+CITA_302_02_MISMO_SENTIDO = _cita_literal(
+    "302.02", "126", "127",
+    "No son deseables dos curvas sucesivas en el mismo sentido cuando entre ellas existe un tramo en tangente. Será "
+    "preferible sustituir por una curva extensa única o, por lo menos, la tangente intermedia por un arco circular, "
+    "constituyéndose entonces en curva compuesta. Si no es posible adoptar estas medidas, la tangente intermedia deberá "
+    "ser superior a 500 m. En el caso de carreteras de tercera clase la tangente podrá ser inferior o bien sustituida "
+    "por una espiral o una transición en espiral dotada de peralte.")
+CITA_302_05_06_PERALTE = _cita_literal(
+    "302.05.06", "145", "146", "Si R requiere p>3%. Se debe usar curva de transición.")
+CITA_302_05_06_ESPIRAL = _cita_literal(
+    "302.05.06", "145", "146",
+    "En el caso de carreteras de tercera clase y cuando se use curva de transición, la longitud de la espiral no será "
+    "menor que Lmín ni mayor que Lmáx, según las siguientes fórmulas: Lmín = 0.0178 V³/R; Lmáx. = (24R)^0.5 [...] "
+    "V : Velocidad específica en km/h.")
+CITA_302_05_06_MAXIMO = _cita_literal(
+    "302.05.06", "146", "147",
+    "La longitud máxima de cada curva de transición, no será superior a 1.5 veces su longitud mínima.")
+CITA_302_05_07_A = _cita_literal(
+    "302.05.07", "146", "147",
+    "La anterior tabla no significa que para radios superiores a los indicados se deba suprimir la curva de transición.")
+CITA_302_05_07_B = _cita_literal(
+    "302.05.07", "146", "147",
+    "En el caso de carreteras de Tercera Clase y cuando el radio de las curvas horizontales sea superior al señalado en "
+    "la Tabla 302.11 B, se podrá prescindir de curvas de transición.")
+CITA_303_03_03_DESCANSO = _cita_literal(
+    "303.03.03", "172", "173",
+    "En el caso de ascenso continuo y cuando la pendiente sea mayor del 5%, se proyectará, más o menos cada tres "
+    "kilómetros, un tramo de descanso de una longitud no menor de 500 m con pendiente no mayor de 2%.")
+CITA_303_03_03_MEDIA = _cita_literal(
+    "303.03.03", "172", "173",
+    "La máxima pendiente promedio en tramos de longitud mayor a 2,000 m, no debe superar el 6%.")
+PERALTE_CON_TRANSICION_PCT = 3.0   # «Si R requiere p>3%» (CITA_302_05_06_PERALTE)
+FACTOR_ESPIRAL_MINIMA = 0.0178     # Lmín = 0.0178 V³/R (CITA_302_05_06_ESPIRAL)
+FACTOR_ESPIRAL_MAXIMA_24R = 24.0   # Lmáx = (24R)^0.5 (CITA_302_05_06_ESPIRAL)
+VECES_ESPIRAL_MAXIMA = 1.5         # no superior a 1.5 veces su longitud mínima (CITA_302_05_06_MAXIMO)
+
+
+def texto_cita(c: dict) -> str:
+    """'302.05.06, p. 145; PDF 146: «Si R requiere p>3%. ...»'."""
+    return f"{c['seccion']}, p. {c['pagina_impresa']}; PDF {c['pagina_pdf']}: «{c['cita']}»"
+
+
+AVISO_TRANSICION_PERALTE = (
+    "302.05.06 podría pedir clotoide aunque el radio supere la T302.11 si el peralte pasa del 3 % ("
+    + texto_cita(CITA_302_05_06_PERALTE) + "). El peralte de diseño no se lee del dibujo y las figuras de peralte aún "
+    "no están en la base: revisa a mano el peralte de cada curva que cumple la T302.11.")
 
 # Todo lo que el código cita por id (tablas y cuadros de `referencias`, reglas de `reglas` y fórmulas de `formulas`).
 # casos_norma_reales.py comprueba que existen en la base real.
@@ -208,6 +285,22 @@ def fila(elemento, comprobacion, valor_diseno, valor_exigido, unidad, criterio, 
 def radio_minimo_formula(v_kmh: float, peralte_pct: float, f_max: float) -> float:
     """F08 / F09: R = V² / (127 (e + f)), con el peralte en tanto por uno."""
     return v_kmh ** 2 / (127.0 * (peralte_pct / 100.0 + f_max))
+
+
+def velocidad_que_admite(radio_m: float, peralte_pct: float, f_max: float) -> float:
+    """F08 despejada (302.04.02): V = √(127 R (e + f)), con el peralte en %. La velocidad que admite un radio con ese
+    peralte y esa fricción."""
+    return math.sqrt(max(0.0, 127.0 * radio_m * (peralte_pct / 100.0 + f_max)))
+
+
+def espiral_minima(v_kmh: float, radio_m: float) -> float:
+    """302.05.06 (Tercera Clase): Lmín = 0.0178 V³/R."""
+    return FACTOR_ESPIRAL_MINIMA * v_kmh ** 3 / radio_m
+
+
+def espiral_maxima_24r(radio_m: float) -> float:
+    """302.05.06 (Tercera Clase): Lmáx = (24 R)^0.5."""
+    return math.sqrt(FACTOR_ESPIRAL_MAXIMA_24R * radio_m)
 
 
 def longitud_deflexion_pequena(deflexion_grados: float) -> float:
@@ -842,35 +935,55 @@ def comprobar_pi_sin_curva(base: BaseNorma, ctx: dict, deflexion_grados: float, 
                            progresiva=None) -> dict:
     """R302.02-4 es un permiso: se puede omitir la curva si la deflexión no pasa de la del cuadro C302.02-DEFLEX. El
     cuadro solo tiene filas de 30 a 80 km/h; fuera de ese rango no hay permiso, así que un PI sin curva con deflexión
-    (por encima de la tolerancia) es «No cumple» (decisión de la orquestadora del 17/11/2026, pendiente de que el
-    dueño la confirme). Así dicen lo mismo la verificación y la propuesta de crear_alineamiento_desde_polilinea."""
+    (por encima de la tolerancia) es «No cumple» (decisión del dueño del 17/11/2026). Si además la deflexión es menor de
+    0°59′, la curva tampoco vale (302.02): la nota pide quitar el PI y realinear. Así dicen lo mismo la verificación y la
+    propuesta de crear_alineamiento_desde_polilinea."""
     r = base.deflexion_sin_curva(ctx["velocidad"])
     ref = base.referencia("C302.02-DEFLEX")
+    quitar = ""
+    if deflexion_menor_59(deflexion_grados):
+        quitar = (f" Con una deflexión menor de 0°59′ tampoco vale poner curva ({texto_cita(CITA_302_02_DEFLEXION)}): "
+                  "quita el PI y realinea el eje.")
     if not r:
         minima, maxima = base.rango_deflexion_sin_curva()
         rango = f"de {minima} a {maxima} km/h" if minima is not None else "ninguna velocidad (cuadro vacío)"
         if deflexion_grados <= TOLERANCIA:
             return fila(elemento, "Deflexión máxima sin curva", deflexion_grados, 0, "°", MAXIMO, CUMPLE, ref, progresiva,
                         nota="Vértices alineados: no hace falta curva.")
+        necesita = " el PI necesita curva circular." if not quitar else " el PI no puede ir sin curva."
         return fila(elemento, "Deflexión máxima sin curva", deflexion_grados, 0, "°", MAXIMO, NO_CUMPLE, ref, progresiva,
-                    regla=_regla(base, "R302.02-4"),
+                    regla=_regla(base, "R302.02-4"), quitar_pi=bool(quitar) or None,
                     nota=f"La norma solo permite omitir la curva con el cuadro C302.02-DEFLEX, que cubre {rango}: a "
-                         f"{ctx['velocidad']} km/h el PI necesita curva circular.")
+                         f"{ctx['velocidad']} km/h{necesita}{quitar}")
     maximo = r["deflexion_max_grados"]
     resultado = CUMPLE if cumple(deflexion_grados, maximo, MAXIMO) else NO_CUMPLE
+    nota = None
+    if resultado != CUMPLE:
+        nota = ("El PI necesita curva circular." if not quitar else "El PI no puede ir sin curva." + quitar)
     return fila(elemento, "Deflexión máxima sin curva", deflexion_grados, maximo, "°", MAXIMO, resultado, ref, progresiva,
                 valor_tabla_texto=r["deflexion_texto_pdf"], regla=_regla(base, "R302.02-4"),
-                nota=None if resultado == CUMPLE else "El PI necesita curva circular.")
+                quitar_pi=True if (quitar and resultado != CUMPLE) else None, nota=nota)
+
+
+def deflexion_menor_59(deflexion_grados) -> bool:
+    """Deflexión de verdad (más de 0,001°) y menor de 0°59′ (302.02, R302.02-2)."""
+    return (deflexion_grados is not None and deflexion_grados > TOLERANCIA
+            and deflexion_grados < DEFLEXION_MINIMA_GRADOS - TOLERANCIA)
 
 
 def comprobar_deflexion_minima(base: BaseNorma, ctx: dict, deflexion_grados: float, elemento: str = "PI",
-                               progresiva=None) -> dict | None:
-    """R302.02-2: deflexiones menores de 0°59′ (solo aviso: está pendiente del dueño si es «No cumple»)."""
+                               progresiva=None, con_curva: bool = False) -> dict | None:
+    """R302.02-2 (302.02: «No se usará nunca ángulos de deflexión menores de 59'»). Decisión del dueño (17/11/2026):
+    «No cumple» si el PI tiene curva y aviso si va sin curva."""
     if deflexion_grados is None or not deflexion_grados < DEFLEXION_MINIMA_GRADOS - TOLERANCIA:
         return None
+    if con_curva:
+        return fila(elemento, "Deflexión no menor de 0°59′", deflexion_grados, DEFLEXION_MINIMA_GRADOS, "°", MINIMO,
+                    NO_CUMPLE, base.referencia("R302.02-2"), progresiva, cita=CITA_302_02_DEFLEXION["cita"],
+                    nota="Curva con una deflexión menor de 0°59′: la norma no la admite. Quita el PI y realinea el eje.")
     return fila(elemento, "Deflexión no menor de 0°59′", deflexion_grados, DEFLEXION_MINIMA_GRADOS, "°", MINIMO, AVISO,
-                base.referencia("R302.02-2"), progresiva,
-                nota="Solo aviso: la norma no aclara si es la deflexión del PI o de la curva (pendiente del dueño).")
+                base.referencia("R302.02-2"), progresiva, cita=CITA_302_02_DEFLEXION["cita"],
+                nota="Solo aviso: PI sin curva con una deflexión menor de 0°59′; valora quitar el PI.")
 
 
 # ---------------------------------------------------------------------------------------------- E4/E5: tangentes
@@ -911,13 +1024,19 @@ def comprobar_tangente_minima(base: BaseNorma, ctx: dict, longitud: float, mismo
                           valor_tabla=tabla, valor_formula=valor_formula, formula=_formula(base, formula_id, valor_formula),
                           otra_tabla=otra, aviso=aviso))
     if mismo_sentido:
-        for ident, texto in (("R302.02-8", "Tangente entre curvas del mismo sentido mayor de 500 m"),
-                             ("R302.06.03-1", "Evitar menos de 400 m entre curvas del mismo sentido")):
-            umbral = UMBRALES_REGLAS[ident]
-            if longitud < umbral - TOLERANCIA:
-                filas.append(fila(elemento, texto, longitud, umbral, "m", MINIMO, AVISO, base.referencia(ident), progresiva,
-                                  nota="Solo aviso: pendiente del dueño si entra en «el más exigente»"
-                                       + (" (en Tercera Clase puede ser menor)." if ident == "R302.02-8" else ".")))
+        # Decisión del dueño (17/11/2026): los dos son solo aviso. 500 m: «superior a 500 m» (estricto).
+        umbral = UMBRALES_REGLAS["R302.02-8"]
+        if not cumple(longitud, umbral, MAYOR_ESTRICTO):
+            filas.append(fila(elemento, "Tangente entre curvas del mismo sentido mayor de 500 m", longitud, umbral, "m",
+                              MAYOR_ESTRICTO, AVISO, base.referencia("R302.02-8"), progresiva,
+                              cita=CITA_302_02_MISMO_SENTIDO["cita"],
+                              nota="Solo aviso: la norma pide más de 500 m salvo que sea imposible usar una curva única o "
+                                   "compuesta; en Tercera Clase puede ser menor (302.02, p. 126; PDF 127)."))
+        umbral = UMBRALES_REGLAS["R302.06.03-1"]
+        if longitud < umbral - TOLERANCIA:
+            filas.append(fila(elemento, "Evitar menos de 400 m entre curvas del mismo sentido", longitud, umbral, "m",
+                              MINIMO, AVISO, base.referencia("R302.06.03-1"), progresiva,
+                              nota="Solo aviso: recomendación de la norma."))
     return filas
 
 
@@ -989,20 +1108,29 @@ def comprobar_radio_tras_recta_larga(base: BaseNorma, ctx: dict, longitud_recta:
 
 
 # ---------------------------------------------------------------------------------------------- E7: transición
+COMPROBACION_TRANSICION = "Radio para prescindir de la curva de transición"
+
+
 def comprobar_transicion(base: BaseNorma, ctx: dict, radio: float, elemento: str = "Curva", progresiva=None) -> dict:
-    """T302.11: se prescinde de la curva de transición con radio igual o mayor que el de la tabla (en la B, de Tercera
-    Clase, «superior»: igual no basta). El plugin solo crea arcos, así que si hace falta es «No cumple»."""
+    """T302.11 (302.05.07): se prescinde de la curva de transición con un radio superior al de la tabla, en la A y en la
+    B (igual no basta; decisión del dueño del 17/11/2026). En Tercera Clase manda la B. El plugin solo crea arcos, así
+    que si hace falta transición es «No cumple». El aviso de 302.05.06 (p > 3 %) va una sola vez en la respuesta
+    (AVISO_TRANSICION_PERALTE), no en cada fila."""
     ident = "T302.11B" if ctx["tercera_clase"] else "T302.11A"
     ref = base.referencia(ident)
     r = base.radio_sin_transicion(ident, ctx["velocidad"])
-    comprobacion = "Radio para prescindir de la curva de transición"
+    comprobacion = COMPROBACION_TRANSICION
     if not r:
-        return fila(elemento, comprobacion, radio, None, "m", MINIMO, SIN_VALOR, ref, progresiva,
+        return fila(elemento, comprobacion, radio, None, "m", MAYOR_ESTRICTO, SIN_VALOR, ref, progresiva,
                     nota=f"La tabla no tiene fila para {ctx['velocidad']} km/h.")
-    criterio = MAYOR_ESTRICTO if ident == "T302.11B" else MINIMO
-    ok = cumple(radio, r["radio_m"], criterio)
-    return fila(elemento, comprobacion, radio, r["radio_m"], "m", criterio, CUMPLE if ok else NO_CUMPLE, ref, progresiva,
-                nota=None if ok else "Requiere curva de transición; el plugin solo crea arcos (pendiente de confirmar con el dueño).")
+    cita = CITA_302_05_07_B if ident == "T302.11B" else CITA_302_05_07_A
+    ok = cumple(radio, r["radio_m"], MAYOR_ESTRICTO)
+    nota = None
+    if not ok:
+        nota = (f"Requiere curva de transición: el radio no supera el de la {ident} (igual no basta) y "
+                f"{texto_cita(CITA_302_05_06_PERALTE)}. El plugin solo crea arcos.")
+    return fila(elemento, comprobacion, radio, r["radio_m"], "m", MAYOR_ESTRICTO, CUMPLE if ok else NO_CUMPLE, ref,
+                progresiva, cita=cita["cita"], nota=nota)
 
 
 # ---------------------------------------------------------------------------------------------- E8: compuestas
@@ -1022,7 +1150,7 @@ def comprobar_curva_compuesta(base: BaseNorma, ctx: dict, radio_1: float, radio_
 # ---------------------------------------------------------------------------------------------- R1/R2: pendientes
 def pendiente_maxima_exigida(base: BaseNorma, ctx: dict, altitud_msnm=None) -> dict:
     """T303.01 para el proyecto, con −1 % por encima de 3000 msnm en terreno accidentado o escarpado (3000 justos no)
-    y el máximo excepcional +1 % (en ese orden; pendiente del dueño). Devuelve {exigido, valor_tabla, rebaja_altitud,
+    y el máximo excepcional +1 % (en ese orden; decisión del dueño del 17/11/2026). Devuelve {exigido, valor_tabla, rebaja_altitud,
     excepcional, referencia}; exigido None si la celda está vacía."""
     r = base.pendiente_maxima(ctx["tipo_via"], ctx["clase"], ctx["demanda_veh_dia"], ctx["orografia_tipo"], ctx["velocidad"])
     salida = {"referencia": base.referencia("T303.01"), "exigido": None, "valor_tabla": None, "rebaja_altitud": False,
@@ -1051,8 +1179,8 @@ def comprobar_pendiente_maxima(base: BaseNorma, ctx: dict, pendiente_pct: float,
     ok = cumple(p, ex["exigido"], MAXIMO)
     notas = []
     if ex["rebaja_altitud"]:
-        notas.append(f"−1 % por estar por encima de 3000 msnm ({_regla(base, 'R303.03.02-1')}); el orden −1 % y +1 % "
-                     "excepcional está pendiente del dueño.")
+        notas.append(f"−1 % por estar por encima de 3000 msnm ({_regla(base, 'R303.03.02-1')}); primero se rebaja el 1 % "
+                     "y después se suma el +1 % excepcional.")
     if not ok and cumple(p, ex["excepcional"], MAXIMO):
         notas.append(f"Solo como excepción con justificación técnica y económica, hasta {_limpio(ex['excepcional'])} % "
                      f"({_regla(base, 'R303.03.03-1')}).")
@@ -1206,44 +1334,91 @@ def _cota_en(pvis: list, s: float) -> float:
     return float(pvis[-1]["cota"])
 
 
+def ventanas_pendiente_media(pvis: list, minima_m: float = VENTANA_PENDIENTE_MEDIA_M) -> list[tuple[float, float]]:
+    """Tramos (desde, hasta) de longitud minima_m o más donde puede estar la peor pendiente media de una rasante lineal
+    entre PVI: los pares de PVI (o extremos) separados minima_m o más y las ventanas de minima_m justos con un extremo en
+    un PVI. La media entre dos puntos es una función lineal-fraccionaria: su máximo cae en uno de esos candidatos."""
+    puntos = sorted({float(p["progresiva"]) for p in pvis})
+    if len(puntos) < 2:
+        return []
+    inicio, fin = puntos[0], puntos[-1]
+    candidatos = set()
+    for i, a in enumerate(puntos):
+        for b in puntos[i + 1:]:
+            if b - a >= minima_m - 1e-9:
+                candidatos.add((a, b))
+        for desde in (a, a - minima_m):
+            if inicio - 1e-9 <= desde and desde + minima_m <= fin + 1e-9:
+                candidatos.add((max(desde, inicio), min(desde + minima_m, fin)))
+    return sorted(candidatos)
+
+
 def comprobar_pendiente_media(base: BaseNorma, ctx: dict, pvis: list) -> dict | None:
-    """R303.03.03-4 (Tercera Clase): pendiente media no mayor del 6 % en tramos de más de 2000 m. Se mira cada
-    ventana de 2000 m de la rasante entre PVI (sin curvas verticales) y se informa la peor."""
+    """R303.03.03-4 (Tercera Clase): «La máxima pendiente promedio en tramos de longitud mayor a 2,000 m, no debe
+    superar el 6%» (303.03.03). Se mira TODO tramo de 2000 m o más de la rasante entre PVI (sin curvas verticales) y se
+    informa el peor (decisión del dueño del 17/11/2026: antes solo se miraban ventanas de 2000 m justos, y 1000 m al
+    7 % + 1000 m al 5 % + 1000 m al 7 % daba 6,00 % en todas aunque los 3000 m dan 6,33 %)."""
     if len(pvis) < 2:
         return None
     inicio, fin = float(pvis[0]["progresiva"]), float(pvis[-1]["progresiva"])
     if fin - inicio <= VENTANA_PENDIENTE_MEDIA_M + TOLERANCIA:
         return None
-    candidatos = set()
-    for p in pvis:
-        s = float(p["progresiva"])
-        for c in (s, s - VENTANA_PENDIENTE_MEDIA_M):
-            if inicio - 1e-9 <= c <= fin - VENTANA_PENDIENTE_MEDIA_M + 1e-9:
-                candidatos.add(c)
-    peor, desde = -1.0, inicio
-    for c in sorted(candidatos):
-        media = abs(_cota_en(pvis, c + VENTANA_PENDIENTE_MEDIA_M) - _cota_en(pvis, c)) / VENTANA_PENDIENTE_MEDIA_M * 100.0
-        if media > peor:
-            peor, desde = media, c
+    peor, desde, hasta = -1.0, inicio, inicio + VENTANA_PENDIENTE_MEDIA_M
+    for a, b in ventanas_pendiente_media(pvis):
+        media = abs(_cota_en(pvis, b) - _cota_en(pvis, a)) / (b - a) * 100.0
+        if media > peor + 1e-12:
+            peor, desde, hasta = media, a, b
     umbral = UMBRALES_REGLAS["R303.03.03-4"]
-    return fila("Rasante (ventana de 2000 m)", "Pendiente media en más de 2000 m", peor, umbral, "%", MAXIMO,
+    return fila("Rasante (tramos de 2000 m o más)", "Pendiente media en más de 2000 m", peor, umbral, "%", MAXIMO,
                 CUMPLE if cumple(peor, umbral, MAXIMO) else NO_CUMPLE, base.referencia("R303.03.03-4"),
-                f"{progresiva_texto(desde)} a {progresiva_texto(desde + VENTANA_PENDIENTE_MEDIA_M)}",
-                nota="La peor ventana de 2000 m, entre PVI y sin curvas verticales.")
+                f"{progresiva_texto(desde)} a {progresiva_texto(hasta)}", longitud_tramo=hasta - desde,
+                cita=CITA_303_03_03_MEDIA["cita"],
+                nota="El peor tramo de 2000 m o más, entre PVI y sin curvas verticales.")
+
+
+def _subidas_sin_descanso(tramos: list) -> list[list]:
+    """Subidas (o bajadas) continuas: tramos seguidos del mismo sentido de más del 2 %. Solo las corta un descanso:
+    tramos de 2 % o menos que, seguidos, suman 500 m o más (R303.03.03-2); un rellano más corto queda dentro de la
+    subida y cuenta en su longitud. Un tramo de más del 2 % en el otro sentido también la corta."""
+    rachas, actual, rellano, sube = [], [], [], None
+    for t in tramos:
+        if abs(t["pendiente"]) - PENDIENTE_DESCANSO_PCT <= TOLERANCIA:
+            if actual:
+                rellano.append(t)
+                if sum(x["longitud"] for x in rellano) >= LONGITUD_DESCANSO_M - TOLERANCIA:
+                    rachas.append(actual)
+                    actual, rellano, sube = [], [], None
+            continue
+        if actual and (t["pendiente"] > 0) == sube:
+            actual.extend(rellano)
+            actual.append(t)
+        else:
+            if actual:
+                rachas.append(actual)
+            actual, sube = [t], t["pendiente"] > 0
+        rellano = []
+    if actual:
+        rachas.append(actual)
+    return rachas
 
 
 def comprobar_descansos(base: BaseNorma, ctx: dict, tramos: list) -> list[dict]:
-    """R303.03.03-2 (Tercera Clase): en subidas continuas de más del 5 %, un descanso cada 3 km o así (solo aviso).
-    Una subida continua son tramos seguidos del mismo sentido de más del 2 % con al menos uno de más del 5 %."""
+    """R303.03.03-2 (Tercera Clase): en subidas continuas de más del 5 %, un descanso de 500 m o más con 2 % o menos
+    cada 3 km o así (solo aviso). Un rellano más corto no corta la subida (decisión del dueño del 17/11/2026: antes una
+    subida de 6 km al 6 % con un rellano de 100 m al 1 % no avisaba)."""
     filas = []
-    for racha in _rachas(tramos, lambda t: abs(t["pendiente"]) - PENDIENTE_DESCANSO_PCT > TOLERANCIA):
+    for racha in _subidas_sin_descanso(tramos):
         longitud = sum(t["longitud"] for t in racha)
         if longitud > LONGITUD_SIN_DESCANSO_M + TOLERANCIA and any(
                 abs(t["pendiente"]) - PENDIENTE_SUBIDA_CONTINUA_PCT > TOLERANCIA for t in racha):
             elemento, progresiva = _elemento_racha(racha)
+            cortos = [t for t in racha if abs(t["pendiente"]) - PENDIENTE_DESCANSO_PCT <= TOLERANCIA]
             filas.append(fila(elemento, "Descanso en subidas continuas de más del 5 %", longitud, LONGITUD_SIN_DESCANSO_M,
                               "m", MAXIMO, AVISO, base.referencia("R303.03.03-2"), progresiva,
-                              nota="Solo aviso: más de 3 km sin un tramo de al menos 500 m con 2 % o menos; revísalo a mano."))
+                              rellanos_cortos_m=sum(t["longitud"] for t in cortos) if cortos else None,
+                              cita=CITA_303_03_03_DESCANSO["cita"],
+                              nota="Solo aviso: más de 3 km sin un descanso de 500 m o más seguidos con 2 % o menos (los "
+                                   "rellanos más cortos no cortan la subida); revísalo a mano."))
     return filas
 
 
@@ -1382,9 +1557,9 @@ def _filas_de_curva(base: BaseNorma, ctx: dict, pi: dict, elemento: str, prog) -
     if _finito(radio):
         filas.append(comprobar_transicion(base, ctx, float(radio), elemento, prog))
     if _finito(deflexion):
-        aviso = comprobar_deflexion_minima(base, ctx, float(deflexion), elemento, prog)
-        if aviso:
-            filas.append(aviso)
+        minima = comprobar_deflexion_minima(base, ctx, float(deflexion), elemento, prog, con_curva=True)
+        if minima:
+            filas.append(minima)
     return filas
 
 
@@ -1542,6 +1717,14 @@ def verificar_rasante(base: BaseNorma, ctx: dict, pvis: list, tabla_pis: dict | 
 
 
 # ---------------------------------------------------------------------------------------------- resultado
+def aviso_transicion(filas: list) -> str | None:
+    """El aviso de 302.05.06 (p > 3 %), una sola vez en la respuesta, si alguna curva cumple la T302.11 (decisión de la
+    orquestadora del 17/11/2026: curva a curva y con cifra cuando las figuras de peralte estén en la base)."""
+    if any(f["comprobacion"] == COMPROBACION_TRANSICION and f["resultado"] == CUMPLE for f in filas):
+        return AVISO_TRANSICION_PERALTE
+    return None
+
+
 def resumir(filas: list) -> dict:
     resumen = {r: 0 for r in RESULTADOS}
     for f in filas:
@@ -1642,6 +1825,9 @@ def verificar(preparada: dict, tabla_pis: dict, pvis: list | None = None, lectur
         filas, no_comprobado = verificar_rasante(base, ctx, pvis or [], tabla_pis)
     avisos = list(ctx["avisos"])
     avisos.extend(f"listar_pis: {a}" for a in (tabla_pis.get("avisos") or []))
+    aviso = aviso_transicion(filas)
+    if aviso:
+        avisos.append(aviso)
     return {
         **cabecera,
         "verificado": True,

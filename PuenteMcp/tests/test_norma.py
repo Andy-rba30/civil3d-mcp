@@ -99,7 +99,8 @@ def test_pendiente_maxima_segunda_clase_accidentado(base, altitud, pendiente, es
     if esperado == n.NO_CUMPLE:
         assert "excepción" in f["detalle"]["nota"]
     if altitud > 3000:
-        assert "3000 msnm" in f["detalle"]["nota"] and "pendiente del dueño" in f["detalle"]["nota"]
+        assert "3000 msnm" in f["detalle"]["nota"] and "después se suma el +1 % excepcional" in f["detalle"]["nota"]
+        assert "pendiente del dueño" not in f["detalle"]["nota"]
 
 
 def test_pendiente_maxima_celda_vacia(base):
@@ -234,14 +235,26 @@ def test_pi_sin_curva_y_deflexion_minima(base):
     ctx = contexto(base, velocidad_diseno=60, **TERCERA_ONDULADO)
     assert n.comprobar_pi_sin_curva(base, ctx, 1.5)["resultado"] == n.CUMPLE
     assert n.comprobar_pi_sin_curva(base, ctx, 1.6)["resultado"] == n.NO_CUMPLE
-    assert n.comprobar_deflexion_minima(base, ctx, 0.5)["resultado"] == n.AVISO
+    sin_curva = n.comprobar_deflexion_minima(base, ctx, 0.5)
+    assert sin_curva["resultado"] == n.AVISO and "pendiente del dueño" not in sin_curva["detalle"]["nota"]
+    assert sin_curva["detalle"]["cita"] == "No se usará nunca ángulos de deflexión menores de 59' (minutos)."
+    # c) decisión del dueño (17/11/2026): con curva es «No cumple»
+    con_curva = n.comprobar_deflexion_minima(base, ctx, 0.5, con_curva=True)
+    assert con_curva["resultado"] == n.NO_CUMPLE and "Quita el PI" in con_curva["detalle"]["nota"]
     assert n.comprobar_deflexion_minima(base, ctx, 1.0) is None
+    assert n.comprobar_deflexion_minima(base, ctx, 1.0, con_curva=True) is None
     autopista = contexto(base, velocidad_diseno=100, clasificacion="Autopista de primera clase", orografia="Plano",
                          ubicacion="rural")
     # I2 (auditoría ronda C): por encima de 80 km/h no hay permiso para omitir la curva
     fuera = n.comprobar_pi_sin_curva(base, autopista, 0.5)
     assert fuera["resultado"] == n.NO_CUMPLE and fuera["valor_exigido"] == 0
     assert "solo permite omitir la curva" in fuera["detalle"]["nota"] and "de 30 a 80 km/h" in fuera["detalle"]["nota"]
+    # b) decisión del dueño (17/11/2026): con Δ < 59′ la nota pide quitar el PI, no poner curva
+    assert "quita el PI y realinea el eje" in fuera["detalle"]["nota"] and fuera["detalle"]["quitar_pi"] is True
+    assert "necesita curva circular" not in fuera["detalle"]["nota"]
+    grande = n.comprobar_pi_sin_curva(base, autopista, 1.5)
+    assert grande["resultado"] == n.NO_CUMPLE and "el PI necesita curva circular" in grande["detalle"]["nota"]
+    assert "quita el PI" not in grande["detalle"]["nota"] and "quitar_pi" not in grande["detalle"]
     assert n.comprobar_pi_sin_curva(base, autopista, 0.0)["resultado"] == n.CUMPLE, "vértices alineados"
 
 
@@ -256,6 +269,13 @@ def test_tangentes_en_s_y_del_mismo_sentido(base):
     assert o[0]["resultado"] == n.CUMPLE_AVISO
     assert [x["referencia"]["id"] for x in o[1:]] == ["R302.02-8", "R302.06.03-1"]
     assert all(x["resultado"] == n.AVISO for x in o[1:])
+    assert all("pendiente del dueño" not in x["detalle"]["nota"] for x in o[1:])
+    assert ("la norma pide más de 500 m salvo que sea imposible usar una curva única o compuesta; en Tercera Clase "
+            "puede ser menor (302.02, p. 126; PDF 127)") in o[1]["detalle"]["nota"]
+    assert "deberá ser superior a 500 m" in o[1]["detalle"]["cita"] and o[1]["criterio"] == n.MAYOR_ESTRICTO
+    justo = n.comprobar_tangente_minima(base, ctx, 500, mismo_sentido=True)
+    assert [x["referencia"]["id"] for x in justo[1:]] == ["R302.02-8"], "«superior a 500 m»: 500 justos avisa"
+    assert len(n.comprobar_tangente_minima(base, ctx, 500.5, mismo_sentido=True)) == 1
     assert n.comprobar_tangente_maxima(base, ctx, 1100)["resultado"] == n.AVISO
     assert n.comprobar_tangente_maxima(base, ctx, 900)["resultado"] == n.CUMPLE
 
@@ -282,10 +302,16 @@ def test_transicion_y_curva_compuesta(base):
     tercera = contexto(base, velocidad_diseno=60, **TERCERA_ONDULADO)
     igual = n.comprobar_transicion(base, tercera, 210)
     assert igual["resultado"] == n.NO_CUMPLE and igual["referencia"]["id"] == "T302.11B", "en la B igual no basta"
-    assert "transición" in igual["detalle"]["nota"]
+    assert "Requiere curva de transición" in igual["detalle"]["nota"] and "pendiente de confirmar" not in igual["detalle"]["nota"]
+    assert "302.05.06, p. 145; PDF 146: «Si R requiere p>3%. Se debe usar curva de transición.»" in igual["detalle"]["nota"]
+    assert "superior al señalado en la Tabla 302.11 B" in igual["detalle"]["cita"]
     assert n.comprobar_transicion(base, tercera, 211)["resultado"] == n.CUMPLE
     segunda = contexto(base, velocidad_diseno=60, clasificacion=SEGUNDA, orografia="Ondulado", ubicacion="rural")
-    assert n.comprobar_transicion(base, segunda, 250)["resultado"] == n.CUMPLE, "en la A igual basta"
+    # Decisión del dueño (17/11/2026): la A también es estricta («radios superiores», 302.05.07)
+    a_igual = n.comprobar_transicion(base, segunda, 250)
+    assert a_igual["resultado"] == n.NO_CUMPLE and a_igual["criterio"] == n.MAYOR_ESTRICTO, "en la A igual no basta"
+    assert a_igual["referencia"]["id"] == "T302.11A" and "radios superiores" in a_igual["detalle"]["cita"]
+    assert n.comprobar_transicion(base, segunda, 251)["resultado"] == n.CUMPLE
     assert n.comprobar_curva_compuesta(base, tercera, 100, 150)["resultado"] == n.CUMPLE_AVISO
     assert n.comprobar_curva_compuesta(base, tercera, 100, 151)["resultado"] == n.NO_CUMPLE
 
@@ -339,6 +365,42 @@ def test_reglas_de_tercera_clase_en_el_perfil(base):
     assert len(cerradas) == 1 and cerradas[0]["resultado"] == n.AVISO
 
 
+def test_pendiente_media_mira_todos_los_tramos_de_2000_m_o_mas(base):
+    """e) 1000 m al 7 % + 1000 m al 5 % + 1000 m al 7 %: todas las ventanas de 2000 m dan 6,00 % (cumplía), pero los
+    3000 m dan 6,33 % (decisión del dueño, 17/11/2026: todo tramo de más de 2000 m)."""
+    ctx = contexto(base, "rasante", velocidad_diseno=60, **TERCERA_ONDULADO)
+    pvis = [pvi(1, 0, 100, None, 7), pvi(2, 1000, 170, 7, 5), pvi(3, 2000, 220, 5, 7), pvi(4, 3000, 290, 7, None)]
+    exactas = [abs(n._cota_en(pvis, a + 2000) - n._cota_en(pvis, a)) / 20.0 for a in (0, 250, 500, 750, 1000)]
+    assert max(exactas) == pytest.approx(6.0), "con ventanas de 2000 m justos se escapaba"
+    media = n.comprobar_pendiente_media(base, ctx, pvis)
+    assert media["resultado"] == n.NO_CUMPLE and media["valor_diseno"] == 6.333 and media["valor_exigido"] == 6
+    assert media["progresiva"] == "0+000.000 a 3+000.000" and media["detalle"]["longitud_tramo"] == 3000
+    assert media["elemento"] == "Rasante (tramos de 2000 m o más)" and media["referencia"]["id"] == "R303.03.03-4"
+    assert "longitud mayor a 2,000 m, no debe superar el 6%" in media["detalle"]["cita"]
+    assert (0.0, 3000.0) in n.ventanas_pendiente_media(pvis) and (500.0, 2500.0) not in n.ventanas_pendiente_media(pvis)
+    suave = [pvi(1, 0, 100, None, 6), pvi(2, 1500, 190, 6, 5), pvi(3, 3000, 265, 5, None)]
+    assert n.comprobar_pendiente_media(base, ctx, suave)["resultado"] == n.CUMPLE
+
+
+def test_descansos_solo_los_cortan_500_m_seguidos_de_2_por_ciento_o_menos(base):
+    """e) Una subida de 6 km al 6 % con un rellano de 100 m al 1 % avisa (antes el rellano cortaba la racha); un
+    descanso de 500 m (en dos tramos seguidos de 2 % o menos) sí la corta."""
+    ctx = contexto(base, "rasante", velocidad_diseno=60, **TERCERA_ONDULADO)
+    rellano = [pvi(1, 0, 100, None, 6), pvi(2, 3000, 280, 6, 1), pvi(3, 3100, 281, 1, 6), pvi(4, 6100, 461, 6, None)]
+    filas = n.comprobar_descansos(base, ctx, n._tramos(rellano))
+    assert len(filas) == 1 and filas[0]["resultado"] == n.AVISO and filas[0]["valor_diseno"] == 6100
+    assert filas[0]["elemento"] == "Tramos PVI 1–PVI 4" and filas[0]["detalle"]["rellanos_cortos_m"] == 100
+    assert "un tramo de descanso de una longitud no menor de 500 m" in filas[0]["detalle"]["cita"]
+    descanso = [pvi(1, 0, 100, None, 6), pvi(2, 2900, 274, 6, 1), pvi(3, 3200, 277, 1, -2), pvi(4, 3400, 273, -2, 6),
+                pvi(5, 6300, 447, 6, None)]
+    assert n.comprobar_descansos(base, ctx, n._tramos(descanso)) == [], "300 m al 1 % + 200 m al −2 % = 500 m"
+    corto = [pvi(1, 0, 100, None, 6), pvi(2, 2900, 274, 6, 1), pvi(3, 3300, 278, 1, 6), pvi(4, 6200, 452, 6, None)]
+    filas = n.comprobar_descansos(base, ctx, n._tramos(corto))
+    assert len(filas) == 1 and filas[0]["valor_diseno"] == 6200, "400 m al 1 % no llega a descanso"
+    bajada = [pvi(1, 0, 100, None, 6), pvi(2, 2000, 220, 6, 1), pvi(3, 2100, 221, 1, -6), pvi(4, 4100, 101, -6, None)]
+    assert n.comprobar_descansos(base, ctx, n._tramos(bajada)) == [], "subida y bajada no se suman"
+
+
 def test_lomo_quebrado(base):
     """M5 (auditoría ronda C): solo dos curvas verticales seguidas del mismo sentido con tangente corta (menor que la
     L mín.o de la T302.01, 167 m a 60 km/h, por analogía con la planta)."""
@@ -375,6 +437,31 @@ def test_errores_de_la_memoria(tmp_path, monkeypatch):
     crear_base(str(tmp_path / "rota"), sin_tablas=("indice_k", "reglas"))
     with pytest.raises(n.ErrorNorma, match="no tiene las tablas: indice_k, reglas"):
         n.BaseNorma(n.localizar_base(str(tmp_path / "rota")))
+
+
+def test_aviso_de_302_05_06_una_sola_vez(base):
+    """a) Decisión de la orquestadora (17/11/2026): el aviso de 302.05.06 (p > 3 %) va una sola vez en la respuesta,
+    no en cada curva, y la fila de la transición que cumple sigue en «Cumple»."""
+    tercera = contexto(base, velocidad_diseno=60, **TERCERA_ONDULADO)
+    cumple = n.comprobar_transicion(base, tercera, 215)
+    assert cumple["resultado"] == n.CUMPLE and "aviso" not in cumple["detalle"]
+    assert n.aviso_transicion([cumple, cumple]) == n.AVISO_TRANSICION_PERALTE
+    assert n.aviso_transicion([n.comprobar_transicion(base, tercera, 200)]) is None
+    assert "302.05.06 podría pedir clotoide aunque el radio supere la T302.11 si el peralte pasa del 3 %" in \
+        n.AVISO_TRANSICION_PERALTE and "PDF 146" in n.AVISO_TRANSICION_PERALTE
+
+
+def test_citas_literales_con_pagina():
+    """Lo que no está en la base va como cita literal con sección y páginas (impresa y del PDF)."""
+    for cita in (n.CITA_301, n.CITA_302_02_DEFLEXION, n.CITA_302_02_MISMO_SENTIDO, n.CITA_302_05_06_PERALTE,
+                 n.CITA_302_05_06_ESPIRAL, n.CITA_302_05_06_MAXIMO, n.CITA_302_05_07_A, n.CITA_302_05_07_B,
+                 n.CITA_303_03_03_DESCANSO, n.CITA_303_03_03_MEDIA):
+        assert cita["cita"] and int(cita["pagina_pdf"]) == int(cita["pagina_impresa"]) + 1
+    assert (n.CITA_301["seccion"], n.CITA_301["pagina_impresa"]) == ("301", "124")
+    assert "autorización del Ministerio de Transportes y Comunicaciones" in n.CITA_301["cita"]
+    assert n.velocidad_que_admite(80, 8, 0.15) == pytest.approx(48.34, abs=0.01)
+    assert n.espiral_minima(60, 125) == pytest.approx(30.758, abs=0.001)
+    assert n.espiral_maxima_24r(125) == pytest.approx(54.772, abs=0.001)
 
 
 def test_el_codigo_solo_cita_referencias_de_la_base(base):
@@ -653,6 +740,19 @@ def test_datos_que_faltan_en_el_dibujo_son_no_verificables(base):
     assert por[("PI 3 (sin curva)", "Deflexión máxima sin curva")]["resultado"] == n.NO_VERIFICABLE
     assert por[("PI 1 y PI 2", "Relación entre radios consecutivos")]["resultado"] == n.NO_VERIFICABLE
     assert por[("Curva PI 2", "Radio mínimo")]["resultado"] == n.CUMPLE
+
+
+def test_curva_con_deflexion_menor_de_59_minutos_no_cumple(base):
+    """c) Decisión del dueño (17/11/2026): con curva, «No cumple»; sin curva, aviso."""
+    ctx = contexto(base, velocidad_diseno=40, **TERCERA_ONDULADO)
+    tabla = tabla_pis()
+    tabla["pis"][3].update(deflexion_grados=0.5, radio=4000.0, longitud_curva=34.907, progresiva_pt=634.907)
+    tabla["pis"][2]["deflexion_grados"] = 0.5
+    filas, _ = n.verificar_alineamiento(base, ctx, tabla)
+    por = {(f["elemento"], f["comprobacion"]): f for f in filas}
+    assert por[("Curva PI 4", "Deflexión no menor de 0°59′")]["resultado"] == n.NO_CUMPLE
+    assert por[("PI 3 (sin curva)", "Deflexión no menor de 0°59′")]["resultado"] == n.AVISO
+    assert por[("PI 3 (sin curva)", "Deflexión máxima sin curva")]["resultado"] == n.CUMPLE, "40 km/h: el cuadro lo permite"
 
 
 def test_recta_entre_curvas_con_un_pi_sin_curva_en_medio(base):

@@ -23,7 +23,7 @@ import recetas  # herramientas locales del puente (1.17.0): guardar_receta y eje
 import norma as norma_vial  # herramienta local del puente (1.18.0): verificar_norma (DG-2018)
 import norma_alineamiento as norma_eje  # 1.19.0: crear_alineamiento_desde_polilinea con velocidad_diseno (DG-2018)
 
-__version__ = "1.19.1"
+__version__ = "1.21.1"
 
 CARPETA = os.path.dirname(os.path.abspath(__file__))
 
@@ -455,6 +455,11 @@ async def _crear_eje_con_norma(nombre: str, parametros: list, datos: dict) -> di
             propuesta = await anyio.to_thread.run_sync(calcular)
         except norma_vial.ErrorNorma as e:
             return con_ms({"ok": False, "error": str(e), "propuesta_norma": {"simulacion_de_ensayo": {"id_log": ensayo_id}}})
+        # 1.21.1: en la escritura real, un PI bajo la norma no se crea sin la confirmación del usuario (radios_por_pi)
+        bloqueo = norma_eje.falta_confirmacion(propuesta, args.get("simular"))
+        if bloqueo:
+            bloqueo["propuesta_norma"] = norma_eje.bloque_propuesta(ctx, propuesta, None, insunits, ensayo_id)
+            return con_ms(bloqueo)
 
         final = dict(args)
         final["radio"] = norma_eje.radio_por_defecto(args.get("radio"), propuesta["radios_por_pi"])
