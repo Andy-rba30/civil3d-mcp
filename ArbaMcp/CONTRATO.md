@@ -950,16 +950,23 @@ herramienta → (módulo, manejador); la 1.19.0 no cambia.
    circulares: error sin escribir.
 4. Por curva, el **peralte de diseño `e`** con la regla de la Decisión 6 (**A CONFIRMAR por Jose**), sobre la figura
    digitalizada (`peralte_figura`: un nodo por fila, `orden` 1 = radio menor):
+   0. La figura es la de la columna `figura` de la T304.05 (`peralte_maximo.figura`; si la base no la trae, por el
+      texto de la condición) y su p máx, el de `figuras_peralte.p_max_pct` (si no, el mayor de sus nodos).
    1. R menor que el radio mínimo (T302.02/T302.04, como en `verificar_norma`): «No cumple» y no se lee la figura.
    2. R mayor o igual que el radio de la T304.04: sin peralte (bombeo normal); la curva no recibe progresivas.
    3. Radio mínimo ≤ R < radio del extremo superior de la curva de esa velocidad: el p máx de la figura, con aviso
       (`a_confirmar: true`).
    4. Si no, interpolación lineal en log10(R) entre los dos nodos consecutivos de la misma curva que lo rodean.
-      Se entrega con **1 decimal** (la mitad hacia arriba: 7,55 → 7,6; `peralte_calculado_pct` lleva el valor sin
+      Se entrega con **1 decimal** (la mitad hacia arriba: 7,55 → 7,6; en el caso 10a, 7,549 → 7,5; `peralte_calculado_pct` lleva el valor sin
       redondear), con la etiqueta **«lectura gráfica»** y su `error_pct` (el mayor de los dos nodos).
-   5. Si la curva cae en un rango de la T304.06 (velocidad y radio), el peralte es el mayor entre la lectura y el 2 %.
+   5. Si la curva cae en un rango de la T304.06 (velocidad y radio), el peralte es el mayor entre la lectura y el 2 %
+      (y `regla: 5` si el 2 % manda).
    6. R más allá del extremo inferior de la curva (sin que la T304.04 diga que no lleva peralte): «Sin valor en la
       norma», `a_confirmar: true`.
+   7. Al verificar un peralte de diseño (paso 8 de la Decisión 6, `norma_peralte.verificar_peralte_diseno`; lo usa
+      `casos_norma_reales.py`): cumple si es igual o mayor que el obtenido y no pasa del máximo de la T304.05; «Cumple
+      con aviso» si el obtenido sale del paso 6 o el diseño queda por debajo del bombeo. Si el obtenido pasara del
+      máximo de la T304.05, error sin escribir.
    Siempre un aviso de que el valor sale **de una figura digitalizada** (o leída a mano, o de una tabla tipo AASHTO,
    según la columna `metodo`), no de una tabla de la DG-2018, y otro si queda por debajo del bombeo.
 

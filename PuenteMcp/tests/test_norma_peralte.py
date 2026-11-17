@@ -306,7 +306,7 @@ def test_t30406_minimo_del_2_y_aviso_por_debajo_del_bombeo(base_figura):
     # entre (800; 2,0) y (1600; 1,5): R 1200 → 2 − 0,5·log(1,5)/log(2) = 1,71 → 1,7; con la T304.06, 2,0
     r = npe.peralte_de_figura(base_figura, "F302.03", 60, 1200, rmin(base_figura), t30404={"radio_m": 3000},
                               t30406={"aplica": True}, bombeo_pct=2.5)
-    assert r["peralte_pct"] == 2.0
+    assert r["peralte_pct"] == 2.0 and r["regla"] == 5
     assert any("menor que el peralte mínimo de la T304.06 (2 %)" in a for a in r["avisos"])
     assert any("queda por debajo del bombeo (2.5 %)" in a for a in r["avisos"])
     assert r["pendientes"] == []
@@ -652,3 +652,81 @@ def test_casos_de_control_de_la_figura_con_la_base_de_ejemplo(base_figura):
     assert "[OK   ] F302.03 · 60 km/h · R = 150 m: esperado 7.61, obtenido 7.613 (tolerancia 0.2)" in texto
     assert "[FALLO] F302.03 · 70 km/h · R = 150 m" in texto and "no se interpola entre velocidades" in texto
     assert len(casos_norma_reales.CASOS_PERALTE_FIGURA) == 6
+
+
+# ---------------------------------------------------------------------------------------------- base 6e8eb54 (6.10)
+def test_la_figura_sale_de_la_columna_figura_de_la_t30405(base_figura, tmp_path):
+    ruta = agregar_tablas_6_4(agregar_figuras(crear_base(str(tmp_path / "m2"))))
+    con = sqlite3.connect(ruta)
+    con.execute("UPDATE peralte_maximo SET figura = '302.04' WHERE condicion LIKE 'Zona rural (T. Plano%'")
+    con.commit()
+    con.close()
+    with n.BaseNorma(ruta) as base:
+        assert npe.figura_de_condicion("Zona rural (T. Plano, Ondulado o Accidentado)", base) == "F302.04"
+        assert npe.preparar_peralte(base, ctx_de(base), PERALTE_PROYECTO)[0]["figura"] == "F302.04"
+    # sin la columna rellena, por el texto de la condición
+    assert npe.figura_de_condicion("Zona rural (T. Plano, Ondulado o Accidentado)", base_figura) == "F302.03"
+
+
+def test_p_maximo_de_figuras_peralte(base_figura, tmp_path):
+    assert npe.peralte_maximo_de_figura(base_figura, "F302.03") == 8.0   # sin figuras_peralte: el mayor de los nodos
+    ruta = agregar_tablas_6_4(agregar_figuras(crear_base(str(tmp_path / "m3"))))
+    con = sqlite3.connect(ruta)
+    con.execute("CREATE TABLE figuras_peralte (ref TEXT, p_max_pct REAL)")
+    con.execute("INSERT INTO figuras_peralte VALUES ('F302.03', 7.5)")   # «ejemplo»
+    con.commit()
+    con.close()
+    with n.BaseNorma(ruta) as base:
+        assert npe.peralte_maximo_de_figura(base, "F302.03") == 7.5
+
+
+@pytest.mark.parametrize("diseno, esperado", [(7.6, n.CUMPLE), (7.5, n.NO_CUMPLE), (8.0, n.CUMPLE), (8.5, n.NO_CUMPLE)])
+def test_paso_8_verificar_un_diseno(base_figura, diseno, esperado):
+    lectura = npe.peralte_de_figura(base_figura, "F302.03", 60, 150, rmin(base_figura))   # 7,6 con los nodos de ejemplo
+    assert npe.verificar_peralte_diseno(diseno, lectura, 8.0)["resultado"] == esperado
+
+
+def test_paso_8_con_aviso_en_el_paso_6_o_bajo_el_bombeo(base_figura):
+    p_max = npe.peralte_de_figura(base_figura, "F302.03", 30, 15, rmin(base_figura, 10))
+    assert npe.verificar_peralte_diseno(8.0, p_max, 8.0)["resultado"] == n.CUMPLE_AVISO
+    bajo = npe.peralte_de_figura(base_figura, "F302.03", 60, 1200, rmin(base_figura), t30404={"radio_m": 3000},
+                                 t30406={"aplica": False}, bombeo_pct=2.0)
+    assert npe.verificar_peralte_diseno(1.7, bajo, 8.0, 2.0)["resultado"] == n.CUMPLE_AVISO
+    assert npe.verificar_peralte_diseno(2.0, bajo, 8.0, 2.0)["resultado"] == n.CUMPLE
+    corto = npe.peralte_de_figura(base_figura, "F302.03", 60, 100, rmin(base_figura))
+    assert npe.verificar_peralte_diseno(8.0, corto, 8.0)["resultado"] == n.NO_CUMPLE
+
+
+YAML_PERALTE = """
+version: ejemplo
+casos:
+  - id: 10
+    clave: peralte_figura_lectura
+    entrada: {clasificacion: "Carretera de tercera clase", orografia: 2, zona: rural, pavimentada: false,
+              velocidad_kmh: 60, peralte_maximo_pct: 8.0}
+    filas:
+      - fila: "10a"
+        radio_m: 150
+        paso_decision_6: 7
+        lectura: {figura: "302.03", valor_pct: 7.613}
+        exigido: {valor: 7.6, unidad: "%"}
+        ejemplos:
+          - {valor_diseno: 7.6, resultado: Cumple}
+          - {valor_diseno: 7.4, resultado: No cumple}
+          - {valor_diseno: 8.5, resultado: No cumple}
+"""
+
+
+def test_casos_10_a_12_corren_en_el_script_de_casos_reales(memoria):
+    carpeta = memoria / "normas" / "casos_prueba"
+    carpeta.mkdir(parents=True)
+    (carpeta / "casos_dg2018.yaml").write_text(YAML_PERALTE, encoding="utf-8")   # «ejemplo»: con NODOS_EJEMPLO
+    salida = io.StringIO()
+    codigo = casos_norma_reales.main(["--memoria", str(memoria)], salida)
+    texto = salida.getvalue()
+    assert "Caso 10 (peralte_figura_lectura): peralte figura" in texto
+    assert "[OK   ] fila 10a · paso de la decisión 6: esperado 7, obtenido 7" in texto
+    assert "[OK   ] fila 10a · peralte obtenido: esperado 7.6, obtenido 7.6" in texto
+    assert "[OK   ] fila 10a · p = 7.4 %: esperado No cumple, obtenido No cumple" in texto
+    # los valores de control reales no coinciden con los nodos de ejemplo: esos sí fallan, las filas del caso no
+    assert codigo == 1 and "[FALLO] fila 10a" not in texto and "Peralte según el radio" in texto

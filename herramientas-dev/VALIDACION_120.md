@@ -261,17 +261,19 @@ Reglas:
        - `ok: false` con «Falta la correspondencia entre la DG-2018 y los nombres de Civil 3D para ...» y
          `propuesta_norma`. Pega `propuesta_norma.curvas` y `propuesta_norma.avisos` completos. En las dos curvas:
          - `peralte`: `figura: "F302.03"`, `velocidad_kmh: 60`, `radio_m: 150`, `regla: 7`,
-           `resultado: "Lectura gráfica"`, **`peralte_calculado_pct` ≈ 7,55** (±0,2; valor de control de la tarea
-           6.10), **`peralte_pct: 7.6`**, `etiqueta: "lectura gráfica"`, un `error_pct`, los dos `nodos` usados, el
-           aviso «El peralte sale de la figura digitalizada ... no es una tabla de la norma» y `pendientes: []`.
+           `resultado: "Lectura gráfica"`, **`peralte_calculado_pct: 7.549`** (caso 10a de memoria-firma), **`peralte_pct:
+           7.5`**, `etiqueta: "lectura gráfica"`, `error_pct: 0.029`, los dos `nodos` usados (127,95 m con 7,995 % y
+           974,2 m con 2,305 %), el aviso «El peralte sale de la figura digitalizada (vectorial): F302.03 ... no es una
+           tabla de la norma» y `pendientes: []`.
          - Transición (Tercera Clase, R302.08-2): `bombeo_pct: 3`, **`longitud_bombeo_m: 12`** (fila de bombeo de la
            T302.13 a 60 km/h; F20 daría 7,5), **`longitud_peralte_m: 48`** (fila de 8 % de la T302.13, la siguiente a
-           7,6 %, con aviso; F20 daría 19), `proporcion_tangente: 0.7` (con el aviso de que la T304.07 da 0,8p para
-           7,6 %) y `a_confirmar` con `P2` y `P3`.
+           7,5 %, con aviso; F20 daría 18,75), `proporcion_tangente: 0.7` (con el aviso de que la T304.07 da 0,8p para
+           7,5 %), `longitud_peralte_completo_m` ≈ 206,82 y `a_confirmar` con `P2` y `P3`.
          - Las 8 `estaciones`, con PC la `progresiva_pc` de la curva: fin del bombeo normal en PC − 45,6, bombeo
            nivelado en PC − 33,6, bombeo invertido en PC − 21,6 e inicio del peralte total en PC + 14,4; a la salida,
-           simétricas respecto al PT. En la curva del PI 1 (gira a la izquierda), el carril derecho sube a +7,6 y el
-           izquierdo baja a −7,6.
+           simétricas respecto al PT. Con PC 350 en el PI 1: 304,4 / 316,4 / 328,4 / 364,4 y, a la salida, 571,219 /
+           607,219 / 619,219 / 631,219. En la curva del PI 1 (gira a la izquierda), el carril derecho sube a +7,5 y el
+           izquierdo baja a −7,5; en la del PI 2, al revés.
          En `mcp_log.jsonl`, **N10 + 2** líneas: `leer_variable` y `listar_pis`, ninguna de `aplicar_peralte`. La
          correspondencia se rellena con tu tabla del paso 3.
     e. **Valores de control de la figura** (no decisivo; solo si 10d dio `propuesta_norma`). Repite la segunda llamada
@@ -280,25 +282,27 @@ Reglas:
 
        | Cambios sobre 10d | Figura esperada | `peralte_calculado_pct` esperado (±0,2) |
        |---|---|---|
-       | `"velocidad_diseno":50` | F302.03 | 6,55 |
-       | `"velocidad_diseno":40` | F302.03 | 5,49 |
-       | `"orografia":"Accidentado","velocidad_diseno":30` (con `peralte_maximo` 8) | F302.03 | 3,91 |
-       | `"orografia":"Accidentado","peralte_maximo":12` (60 km/h) | F302.04 | 10,35 |
+       | `"velocidad_diseno":50` | F302.03 | 6,549 (entregado 6,5) |
+       | `"velocidad_diseno":40` | F302.03 | 5,488 (entregado 5,5) |
+       | `"orografia":"Accidentado","velocidad_diseno":30` (con `peralte_maximo` 8) | F302.03 | 3,909 (entregado 3,9) |
+       | `"orografia":"Accidentado","peralte_maximo":12,"velocidad_diseno":50` | F302.04 | 8,553 (entregado 8,6) |
 
        Si alguna velocidad no es válida para esa orografía, anota el `faltan` literal. Ninguna fila escribe nada.
     f. **Casos de control contra la base real** (no decisivo; PowerShell, sin Civil 3D), en `PuenteMcp`:
-       `uv run --frozen python casos_norma_reales.py`. Al final sale la sección «Peralte según el radio (lectura de las
-       Figuras 302.02 a 302.05, Decisión 6), sin el radio mínimo:» con **6** líneas `[OK   ]` (F302.03 a 60, 30, 40 y
-       50 km/h con R 150; F302.04 a 60 km/h con R 150 y a 40 km/h con R 60; tolerancia 0,2 %), o «la base no tiene
-       peralte_figura (tarea 6.10); se omiten 6 casos de control.». Pega la sección y la línea «Resultado:».
+       `uv run --frozen python casos_norma_reales.py`. Con `memoria-firma` en 6e8eb54 o después: los casos 10, 11 y 12
+       salen como «peralte figura», con todas sus líneas `[OK   ]` (figura, paso de la decisión 6, lectura, peralte
+       obtenido y los ejemplos del paso 8: 7,5 % en el 10a, 11,0 % en el 11a, 8,0 % con aviso en el 12a, 1,8 % con
+       aviso de bombeo en el 12b y 2,0 % por la T304.06 en el 12c); al final, la sección «Peralte según el radio» con
+       **6** líneas `[OK   ]`; y la línea «Resultado: ... 0 fallos». Con la base 6e8eb54, en la nube salió «109
+       comprobaciones OK, 0 fallos». Pega los casos 10 a 12, la sección y la línea «Resultado:».
 
 11. **Comparación con el XML de criterios del dueño (solo referencia, no decisivo).** `crear_alineamiento_desde_polilinea`
     con `args={"nombre":"Eje XML 120","capa":"EJE_NORMA_A","radio":150,"pedido":"crea una copia del eje para comparar con el XML"}`.
     En Civil 3D, sobre `Eje XML 120` (nunca sobre `Eje Norma 120`): en las propiedades del alineamiento, ficha de
     criterios de diseño, activa el archivo de criterios del dueño con **60 km/h** y la tabla de peralte de **e máx.
     8 %**; luego el comando de calcular el peralte del eje con esos criterios y abre el editor tabular. Anota el peralte
-    total de las dos curvas (radio 150) y compáralo con el `peralte_pct` del paso 10d (7,6 %) y con el
-    `peralte_calculado_pct` (7,55 %). Es solo una referencia: **manda la figura de la DG-2018**, no el XML (que tiene
+    total de las dos curvas (radio 150) y compáralo con el `peralte_pct` del paso 10d (7,5 %) y con el
+    `peralte_calculado_pct` (7,549 %). Es solo una referencia: **manda la figura de la DG-2018**, no el XML (que tiene
     errores conocidos). No pegues el archivo ni su ruta.
 
 12. **Deshacer y copias.** Abre el menú Deshacer: las entradas nuevas de `aplicar_peralte` son solo las de las

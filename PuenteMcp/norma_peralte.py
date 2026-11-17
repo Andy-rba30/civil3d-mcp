@@ -177,8 +177,16 @@ def tiene_tabla(base: n.BaseNorma, tabla: str) -> bool:
     return base.fila("SELECT name FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?", tabla) is not None
 
 
-def figura_de_condicion(condicion: str | None) -> str | None:
-    """Figura de peralte de una condición de la T304.05 (por su texto: urbana, hielo, accidentado o escarpado, rural)."""
+def figura_de_condicion(condicion: str | None, base: n.BaseNorma | None = None) -> str | None:
+    """Figura de peralte de una condición de la T304.05: la columna peralte_maximo.figura de la base ('302.03' →
+    'F302.03', paso 1 de la Decisión 6) y, si la base no la trae, por el texto (urbana, hielo, escarpado, rural)."""
+    if base is not None and condicion:
+        columnas = {r["name"] for r in base.filas("PRAGMA table_info(peralte_maximo)")}
+        if "figura" in columnas:
+            r = base.fila("SELECT figura FROM peralte_maximo WHERE condicion = ? ORDER BY orden", condicion)
+            if r and r["figura"]:
+                f = str(r["figura"]).strip()
+                return f if f.upper().startswith("F") else "F" + f
     t = n.normalizar(condicion)
     if not t:
         return None
@@ -219,6 +227,11 @@ def nodos_de_figura(base: n.BaseNorma, ref: str, v: int) -> list[dict]:
 
 
 def peralte_maximo_de_figura(base: n.BaseNorma, ref: str) -> float | None:
+    """El «p máx.» de la figura (figuras_peralte.p_max_pct) o, si la base no lo trae, el mayor de sus nodos."""
+    if tiene_tabla(base, "figuras_peralte"):
+        r = base.fila("SELECT p_max_pct FROM figuras_peralte WHERE ref = ?", ref)
+        if r and r["p_max_pct"] is not None:
+            return r["p_max_pct"]
     r = base.fila(f"SELECT MAX(peralte_pct) AS pmax FROM {TABLA_FIGURA} WHERE ref = ?", ref)
     return r["pmax"] if r else None
 
@@ -307,6 +320,7 @@ def peralte_de_figura(base: n.BaseNorma, ref: str, v: int, radio: float, radio_m
             salida["avisos"].append(f"La lectura ({n._limpio(entregado)} %) es menor que el peralte mínimo de la T304.06 "
                                     f"({n._limpio(minimo)} %): se usa {n._limpio(minimo)} %.")
             entregado = float(minimo)
+            salida["regla"] = 5
     if bombeo_pct is None:
         salida["pendientes"].append("bombeo del proyecto: falta en la base (sesión 6.4)")
     elif entregado < bombeo_pct - n.TOLERANCIA:
@@ -315,6 +329,22 @@ def peralte_de_figura(base: n.BaseNorma, ref: str, v: int, radio: float, radio_m
     salida["nodos"] = [{k: x.get(k) for k in ("orden", "radio_m", "peralte_pct", "error_pct", "tipo_punto", "metodo")}
                        for x in salida["nodos"]]
     return salida
+
+
+def verificar_peralte_diseno(diseno_pct: float, lectura: dict, maximo_pct: float | None,
+                             bombeo_pct: float | None = None) -> dict:
+    """Paso 8 de la Decisión 6 (A CONFIRMAR): un peralte de diseño cumple si es igual o mayor que el obtenido
+    (redondeado a 0,1 %) y no pasa del máximo de la T304.05. «Cumple con aviso» si el obtenido sale del paso 6 (p máx de
+    la figura) o el diseño queda por debajo del bombeo. 'lectura' es la salida de peralte_de_figura."""
+    if lectura["resultado"] == n.NO_CUMPLE:
+        return {"resultado": n.NO_CUMPLE, "motivo": "el radio es menor que el mínimo"}
+    obtenido = lectura["peralte_pct"]
+    if maximo_pct is not None and diseno_pct > maximo_pct + n.TOLERANCIA:
+        return {"resultado": n.NO_CUMPLE, "motivo": f"pasa del máximo de la T304.05 ({n._limpio(maximo_pct)} %)"}
+    if obtenido is not None and diseno_pct < obtenido - n.TOLERANCIA:
+        return {"resultado": n.NO_CUMPLE, "motivo": f"es menor que el obtenido ({n._limpio(obtenido)} %)"}
+    aviso = lectura["regla"] == 6 or (bombeo_pct is not None and diseno_pct < bombeo_pct - n.TOLERANCIA)
+    return {"resultado": n.CUMPLE_AVISO if aviso else n.CUMPLE, "motivo": None}
 
 
 # ---------------------------------------------------------------------------------------------- datos del proyecto
@@ -428,7 +458,7 @@ def preparar_peralte(base: n.BaseNorma, ctx: dict | None, proyecto: dict) -> tup
     if ctx is None:
         return None, faltan
     condicion = condicion_del_proyecto(base, ctx)
-    ref = figura_de_condicion(condicion)
+    ref = figura_de_condicion(condicion, base)
     if ref is None:
         raise n.ErrorNorma(f"No se sabe qué figura de peralte (302.02 a 302.05) corresponde a la condición «{condicion}» de "
                            "la T304.05. Revisa la base de la norma. No se llamó a Civil 3D.")
@@ -440,8 +470,9 @@ def preparar_peralte(base: n.BaseNorma, ctx: dict | None, proyecto: dict) -> tup
         return None, faltan
     t30404, a_t30404 = t30404_del_proyecto(base, ctx["velocidad"])
     avisos += a_t30404
-    return {"figura": ref, "condicion_t30405": condicion, "radio_minimo": n.radio_minimo_exigido(base, ctx),
-            "bombeo": bombeo, "ancho_carril": ancho, "t30404": t30404, "avisos": avisos}, []
+    return {"figura": ref, "condicion_t30405": condicion, "maximo_t30405": base.peralte_de_condicion(condicion),
+            "radio_minimo": n.radio_minimo_exigido(base, ctx), "bombeo": bombeo, "ancho_carril": ancho,
+            "t30404": t30404, "avisos": avisos}, []
 
 
 def peralte_de_curva(base: n.BaseNorma, ctx: dict, datos: dict, curva: dict) -> dict:
@@ -595,6 +626,11 @@ def calcular(base: n.BaseNorma, ctx: dict, datos: dict, tabla_pis: dict) -> dict
             problemas.append(f"PI {curva['pi']}: {pf['resultado']} ({pf['avisos'][0] if pf['avisos'] else ''})")
             continue
         if pf["resultado"] == SIN_PERALTE:
+            continue
+        maximo = datos.get("maximo_t30405")
+        if maximo is not None and pf["peralte_pct"] is not None and pf["peralte_pct"] > maximo + n.TOLERANCIA:
+            problemas.append(f"PI {curva['pi']}: el peralte obtenido ({n._limpio(pf['peralte_pct'])} %) pasa del máximo de "
+                             f"la T304.05 ({n._limpio(maximo)} %).")
             continue
         try:
             v = transicion_de_curva(base, ctx, datos, curva, pf["peralte_pct"])

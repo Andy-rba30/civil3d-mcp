@@ -100,6 +100,8 @@ def _ver(valor):
 def tipo_de_caso(caso: dict) -> str | None:
     """Qué comprobación de verificar_norma corresponde al caso, por lo que traen sus filas (None: fuera de alcance)."""
     filas = caso.get("filas") or []
+    if any("paso_decision_6" in f for f in filas):
+        return "peralte_figura"   # 1.20.0: peralte según el radio (Decisión 6), casos 10 a 12
     if any(str(f.get("tipo", "")).lower() in ("convexa", "concava", "cóncava") for f in filas):
         return "curva_vertical"
     if any("altitud_msnm" in f or "maximo_excepcional_pct" in f for f in filas):
@@ -111,6 +113,8 @@ def tipo_de_caso(caso: dict) -> str | None:
 
 def esperado(ejemplo: dict) -> str:
     r = ejemplo.get("resultado")
+    if r == "Cumple, con aviso":
+        return norma.CUMPLE_AVISO
     if r == norma.CUMPLE and ejemplo.get("aviso"):
         return norma.CUMPLE_AVISO
     return r
@@ -148,7 +152,10 @@ def correr_caso(base: norma.BaseNorma, caso: dict, informe: Informe):
         return
     informe.linea(f"{titulo}: {tipo.replace('_', ' ')}")
     entrada = caso.get("entrada") or {}
-    tipo_elemento = "alineamiento" if tipo == "radio_minimo" else "rasante"
+    tipo_elemento = "alineamiento" if tipo in ("radio_minimo", "peralte_figura") else "rasante"
+    if tipo == "peralte_figura" and not norma_peralte.tiene_tabla(base, norma_peralte.TABLA_FIGURA):
+        informe.sin_valor(titulo, f"la base no tiene {norma_peralte.TABLA_FIGURA} (tarea 6.10)")
+        return
     for f in caso.get("filas") or []:
         nombre = _nombre_fila(f)
         ctx, faltan = norma.resolver_proyecto(base, tipo_elemento, _datos(entrada, f))
@@ -173,6 +180,8 @@ def correr_caso(base: norma.BaseNorma, caso: dict, informe: Informe):
             for e in ejemplos:
                 r = norma.comprobar_radio_minimo(base, ctx, float(e["valor_diseno"]))
                 informe.comparar(f"{nombre} · R = {_ver(float(e['valor_diseno']))} m", esperado(e), r["resultado"])
+        elif tipo == "peralte_figura":
+            correr_fila_peralte(base, ctx, entrada, f, nombre, informe)
         elif tipo == "pendiente_maxima":
             altitud = f.get("altitud_msnm", entrada.get("altitud_msnm"))
             ex = norma.pendiente_maxima_exigida(base, ctx, altitud)
@@ -203,6 +212,32 @@ def correr_caso(base: norma.BaseNorma, caso: dict, informe: Informe):
             for e in ejemplos:
                 r = norma.comprobar_curva_vertical(base, ctx, pe, ps, float(e["valor_diseno"]))
                 informe.comparar(f"{nombre} · L = {_ver(float(e['valor_diseno']))} m", esperado(e), r["resultado"])
+
+
+def correr_fila_peralte(base: norma.BaseNorma, ctx: dict, entrada: dict, f: dict, nombre: str, informe: Informe):
+    """Una fila de los casos 10 a 12 (peralte según el radio con la Decisión 6): figura, paso, lectura, peralte
+    exigido y, con el paso 8, cada ejemplo."""
+    condicion = norma_peralte.condicion_del_proyecto(base, ctx)
+    ref = norma_peralte.figura_de_condicion(condicion, base)
+    lectura = f.get("lectura") or {}
+    if lectura.get("figura"):
+        informe.comparar(f"{nombre} · figura", "F" + str(lectura["figura"]).lstrip("F"), ref)
+    v, radio = ctx["velocidad"], float(f["radio_m"])
+    t30404 = norma_peralte.t30404_del_proyecto(base, v)[0] if norma_peralte.tiene_tabla(base, "radio_sin_peralte") else None
+    t30406 = norma_peralte.t30406_para(base, v, radio) if norma_peralte.tiene_tabla(base, "peralte_minimo") else None
+    bombeo = entrada.get("bombeo_pct")
+    r = norma_peralte.peralte_de_figura(base, ref, v, radio, norma.radio_minimo_exigido(base, ctx), t30404, t30406, bombeo)
+    informe.comparar(f"{nombre} · paso de la decisión 6", f.get("paso_decision_6"), r["regla"])
+    if lectura.get("valor_pct") is not None:
+        informe.comparar(f"{nombre} · lectura de la figura", lectura["valor_pct"], r["peralte_calculado_pct"],
+                         tolerancia(lectura["valor_pct"]))
+    exigido = (f.get("exigido") or {}).get("valor")
+    informe.comparar(f"{nombre} · peralte obtenido", exigido, r["peralte_pct"], 0.05, detalle=r["resultado"] or "")
+    maximo = base.peralte_de_condicion(condicion)
+    for e in f.get("ejemplos") or []:
+        v_e = float(e["valor_diseno"])
+        resultado = norma_peralte.verificar_peralte_diseno(v_e, r, maximo, bombeo)["resultado"]
+        informe.comparar(f"{nombre} · p = {_ver(v_e)} %", esperado(e), resultado)
 
 
 # ---------------------------------------------------------------------------------------------- fórmulas de la base
