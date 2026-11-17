@@ -7,10 +7,10 @@ Copia este texto tal cual en el agente que tiene conectado el MCP de Civil 3D. R
   ni un dibujo real. Anota la carpeta del DWG: ahí aparecen `mcp_log.jsonl` y `backups\`.
 - **Archivo de puntos**: `C:\Proyectos\dibujos_prueba\terreno_corredor.csv`, el de los requisitos de
   `VALIDACION_111.md` (10 líneas, plano inclinado genérico). Si no existe, créalo con esas 10 líneas.
-- **Plugin y puente 1.21.0** desde la rama `tarea/6.6-bordes-sobreancho` (o la rama conjunta que indique el PR). Hay
-  **61** herramientas: **57** del plugin (las 55 de antes más `crear_bordes_calzada` y `listar_bordes_calzada`) más
-  **4** del puente (`buscar_api`, `guardar_receta`, `ejecutar_receta` y `verificar_norma`). Si la rama conjunta trae
-  herramientas de otras tareas, el número que diga su PR.
+- **Plugin y puente 1.21.0** desde la rama `tarea/6.6-bordes-sobreancho` (PR #52, que incluye la 1.20.0 del peralte).
+  Hay **63** herramientas: **59** del plugin (las 55 de la 1.19.1, `listar_peralte` y `aplicar_peralte` de la 1.20.0 y
+  `crear_bordes_calzada` y `listar_bordes_calzada`) más **4** del puente (`buscar_api`, `guardar_receta`,
+  `ejecutar_receta` y `verificar_norma`). La validación del peralte es `VALIDACION_120.md`.
 - `memoria-firma` clonado y al día (`git pull`) en `C:\Proyectos\memoria-firma`, con `MEMORIA_FIRMA_DIR` apuntando ahí
   (variable de usuario). Solo la necesitan los pasos 11 a 13 (el sobreancho de la norma).
 - `ARBA_MCP_CODIGO` no hace falta: esta validación no usa `ejecutar_codigo`.
@@ -67,7 +67,7 @@ cada curva del `Eje 1`, en el tramo del PC al PT, con 40 m de transición):
    `powershell -ExecutionPolicy Bypass -File .\ArbaMcp\instalar.ps1`; en `PuenteMcp`, `uv sync`; reinicia el puente y
    el cliente MCP y abre Civil 3D con `PRUEBA_121.dwg`. Después:
    - `ping` con `args={"pedido":"comprueba que el plugin responde"}` → `"version": "1.21.0"`, `"hay_dibujo": true`.
-   - La lista de herramientas: **61** (o la del PR conjunto). Están `crear_bordes_calzada` (parámetros `eje`,
+   - La lista de herramientas: **63**. Están `crear_bordes_calzada` (parámetros `eje`,
      `desplazamiento`, `nombre_izquierdo`, `nombre_derecho`, `estilo`, `ensanchamientos`, `simular`, `pedido` y, del
      puente, `velocidad_diseno`, `numero_carriles`, `ancho_calzada`, `vehiculo_diseno`, `longitud_transicion`; el único
      obligatorio es `eje` y la descripción termina con «CON LA NORMA DG-2018 (puente, desde 1.21.0)...») y

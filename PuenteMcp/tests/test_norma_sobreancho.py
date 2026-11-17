@@ -150,12 +150,18 @@ def test_no_se_amplia_si_el_plugin_cambia_sus_parametros(servidor, puente):
     assert not ns.se_puede_ampliar(PARAMETROS + [{"name": "numero_carriles"}])
 
 
-def test_la_ampliacion_del_eje_sigue_igual(servidor, puente, memoria):
-    """La generalización de AMPLIACIONES_NORMA (1.21.0) no cambia crear_alineamiento_desde_polilinea."""
+def test_las_tres_ampliaciones_con_la_forma_comun(servidor, puente, memoria):
+    """AMPLIACIONES_NORMA tiene una sola forma (módulo, manejador) para el eje (1.19.0), el peralte (1.20.0) y los bordes
+    (1.21.0); cada módulo publica CAMPOS y PARAMETROS_OPCIONALES."""
     import norma_alineamiento as ne
-    modulo, opcional, _ = puente.AMPLIACIONES_NORMA["crear_alineamiento_desde_polilinea"]
-    assert modulo is ne and opcional == "radio"
-    assert puente.EJECUTAR_CON_NORMA["crear_alineamiento_desde_polilinea"] is puente._crear_eje_con_norma
+    import norma_peralte as np_
+    esperado = {"crear_alineamiento_desde_polilinea": (ne, puente._crear_eje_con_norma, "radio"),
+                "aplicar_peralte": (np_, puente._aplicar_peralte_con_norma, "curvas"),
+                HERRAMIENTA: (ns, puente._crear_bordes_con_norma, "desplazamiento")}
+    assert set(puente.AMPLIACIONES_NORMA) == set(esperado)
+    for nombre, (modulo, manejador, opcional) in esperado.items():
+        assert puente.AMPLIACIONES_NORMA[nombre] == (modulo, manejador)
+        assert set(modulo.PARAMETROS_OPCIONALES) == {opcional} and modulo.CAMPOS
 
 
 # ---------------------------------------------------------------------------------------------- cálculo

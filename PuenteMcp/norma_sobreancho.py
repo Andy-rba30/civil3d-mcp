@@ -71,6 +71,10 @@ DESCRIPCION = (
     "díselas). Simula primero (simular=true). Necesita MEMORIA_FIRMA_DIR."
 )
 DESCRIPCION_DESPLAZAMIENTO = " Con 'velocidad_diseno' no hace falta: por defecto ancho_calzada / 2."
+# Para main._crear_handler (forma común de las herramientas ampliadas con la norma, 1.20.0): los parámetros que se
+# añaden y los del plugin que dejan de ser obligatorios, con el texto que se añade a su descripción.
+CAMPOS = CAMPOS_PROYECTO
+PARAMETROS_OPCIONALES = {PARAMETRO_OPCIONAL: DESCRIPCION_DESPLAZAMIENTO}
 
 SECCION = "302.09"
 PAGINAS_IMPRESAS = "159 a 162"

@@ -180,6 +180,42 @@ def test_construir_app_expone_mcp_y_sse(puente):
     assert puente.__version__ == "1.21.0"
 
 
+def _herramientas_del_plugin() -> list:
+    """Los nombres que registra el plugin (Registrar(new Herramienta { Nombre = ... }) en ArbaMcp/*.cs), resolviendo
+    las constantes de texto de ArbaMcp y ArbaMcp.Nucleo."""
+    import glob
+    import os
+    import re
+    raiz = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    fuentes = {f: open(f, encoding="utf-8").read()
+               for f in glob.glob(os.path.join(raiz, "ArbaMcp", "*.cs")) + glob.glob(os.path.join(raiz, "ArbaMcp.Nucleo", "*.cs"))}
+    constantes = {}
+    for texto in fuentes.values():
+        for m in re.finditer(r'const string (\w+)\s*=\s*"([^"]+)"', texto):
+            constantes.setdefault(m.group(1), m.group(2))
+    nombres = []
+    for f, texto in fuentes.items():
+        if os.path.basename(os.path.dirname(f)) != "ArbaMcp":
+            continue
+        for m in re.finditer(r'Registrar\(new Herramienta\s*\{\s*Nombre\s*=\s*(?:"([^"]+)"|(\w+))', texto):
+            nombres.append(m.group(1) or constantes[m.group(2)])
+    return nombres
+
+
+def test_recuento_de_herramientas_1_21_0(servidor, puente):
+    """1.21.0: 59 herramientas del plugin (55 + listar_peralte y aplicar_peralte de la 1.20.0 + crear_bordes_calzada y
+    listar_bordes_calzada) y 63 en total con las 4 del puente, publicadas por GET /tools del servidor falso."""
+    nombres = _herramientas_del_plugin()
+    assert len(nombres) == len(set(nombres)) == 59
+    assert {"listar_peralte", "aplicar_peralte", "crear_bordes_calzada", "listar_bordes_calzada"} <= set(nombres)
+    for nombre in nombres:
+        servidor.herramienta(nombre)
+    r = ejecutar(puente.sincronizar_herramientas())
+    assert r["estado"] == "ok" and len(r["añadidas"]) == 59
+    expuestas = {h.name for h in ejecutar(puente.mcp.list_tools())}
+    assert len(expuestas) == 63 and puente.HERRAMIENTAS_LOCALES <= expuestas
+
+
 # ---------------------------------------------------------------------------------------------- id_log (1.6.0)
 def test_id_log_llega_al_agente_en_objetos_listas_y_errores(servidor, puente):
     servidor.herramienta("listar_superficies")
