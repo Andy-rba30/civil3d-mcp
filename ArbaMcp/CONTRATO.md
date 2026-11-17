@@ -73,8 +73,8 @@ cada herramienta de forma dinámica, de modo que al añadir herramientas en C# n
 `timeout_s` según la herramienta: 30 s en lectura, 120 s en escritura y 300 s en `reconstruir_corredor`,
 `reconstruir_superficie`, `crear_superficies_corredor` (1.12.0), `crear_secciones` (1.13.0), `calcular_volumenes` (1.14.0), `exportar_landxml` y `exportar_imx`. Si un cliente llama a un nombre retirado, el puente
 responde con la sustituta (tabla `HERRAMIENTAS_RETIRADAS` de `main.py`; vacía en 1.3.0). Desde 1.5.0 el puente
-registra además **herramientas locales** propias (`HERRAMIENTAS_LOCALES` de `main.py`: `buscar_api` y, desde 1.17.0,
-`guardar_receta` y `ejecutar_receta`) que no
+registra además **herramientas locales** propias (`HERRAMIENTAS_LOCALES` de `main.py`: `buscar_api`; desde 1.17.0,
+`guardar_receta` y `ejecutar_receta`; y desde 1.18.0, `verificar_norma`) que no
 vienen de `GET /tools`, están disponibles aunque el plugin no responda y nunca se quitan al sincronizar; si el
 plugin publicara una herramienta con el mismo nombre, el puente la ignora y avisa en consola (ver *Herramientas del
 puente*).
@@ -428,8 +428,10 @@ argumentos van **directos** (no dentro de `args`). `buscar_api` y `guardar_recet
 con Civil 3D cerrado y no dejan rastro en `mcp_log.jsonl` ni en el historial del plugin (no tocan el dibujo).
 `ejecutar_receta` (1.17.0) sí llama al plugin: ejecuta el código de la receta con `ejecutar_codigo` (1.16.0), así que
 esa llamada pasa por `/execute`, sigue las reglas de *Seguridad de escritura* de `ejecutar_codigo` y deja su línea en
-`mcp_log.jsonl` como cualquier llamada a `ejecutar_codigo`. `buscar_api` devuelve **texto**; `guardar_receta` y
-`ejecutar_receta` devuelven **JSON**. `exportar_dataset` (1.6.0) es solo un **script**, no una herramienta MCP: se
+`mcp_log.jsonl` como cualquier llamada a `ejecutar_codigo`. `verificar_norma` (1.18.0) solo **lee** el dibujo: llama a
+`listar_pis` y, para una rasante, a `listar_pvis` por `/execute` (cada lectura deja su línea en `mcp_log.jsonl`, con el
+`pedido`, y ninguna entrada en Deshacer); si faltan datos del proyecto no llama al plugin. `buscar_api` devuelve
+**texto**; `guardar_receta`, `ejecutar_receta` y `verificar_norma` devuelven **JSON**. `exportar_dataset` (1.6.0) es solo un **script**, no una herramienta MCP: se
 corre desde PowerShell (ver más abajo).
 
 | Herramienta | Parámetros | Devuelve | Fuente |
@@ -437,6 +439,7 @@ corre desde PowerShell (ver más abajo).
 | `buscar_api` | consulta* (texto libre, en español o con nombres de la API), limite (1 a 100, por defecto 10) | Texto compacto: cabecera con cuántas recetas, entradas del glosario y filas del catálogo; "Consulta ampliada con el glosario: ..."; **RECETAS** (archivo, título y primeras líneas; desde 1.17.0 también las recetas de código, ver *Recetas de código*), **GLOSARIO** (término, por qué coincidió, paso, sinónimos, cada concepto con `[confirmado]` o `[por confirmar]` y la nota) y **CATÁLOGO** (clase o enum con su base; método con `→ tipo de retorno`, `[estático]`, `firma:` y `parámetros:`; propiedad con tipo y lectura/escritura; `descripción:` si la hay y `OBSOLETO: mensaje` si aplica). Sin resultados: una línea "Sin resultados ..." con sugerencias. Falta algo: un texto que empieza por `Error:` y dice qué falta y cómo ponerlo | `PuenteMcp/buscar_api.py`; lee `MEMORIA_FIRMA_DIR` |
 | `guardar_receta` (1.17.0) | nombre* (3 a 64 caracteres en minúsculas, números y `_`), pedido* (el pedido de ejemplo en español, con las palabras del usuario), codigo* (el script de `ejecutar_codigo` tal cual), parametros (lista JSON de `{nombre, tipo, descripcion, obligatorio, por_defecto}`; tipos `string`, `number`, `boolean`, `json`), notas, aprobada_por_el_dueno (boolean, por defecto false), aprobacion_del_dueno (las palabras literales del dueño), reemplazar (boolean, por defecto false) | JSON. **Sin `aprobada_por_el_dueno=true` y `aprobacion_del_dueno` no escribe nada**: `{"ok":true,"guardada":false,"reemplazaria","archivos_previstos":{codigo,datos},"yaml","lineas_codigo","avisos","siguiente_paso"}`. Con las dos: `{"ok":true,"guardada":true,"reemplazada","archivos":{codigo,datos},"veces_usada","avisos","recordatorio"}`, con el recordatorio de correr L.2. Error: `{"ok":false,"guardada":false,"error"}` | `PuenteMcp/recetas.py`; escribe en `MEMORIA_FIRMA_DIR\recetas\` |
 | `ejecutar_receta` (1.17.0) | nombre*, parametros (objeto JSON con un valor por parámetro declarado; también como texto), simular (boolean, **por defecto true**), pedido | JSON: la respuesta de `ejecutar_codigo` tal cual (`resultado`, `simulado`, `id_log`, `ms`, `ms_espera`, `ms_ejecucion`, `ms_puente`...) más el bloque `receta`: `nombre`, `parametros` (los valores enviados, con los `por_defecto`), `veces_usada`, `sumada` y `nota` (y `aviso` si no se pudo anotar el uso). Error antes de llamar al plugin (receta o parámetros): `{"ok":false,"error","ms_puente"}` | `PuenteMcp/recetas.py` + `ejecutar_codigo` del plugin |
+| `verificar_norma` (1.18.0) | norma* (solo `DG-2018`), tipo_elemento* (`alineamiento` \| `rasante`), nombre* (el eje, o el perfil), alineamiento (el eje de la rasante; obligatorio en `rasante`), velocidad_diseno (km/h), clasificacion, orografia, ubicacion, peralte_maximo (%), pavimentada (boolean), altitud_msnm, cotas_msnm (boolean), pedido | JSON. Faltan datos: `{"ok":false,"verificado":false,"error","faltan":[{dato,motivo,valores_validos}],"ms_puente"}` sin leer el dibujo. Dibujo que no está en metros: `{"ok":true,"verificado":false,"motivo",...}`. Verificado: `{"ok":true,"verificado":true,"norma","tipo_elemento","nombre","alineamiento","proyecto","base","resumen","filas":[...],"no_comprobado","avisos","lecturas","tabla","ms_puente"}` (ver *verificar_norma*). Error: `{"ok":false,"error","ms_puente"}` (y `id_log` si el error viene del plugin) | `PuenteMcp/norma.py` + `listar_pis` y `listar_pvis` del plugin; lee `MEMORIA_FIRMA_DIR\normas\tablas\dg2018.sqlite` |
 
 `*` = obligatorio. `limite` cuenta el total de resultados con prioridad recetas > glosario > catálogo; dentro del
 catálogo van primero los nombres exactos que trae la consulta (`ProfilePVI`, `ProfilePVI Station`), luego los
@@ -447,7 +450,8 @@ conceptos del glosario y después lo que encuentra el índice de texto FTS5 (`bu
 `catalogo\glosario.yaml` (la fuente de verdad del glosario; si no existe se usa la tabla `glosario` del catálogo
 cuando tiene filas) y `recetas\*.md` y, desde 1.17.0, `recetas\*.cs` + `recetas\*.yaml` (si la carpeta no existe,
 la búsqueda sigue sin recetas). `guardar_receta` y `ejecutar_receta` solo necesitan la carpeta (no el catálogo);
-`guardar_receta` crea `recetas\` si no existe. Se pone como variable de usuario de Windows y se reinicia el puente:
+`guardar_receta` crea `recetas\` si no existe. `verificar_norma` (1.18.0) necesita `normas\tablas\dg2018.sqlite` (no el
+catálogo) y `casos_norma_reales.py`, además, `normas\casos_prueba\casos_dg2018.yaml`. Se pone como variable de usuario de Windows y se reinicia el puente:
 
 ```powershell
 [Environment]::SetEnvironmentVariable('MEMORIA_FIRMA_DIR','C:\Proyectos\memoria-firma','User')
@@ -556,6 +560,160 @@ aprobacion:
 
 La primera es la vista previa de `guardar_receta`, la segunda guarda (solo tras el sí del dueño) y la tercera es
 `ejecutar_receta` simulada.
+
+### `verificar_norma`: el eje y la rasante contra la DG-2018 (desde 1.18.0)
+
+Compara un **eje** (leído con `listar_pis`) o una **rasante** (leída con `listar_pvis`, más `listar_pis` del eje para las
+unidades y las curvas en planta) con la norma peruana **DG-2018** (Manual de Carreteras: Diseño Geométrico, MTC). Los
+valores de la norma salen de la base `MEMORIA_FIRMA_DIR\normas\tablas\dg2018.sqlite` del repositorio privado
+`memoria-firma`; las fórmulas están en el código (`PuenteMcp/norma.py`, una función por comprobación). No escribe nada
+en el dibujo.
+
+**Parámetros** (argumentos directos):
+
+| Parámetro | Valores | Cuándo es obligatorio |
+|---|---|---|
+| `norma` | `DG-2018` (sin distinguir mayúsculas). Otra → `Norma 'X' no soportada. Normas disponibles: DG-2018.` | Siempre |
+| `tipo_elemento` | `alineamiento` (un eje) o `rasante` (un perfil de diseño) | Siempre |
+| `nombre` | El eje (`alineamiento`) o el perfil (`rasante`) | Siempre |
+| `alineamiento` | El eje al que pertenece la rasante | En `rasante` |
+| `velocidad_diseno` | km/h: una celda de la T204.01 para esa clasificación y orografía (la norma no permite interpolar) | Siempre |
+| `clasificacion` | `Autopista de primera clase`, `Autopista de segunda clase`, `Carretera de primera clase`, `Carretera de segunda clase`, `Carretera de tercera clase` (sin distinguir mayúsculas ni tildes) | Siempre |
+| `orografia` | `Plano`, `Ondulado`, `Accidentado`, `Escarpado` (o su tipo, `1` a `4`) | Siempre |
+| `ubicacion` | `rural`, `urbana`, `rural con peligro de hielo` (decide la fila de la T302.02 y de la T304.05) | En `alineamiento`; en `rasante` solo si las filas de esa clasificación y orografía no coinciden entre ubicaciones |
+| `peralte_maximo` | % (los valores válidos los da la respuesta `faltan`) | En `alineamiento` de Tercera Clase no pavimentada (decide la fila de la T302.04) y en terreno accidentado rural (8 % o 12 %, T304.05) |
+| `pavimentada` | boolean | En Tercera Clase. Con `true` se verifica con las reglas de Segunda Clase (artículo 101.05). En las demás clases la norma ya exige pavimento |
+| `altitud_msnm` o `cotas_msnm` | msnm, o `true` si las cotas del perfil ya están en msnm | En `rasante` accidentada o escarpada: por encima de 3000 msnm (3000 justos no) la pendiente máxima baja 1 % |
+| `pedido` | Las palabras del usuario | Nunca (va al log de las lecturas) |
+
+**Orden**: valida `norma`, `tipo_elemento` y `nombre` → abre la base → comprueba los datos del proyecto contra la base
+(`velocidad_diseno`, `equivalencias_clasificacion` y su columna `preguntar`) → **si falta algún dato responde sin leer
+el dibujo** → lee el dibujo → comprueba → responde. Lo que falta sale así:
+
+```json
+{"ok": false, "verificado": false,
+ "error": "Faltan datos del proyecto: pavimentada, peralte_maximo. Pregúntalos al usuario con los valores válidos; no los supongas. No se leyó el dibujo.",
+ "faltan": [{"dato": "pavimentada", "motivo": "Tercera Clase: si está pavimentada se verifica con las reglas de Segunda Clase (101.05); ...", "valores_validos": [true, false]},
+            {"dato": "peralte_maximo", "motivo": "Peralte máximo del proyecto en %: en Tercera Clase decide la fila de la T302.04 (solo si la vía no está pavimentada).", "valores_validos": [4, 6, 8, 10, 12]}],
+ "ms_puente": 12}
+```
+
+**Errores** (`{"ok": false, "error": ..., "ms_puente": ...}`, sin llamar al plugin): `Falta la variable de entorno
+MEMORIA_FIRMA_DIR: ...`, `La carpeta de MEMORIA_FIRMA_DIR no existe: ...`, `Falta la base de la norma
+<carpeta>\normas\tablas\dg2018.sqlite. Actualiza memoria-firma (git pull) ... No se verificó nada.`, `La base de la norma
+... no tiene las tablas: ...`, `Para una rasante falta 'alineamiento': ...`, `tipo_elemento '...' no vale: ...`. Los
+errores del plugin (`No existe el alineamiento 'X'. Usa listar_alineamientos.`) y de conexión salen como en cualquier
+herramienta, con su `id_log`. Si `listar_pis` dice que el dibujo **no está en metros** (`unidades` distinto de
+`Meters`, o vacío), responde `{"ok": true, "verificado": false, "motivo": "El dibujo está en 'Feet', no en metros ..."}`
+y no lee la rasante.
+
+**Respuesta verificada**:
+
+- `proyecto`: los datos usados (`velocidad`, `clasificacion`, `orografia`, `orografia_tipo`, `zona`, `pavimentada`,
+  `peralte_maximo`, `altitud_msnm`, `cotas_msnm`), la clase declarada y la que se usa (`clase`; distinta con
+  `aplica_101_05: true`) y lo que sale de `equivalencias_clasificacion` (`tipo_via`, `demanda_veh_dia`,
+  `grupo_relacion_radios`, `ubicacion_radios`, `condicion_peralte`).
+- `base`: `ruta` y `metadatos` de la base.
+- `filas`: primero la velocidad (T204.01) y después en el orden del eje o del perfil. Cada fila: `elemento` (`Curva PI
+  2`, `PI 3 (sin curva)`, `Tangente PI 1–PI 2`, `PI 1 → PI 2`, `Tramo PVI 1–PVI 2`, `PVI 2`), `progresiva` (texto
+  `0+300.000`, o `desde a hasta`), `comprobacion`, `valor_diseno`, `valor_exigido` (un número, o `{"minimo", "maximo"}`
+  en la relación de radios; `maximo` null = sin tope), `unidad`, `criterio` (`minimo`, `maximo`, `mayor_estricto`,
+  `rango`, `en_lista`, `condicion`), `resultado`, `referencia` (`id`, `tipo`, `titulo`, `seccion`, `pagina_impresa`,
+  `pagina_pdf`) y `detalle` (`valor_tabla`, `valor_calculado_en_tabla`, `valor_formula`, `formula` con su id y
+  páginas, `otra_tabla`, `aviso`, `nota`...).
+- `resumen`: cuántas filas hay de cada resultado. `no_comprobado`: lo que no se pudo comprobar y por qué. `avisos`: los
+  del proyecto (101.05, peralte que no coincide con la tabla...) y los de `listar_pis`. `lecturas`: el `id_log` de cada
+  lectura. `tabla`: las filas en markdown, para mostrarlas tal cual.
+
+**Resultados**: `Cumple`; `No cumple`; `Cumple con aviso` (cumple la tabla pero la fórmula pide más, o dos tablas se
+contradicen y se aplicó la más exigente, o es una curva compuesta); `Aviso` (reglas que el dueño decidió que solo
+avisan); `No verificable` (tipo de entidad no soportado, como las espirales, o tangente junto a uno); `Sin valor en la
+norma` (la tabla no tiene fila o celda para ese caso). Tolerancia 0,001: igual cumple, salvo en una desigualdad
+estricta.
+
+**Reglas de decisión** (dueño, 17/11/2026): manda la tabla y se informan tabla y fórmula; Tercera Clase pavimentada se
+verifica como Segunda (101.05); 3V/6V solo avisa y L > 30(10 − Δ) es «No cumple»; si dos tablas se contradicen
+(T302.01 frente a T304.08, T302.02 frente a T302.04, un radio entre dos filas de la T302.07/T302.08 o dos filas con el
+mismo radio), se aplica el valor más exigente, se informan las dos y se avisa; el peralte en terreno accidentado se
+pregunta. Pendientes de decidir por el dueño, hoy como aviso: si los 500 m (R302.02-8) y los 400 m (R302.06.03-1) entran
+en «el más exigente», el orden del −1 % por altitud y el +1 % excepcional, si una deflexión menor de 0°59′ es «No
+cumple», y si la falta de curva de transición es «No cumple» (hoy lo es).
+
+**Comprobaciones del eje** (`listar_pis`; las tangentes se miden entre inicio → PC y PT de cada curva, o PI sin curva →
+fin; mismo sentido si las dos curvas tienen el mismo `giro`):
+
+| Comprobación | Contra | Resultado |
+|---|---|---|
+| Velocidad de diseño | T204.01 (204.02, PDF 98) | Siempre `Cumple` (si no es una celda, antes se pregunta) |
+| Radio mínimo | T302.02 por ubicación (PDF 130) y, en Tercera Clase, T302.04 por peralte (PDF 133); fórmulas F08/F09 | La más exigente de las dos |
+| Longitud de curva con Δ ≤ 5° | R302.02-1: L > 30 (10 − Δ) (F37, PDF 126) | `No cumple` si L ≤ 30 (10 − Δ) |
+| Longitud mínima de curva | C302.02-LMIN: 3V (carreteras) o 6V (autopistas) | Solo `Aviso` |
+| Curva de más de 800 m | R302.02-7 | `Aviso` |
+| PI sin curva | C302.02-DEFLEX (PDF 127), de 30 a 80 km/h | Fuera de ese rango, `Sin valor en la norma` |
+| Deflexión menor de 0°59′ | R302.02-2 | `Aviso` (pendiente del dueño) |
+| Tangente mínima entre curvas | T302.01 L mín.s (en S) o L mín.o y T304.08 (mismo sentido), F34/F35 | La más exigente; además `Aviso` de R302.02-8 (< 500 m) y R302.06.03-1 (< 400 m) |
+| Tangente máxima | T302.01 L máx (F36), también las tangentes de los extremos | Solo `Aviso` |
+| Relación de radios (tangente ≤ 200 m), en los dos sentidos | T302.07 (grupo 1) o T302.08 (grupo 2), R302.04.05-1 | Fuera de rango, `Sin valor en la norma` |
+| Radio tras una recta de más de 400 m (autopistas) | R302.04.05-3: ≥ 700 m | |
+| Curva de transición | T302.11A (general, «igual o mayor») o T302.11B (Tercera Clase, «mayor») | `No cumple` si hace falta: el plugin solo crea arcos |
+| Curva compuesta (tangente 0, mismo sentido) | R302.06.02-1: R mayor ≤ 1,5 R menor | `Cumple con aviso` o `No cumple` |
+| Espirales y otros tipos | — | `No verificable` |
+
+**Comprobaciones de la rasante** (`listar_pvis`: pendientes en %, A = |ps − pe|, convexa si pe > ps):
+
+| Comprobación | Contra | Resultado |
+|---|---|---|
+| Pendiente máxima de cada tramo | T303.01 (PDF 172), −1 % por encima de 3000 msnm en accidentado o escarpado (R303.03.02-1) | `No cumple` por encima; si cabe en el +1 % excepcional (R303.03.03-1), lo dice la nota. Celda vacía: `Sin valor en la norma` |
+| Pendiente mínima 0,5 % | R303.03.01-1 | `Aviso` (las excepciones dependen de la sección) |
+| Curva vertical obligatoria | R303.04.01-1 (A > 1 %, pavimentada) o -2 (A > 2 %, sin pavimentar) | `No cumple` si falta la curva |
+| Curva convexa | Tercera Clase: K de la T303.02 (PDF 181) × A y F26/F27 con la distancia de esa fila; demás clases: F26/F27 con Dp de la T205.01 | Manda la tabla |
+| Curva cóncava | Tercera Clase: K de la T303.03 (PDF 183) × A y F30/F31; demás clases: F30/F31 con Dp de la T205.01 | Manda la tabla |
+| Tramos de más del 10 % (Tercera Clase) | R303.03.03-3: ≤ 180 m (tramos seguidos del mismo sentido cuentan juntos) | |
+| Pendiente media (Tercera Clase) | R303.03.03-4: ≤ 6 % en la peor ventana de 2000 m | |
+| Descansos (Tercera Clase) | R303.03.03-2 | `Aviso` |
+| Pendiente en curvas de R < 50 m (Tercera Clase) | R303.03.03-5: 8 % | `Aviso` |
+| Lomo quebrado | Sección 303.02 (PDF 170), sin umbral | `Aviso` |
+
+**No se comprueba** (va en `no_comprobado`): el peralte de diseño y la transición de peralte (`listar_pis` no los lee),
+el contraperalte, la visibilidad disponible, el sobreancho, la velocidad específica, la coordinación entre planta y
+perfil, la visibilidad de paso (solo si el tramo debe permitir adelantar), las excepciones de la pendiente mínima, y,
+en autopistas, la pendiente mayor en bajadas.
+
+**Ejemplos** (los argumentos van directos):
+
+```json
+{"norma": "DG-2018", "tipo_elemento": "alineamiento", "nombre": "Eje 1", "velocidad_diseno": 60,
+ "clasificacion": "Carretera de tercera clase", "orografia": "Ondulado", "ubicacion": "rural",
+ "pavimentada": false, "peralte_maximo": 8, "pedido": "Verifica el Eje 1 con la DG-2018"}
+{"norma": "DG-2018", "tipo_elemento": "rasante", "nombre": "Rasante 1", "alineamiento": "Eje 1",
+ "velocidad_diseno": 60, "clasificacion": "Carretera de segunda clase", "orografia": "Accidentado",
+ "altitud_msnm": 3500}
+```
+
+Una fila de la respuesta del primero, para una curva de radio 80 m:
+
+```json
+{"elemento": "Curva PI 1", "progresiva": "0+300.000", "comprobacion": "Radio mínimo", "valor_diseno": 80,
+ "valor_exigido": 125, "unidad": "m", "criterio": "minimo", "resultado": "No cumple",
+ "referencia": {"id": "T302.02", "tipo": "tabla", "titulo": "...", "seccion": "302.04.02", "pagina_impresa": "129", "pagina_pdf": "130"},
+ "detalle": {"valor_tabla": 125, "valor_calculado_en_tabla": 123.2, "valor_formula": 123.245,
+             "formula": {"id": "F08", "valor": 123.245, "seccion": "302.04.02", "pagina_impresa": "128", "pagina_pdf": "129"},
+             "peralte_pct": 8, "f_max": 0.15, "otra_tabla": {"referencia": "T302.04 (302.04.03, p. 132; PDF 133)", "valor": 125}}}
+```
+
+**Casos de prueba contra la base real** (sin Civil 3D): `casos_norma_reales.py` lee
+`MEMORIA_FIRMA_DIR\normas\casos_prueba\casos_dg2018.yaml` y la base real, corre cada caso con las mismas funciones que
+la herramienta y escribe, por cada valor, `[OK   ]` o `[FALLO]` con lo esperado y lo obtenido. Los casos que necesitan un
+dato que no se lee del dibujo (el peralte de diseño o la visibilidad disponible) salen como «fuera de alcance». También
+compara las fórmulas del código con `formulas.expresion_python`, los umbrales con `reglas.valor_num` y comprueba que
+existen en la base todas las referencias que cita el código. Sale con 0 si todo coincide, 1 si algo no coincide y 2 si
+falta la memoria, la base o el archivo de casos:
+
+```powershell
+cd PuenteMcp
+uv run --frozen python casos_norma_reales.py
+uv run --frozen python casos_norma_reales.py --memoria C:\Proyectos\memoria-firma
+```
 
 ### `exportar_dataset` (script del puente, desde 1.6.0)
 
