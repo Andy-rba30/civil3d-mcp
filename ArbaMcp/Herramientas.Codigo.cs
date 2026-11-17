@@ -40,6 +40,12 @@ namespace ArbaMcp
     ///  4. Simulación: aborta y comprueba que lo creado desapareció. Escritura real: confirma, vuelve a leer en otra
     ///     transacción y verifica lo creado y lo borrado; si no cuadra, error sin reintentar. Si el script borró una
     ///     superficie, un corredor o un ensamblaje, aborta y responde error (regla del proyecto).
+    ///  5. solo_lectura=true (desde 1.17.6): el script se compila con las reglas de solo lectura (lo que escribe no
+    ///     compila) y corre en contexto Aplicacion, como las lecturas, con el dibujo bloqueado para lectura
+    ///     (DocumentLockMode.Read), sin Escritura.Preparar, sin copia y sin entrada en Deshacer. F.Agregar, F.EscribirTexto
+    ///     y F.Abrir(id, true) lanzan; la transacción del plugin se aborta siempre; si alguna fuente del punto 3 ve un
+    ///     cambio, o DBMOD cambia, responde error. Las capas y los textos están en ArbaMcp.Nucleo.CodigoSoloLectura. Sin
+    ///     solo_lectura todo es como en la 1.17.5, más un aviso que la sugiere si el script no escribe ni cambia nada.
     /// </summary>
     public static partial class Herramientas
     {
@@ -63,12 +69,13 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = NombreCodigo,
-                Descripcion = "Ejecuta un fragmento de C# (el cuerpo de un método) dentro de Civil 3D, en el hilo principal y con el dibujo bloqueado. Desactivada por defecto: se activa con la variable de entorno ARBA_MCP_CODIGO=1 y reiniciando Civil 3D. Úsala solo si ninguna herramienta específica ni receta lo cubre (antes de ejecutar_comando) y siempre primero con simular=true, que es el valor por defecto: el script corre en una transacción que se aborta al final, con copia de seguridad, y la respuesta dice qué se habría creado, modificado o borrado (con objetos de Civil 3D no es garantía total: la copia es la protección real). Con simular=false aplica los cambios con copia, una entrada de Deshacer y antes/después. El código ve F (Fachada: F.Doc, F.Db, F.Tr, F.Civil, F.Alineamiento(nombre), F.Perfil(eje, nombre), F.Superficie, F.Corredor, F.Ensamblaje, F.Capa, F.Bloque, F.Abrir<T>(id, escribir), F.Agregar(entidad), F.EspacioModelo(), F.Escribir(texto), F.Texto/F.Numero/F.Booleano(nombre), F.LeerTexto/F.EscribirTexto/F.ListarArchivos) y Parametros (JSON de solo lectura); lo que devuelva con return sale en 'resultado'. Using por defecto: System, System.Linq, System.Collections.Generic, System.Text, System.Globalization y los de AutoCAD (ApplicationServices, DatabaseServices, Geometry); los tipos de Civil 3D van con el alias Civ (Civ.Alignment). No compila si usa red, procesos, archivos fuera de %LOCALAPPDATA%\\ArbaMcp\\scripts, reflexión, hilos, código nativo, eventos, comandos o LISP. Tiempo límite: 60 s.",
+                Descripcion = "Ejecuta un fragmento de C# (el cuerpo de un método) dentro de Civil 3D, en el hilo principal y con el dibujo bloqueado. Desactivada por defecto: se activa con la variable de entorno ARBA_MCP_CODIGO=1 y reiniciando Civil 3D. Úsala solo si ninguna herramienta específica ni receta lo cubre (antes de ejecutar_comando) y siempre primero con simular=true, que es el valor por defecto: el script corre en una transacción que se aborta al final, con copia de seguridad, y la respuesta dice qué se habría creado, modificado o borrado (con objetos de Civil 3D no es garantía total: la copia es la protección real). Con simular=false aplica los cambios con copia, una entrada de Deshacer y antes/después. Si el script solo lee (contar, listar, medir), pasa solo_lectura=true: corre sin entrada en Deshacer y SIN copia de seguridad; la protección son las reglas de compilación (no compila si usa algo que escribe: F.Agregar, F.EscribirTexto, F.Abrir(id, true), OpenMode distinto de la constante ForRead, UpgradeOpen, Erase, métodos Add/Create/Set/Delete/Save... de objetos del dibujo, de sus gestores o de Civil 3D, asignar sus propiedades), el bloqueo de lectura del dibujo, la transacción abortada siempre y la detección de cambios después (si algo cambió, error); si intenta escribir y se impide, responde error sin tocar el dibujo. El código ve F (Fachada: F.Doc, F.Db, F.Tr, F.Civil, F.Alineamiento(nombre), F.Perfil(eje, nombre), F.Superficie, F.Corredor, F.Ensamblaje, F.Capa, F.Bloque, F.Abrir<T>(id, escribir), F.Agregar(entidad), F.EspacioModelo(), F.Escribir(texto), F.Texto/F.Numero/F.Booleano(nombre), F.LeerTexto/F.EscribirTexto/F.ListarArchivos) y Parametros (JSON de solo lectura); lo que devuelva con return sale en 'resultado'. Using por defecto: System, System.Linq, System.Collections.Generic, System.Text, System.Globalization y los de AutoCAD (ApplicationServices, DatabaseServices, Geometry); los tipos de Civil 3D van con el alias Civ (Civ.Alignment). No compila si usa red, procesos, archivos fuera de %LOCALAPPDATA%\\ArbaMcp\\scripts, reflexión, hilos, código nativo, eventos, comandos o LISP. Tiempo límite: 60 s.",
                 Parametros =
                 {
                     P("codigo_csharp", "string", "Cuerpo de un método en C#: sentencias, variables y funciones locales, sin declarar clases. Puede empezar con using. Tiene F (la Fachada) y Parametros; devuelve el resultado con return. Ejemplo: var l = new Line(new Point3d(0,0,0), new Point3d(100,0,0)); F.Agregar(l); return l.Length;", true),
                     P("simular", "boolean", "Por defecto true: ejecuta dentro de una transacción que se aborta al final (con copia de seguridad) y devuelve qué se habría creado, modificado o borrado. Con false aplica los cambios (copia, una entrada de Deshacer, antes/después)"),
-                    P("parametros", "json", "Objeto JSON (o texto con un objeto) que el script lee como Parametros, de solo lectura, o con F.Texto/F.Numero/F.Booleano. Ejemplo: {\"capa\":\"0\",\"largo\":100}")
+                    P("parametros", "json", "Objeto JSON (o texto con un objeto) que el script lee como Parametros, de solo lectura, o con F.Texto/F.Numero/F.Booleano. Ejemplo: {\"capa\":\"0\",\"largo\":100}"),
+                    P(CodigoSoloLectura.Parametro, "boolean", "Por defecto false. Con true el script solo puede leer, sin entrada en Deshacer y SIN copia de seguridad: lo protegen las reglas de compilación (no compila si usa algo que escribe), el bloqueo de lectura del dibujo, la transacción abortada siempre y la detección de cambios (si algo cambió, error). simular no cuenta. Para contar, listar o medir")
                 },
                 EjecutarAsync = EjecutarCodigo
             });
@@ -88,12 +95,13 @@ namespace ArbaMcp
                 throw new InvalidOperationException(CodigoActivacion.MensajeDesactivada);
             string codigo = Requerido(a, "codigo_csharp");
             bool simular = Bool(a, "simular", true);
+            bool soloLectura = Bool(a, CodigoSoloLectura.Parametro, false);
             JsonElement parametros = LeerParametrosCodigo(a);
 
             var reloj = Stopwatch.StartNew();
-            var compilado = CompiladorCodigo().Compilar(codigo, ReferenciasCodigo(), typeof(Fachada).FullName);
+            var compilado = CompiladorCodigo().Compilar(codigo, ReferenciasCodigo(), typeof(Fachada).FullName, soloLectura);
             long msCompilacion = reloj.ElapsedMilliseconds;
-            Historial.Registrar("ejecutar_codigo: " + (compilado.Ok ? "compilado" : "no compila") + " (" + compilado.Lineas + " líneas, " + msCompilacion + " ms"
+            Historial.Registrar("ejecutar_codigo: " + (compilado.Ok ? "compilado" : "no compila") + (soloLectura ? " con solo_lectura" : "") + " (" + compilado.Lineas + " líneas, " + msCompilacion + " ms"
                 + (compilado.DeCache ? ", de la caché" : "") + (compilado.ReferenciasFallidas.Length > 0 ? ", referencias que no se pudieron leer: " + string.Join("; ", compilado.ReferenciasFallidas) : "") + ")");
             if (!compilado.Ok)
             {
@@ -103,9 +111,11 @@ namespace ArbaMcp
                 throw new ArgumentException(diagnostico == null ? compilado.Mensaje : compilado.Mensaje + "\n" + diagnostico);
             }
 
-            // 2. Hilo principal, contexto Documento. Si Civil 3D sigue ocupado, se descarta sin ejecutarse.
+            // 2. Hilo principal, contexto Documento (o Aplicacion con solo_lectura, como las lecturas: sin entrada en
+            // Deshacer). Si Civil 3D sigue ocupado, se descarta sin ejecutarse.
             Pendiente pendiente = null;
-            pendiente = HiloPrincipal.Encolar(() => EjecutarCodigoEnDibujo(a, compilado, simular, parametros, msCompilacion, pendiente), ContextoEjecucion.Documento, NombreCodigo);
+            var contexto = soloLectura ? ContextoEjecucion.Aplicacion : ContextoEjecucion.Documento;
+            pendiente = HiloPrincipal.Encolar(() => EjecutarCodigoEnDibujo(a, compilado, simular, soloLectura, parametros, msCompilacion, pendiente), contexto, NombreCodigo);
             var terminada = await Task.WhenAny(pendiente.Tarea, Task.Delay(TimeSpan.FromSeconds(CodigoLimites.EsperaMaximaSegundos)));
             if (terminada != pendiente.Tarea && pendiente.Descartar())
             {
@@ -225,11 +235,23 @@ namespace ArbaMcp
         }
 
         // ------------------------------------------------------------------ 2. hilo principal: copia, transacciones, ejecución, verificación
-        private static object EjecutarCodigoEnDibujo(JsonElement a, ResultadoAislado compilado, bool simular, JsonElement parametros, long msCompilacion, Pendiente pendiente)
-            => Escritura.Ejecutar(NombreCodigo, a, ctx => CuerpoCodigo(ctx, compilado, parametros, msCompilacion, pendiente?.MsEspera),
+        private static object EjecutarCodigoEnDibujo(JsonElement a, ResultadoAislado compilado, bool simular, bool soloLectura, JsonElement parametros, long msCompilacion, Pendiente pendiente)
+        {
+            if (soloLectura)
+            {
+                // 1.17.6: sin Escritura.Preparar (comprobaciones para escribir y copia de seguridad): el script no escribe,
+                // así que también vale con un dibujo abierto en solo lectura. CMDACTIVE ya lo comprobó HiloPrincipal.
+                var doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument
+                    ?? throw new InvalidOperationException("No hay ningún dibujo abierto en Civil 3D.");
+                var ctx = new Escritura.Contexto { Herramienta = NombreCodigo, Args = a, Simular = true, Doc = doc };
+                if (Tiene(a, "simular") && !simular) ctx.Avisos.Add(CodigoSoloLectura.AvisoSimularIgnorado);
+                return CuerpoCodigo(ctx, compilado, parametros, msCompilacion, pendiente?.MsEspera, true);
+            }
+            return Escritura.Ejecutar(NombreCodigo, a, ctx => CuerpoCodigo(ctx, compilado, parametros, msCompilacion, pendiente?.MsEspera, false),
                 conCopia: true, copiaAlSimular: true, simular: simular);
+        }
 
-        private static object CuerpoCodigo(Escritura.Contexto ctx, ResultadoAislado compilado, JsonElement parametros, long msCompilacion, long? msEspera)
+        private static object CuerpoCodigo(Escritura.Contexto ctx, ResultadoAislado compilado, JsonElement parametros, long msCompilacion, long? msEspera, bool soloLectura)
         {
             var doc = ctx.Doc;
             var db = ctx.Db;
@@ -240,7 +262,8 @@ namespace ArbaMcp
             string comando = VariableTexto("CMDNAMES");
             int? undoctlAntes = VariableEntera("UNDOCTL"), dbmodAntes = VariableEntera("DBMOD");
 
-            // Nunca se ejecuta sin copia terminada, tampoco al simular (excepción a la regla de las simulaciones)
+            // Nunca se ejecuta sin copia terminada, tampoco al simular (excepción a la regla de las simulaciones). Con
+            // solo_lectura no hay copia (no se pidió): esto no espera nada.
             ctx.EsperarCopia();
 
             var cambios = new CambiosScript();
@@ -251,7 +274,9 @@ namespace ArbaMcp
             var reloj = Stopwatch.StartNew();
             try
             {
-                using (doc.LockDocument())
+                // solo_lectura (1.17.6): bloqueo de lectura, como las simulaciones de Escritura.CrearObjeto. Se espera que
+                // AutoCAD rechace abrir nada para escritura (eLockViolation): por verificar en Civil 3D (VALIDACION_1176)
+                using (soloLectura ? doc.LockDocument(DocumentLockMode.Read, null, null, false) : doc.LockDocument())
                 {
                     var t0 = db.TransactionManager.StartTransaction();
                     var pila = new PilaTransacciones(db, t0);
@@ -260,7 +285,7 @@ namespace ArbaMcp
                     {
                         var t1 = db.TransactionManager.StartTransaction();
                         pila.AnotarScript(t1);
-                        fachada = new Fachada(doc, t1, parametros, ctx.Simular, CodigoCarpeta.Predeterminada());
+                        fachada = new Fachada(doc, t1, parametros, ctx.Simular, CodigoCarpeta.Predeterminada(), soloLectura);
                         ejecucion = new EjecucionScript(compilado.Ensamblado, compilado.Pdb, compilado.Tipo, compilado.Metodo, compilado.NombreEnsamblado,
                             typeof(Fachada).Assembly, typeof(CodigoVigilante).Assembly);
                         EngancharEventos(db, cambios);
@@ -282,7 +307,7 @@ namespace ArbaMcp
                         }
                         catch (Exception ex)
                         {
-                            throw ErrorDelScript(ex, parada, ctx);
+                            throw ErrorDelScript(ex, parada, ctx, soloLectura);
                         }
                         finally
                         {
@@ -302,10 +327,19 @@ namespace ArbaMcp
                         {
                             pila.AbortarEncimaDelPlugin();
                             t0.Abort();
-                            throw new InvalidOperationException(violacion + SufijoNadaAplicado(ctx));
+                            throw new InvalidOperationException(violacion + SufijoNadaAplicado(ctx, soloLectura));
+                        }
+                        // solo_lectura (1.17.6): cualquier cambio que vea alguna fuente es un error (el mensaje ya dice que se abortó)
+                        string cambioEnLectura = !soloLectura ? null : CodigoSoloLectura.MensajeCambios(cambios.Creados.Count, cambios.Modificados.Count, cambios.Borrados.Count,
+                            cambios.Temporales, cambios.Creados.Concat(cambios.Modificados).Concat(cambios.Borrados).Take(10).Select(cambios.Describir));
+                        if (cambioEnLectura != null)
+                        {
+                            pila.AbortarEncimaDelPlugin();
+                            t0.Abort();
+                            throw new InvalidOperationException(cambioEnLectura);
                         }
                         vigilandoCierre = EngancharEventosAlCerrar(db, cambios, ctx.Simular);
-                        if (ctx.Simular) t0.Abort();
+                        if (ctx.Simular || soloLectura) t0.Abort();   // solo_lectura: siempre se aborta
                         else t0.Commit();
                     }
                     finally
@@ -347,6 +381,22 @@ namespace ArbaMcp
                     + string.Join(", ", soloAlCerrar.Take(20).Select(CambiosScript.DescribirSinAbrir)) + "): puede que Civil 3D los creara fuera de la transacción del script. Compruébalos en el dibujo (datos.objetos.fuente_deteccion).");
             string avisoDeshacer = ctx.Simular ? null : CodigoDeshacer.Aviso(undoctlDespues ?? undoctlAntes);
             if (avisoDeshacer != null) avisos.Add(avisoDeshacer);
+            if (soloLectura)
+            {
+                // 1.17.6: después de abortar, DBMOD igual y nada nuevo visto solo por los eventos al cerrar; si no, error
+                string atencion = CodigoSoloLectura.MensajeTrasCerrar(dbmodAntes, dbmodDespues, soloAlCerrar.Select(CambiosScript.DescribirSinAbrir).ToList());
+                if (atencion != null)
+                {
+                    Historial.Registrar("ejecutar_codigo: solo lectura con cambios tras abortar: " + atencion);
+                    throw new InvalidOperationException(atencion);
+                }
+            }
+            else
+            {
+                // 1.17.6: sin solo_lectura, si el script no escribe ni cambió nada, se sugiere solo_lectura
+                string sugerencia = CodigoSoloLectura.AvisoSugerencia(false, compilado.Escrituras.Length, cambios.Creados.Count, cambios.Modificados.Count, cambios.Borrados.Count, cambios.Temporales);
+                if (sugerencia != null) avisos.Add(sugerencia);
+            }
 
             var antes = new Dictionary<string, object> { ["objetos_creados"] = 0, ["objetos_modificados"] = 0, ["objetos_borrados"] = 0 };
             var hechos = new Dictionary<string, object> { ["objetos_creados"] = cambios.Creados.Count, ["objetos_modificados"] = cambios.Modificados.Count, ["objetos_borrados"] = cambios.Borrados.Count };
@@ -372,7 +422,7 @@ namespace ArbaMcp
                 },
                 mensajes = fachada.Mensajes,
                 archivos = new { leidos = fachada.Leidos, escritos, no_escritos_por_simulacion = noEscritos, carpeta = CodigoCarpeta.Texto },
-                compilacion = new { ms = msCompilacion, de_cache = compilado.DeCache, lineas = compilado.Lineas, roslyn = CompiladorCodigo().VersionRoslyn },
+                compilacion = new { ms = msCompilacion, de_cache = compilado.DeCache, lineas = compilado.Lineas, roslyn = CompiladorCodigo().VersionRoslyn, solo_lectura = soloLectura, escrituras_reconocidas = compilado.Escrituras.Length },
                 ms_espera = msEspera,
                 ms_script = msScript,
                 revisiones,
@@ -381,6 +431,13 @@ namespace ArbaMcp
             };
             if (cambios.FallosEventos.Count > 0)
                 avisos.Add("No se pudieron vigilar los eventos de la base de datos (" + string.Join("; ", cambios.FallosEventos) + "): la lista de cambios sale solo de la transacción.");
+
+            if (soloLectura)
+            {
+                Historial.Registrar("ejecutar_codigo: solo lectura terminada, sin cambios (" + msScript + " ms; sin copia ni entrada en Deshacer)");
+                var lectura = Escritura.Simulacion(ctx, antes, hechos, CodigoSoloLectura.Accion(compilado.Lineas));
+                return ConExtras(lectura, new Dictionary<string, object> { [CodigoSoloLectura.Parametro] = true, ["copia"] = null, ["datos"] = datos, ["resultado"] = resultado });
+            }
 
             if (ctx.Simular)
             {
@@ -411,18 +468,19 @@ namespace ArbaMcp
             return ConExtras(res, new Dictionary<string, object> { ["resultado"] = resultado });
         }
 
-        private static string SufijoNadaAplicado(Escritura.Contexto ctx)
+        private static string SufijoNadaAplicado(Escritura.Contexto ctx, bool soloLectura)
         {
+            if (soloLectura) return CodigoSoloLectura.Sufijo;
             string ruta = ctx.Copia?.Ruta;
             return " No se aplicó nada: la transacción se abortó" + (ctx.Simular ? " (era una simulación)" : "") + "." + (ruta != null ? " Copia de seguridad: " + ruta + "." : "");
         }
 
         /// <summary>Error del script con su línea y lo que pasó con el dibujo (sin InnerException: el servidor muestra este texto).</summary>
-        private static Exception ErrorDelScript(Exception ex, string parada, Escritura.Contexto ctx)
+        private static Exception ErrorDelScript(Exception ex, string parada, Escritura.Contexto ctx, bool soloLectura)
         {
             int? linea = EjecucionScript.LineaDe(ex);
             string donde = linea.HasValue ? " en la línea " + linea.Value : "";
-            string sufijo = SufijoNadaAplicado(ctx);
+            string sufijo = SufijoNadaAplicado(ctx, soloLectura);
             if (ex is OperationCanceledException)
                 return new TimeoutException("El script superó el tiempo límite de " + CodigoLimites.TiempoLimiteSegundos + " s y se detuvo" + donde
                     + " (en la siguiente revisión: las hay al principio de cada bucle, función y lambda y en cada ayuda de F)." + sufijo + " Si necesita más tiempo, divídelo en varias llamadas.");
@@ -430,6 +488,9 @@ namespace ArbaMcp
                 return new InvalidOperationException("Recursión demasiado profunda" + donde + ": el script se detuvo antes de agotar la pila de Civil 3D." + sufijo);
             if (parada != null)
                 return new InvalidOperationException(parada + " El script se detuvo" + donde + "." + sufijo);
+            // solo_lectura (1.17.6): AutoCAD (bloqueo de lectura, objeto abierto para lectura) o la Fachada impidieron escribir
+            if (soloLectura && CodigoSoloLectura.EsIntentoDeEscritura(ex.Message))
+                return new InvalidOperationException(CodigoSoloLectura.MensajeIntento(linea, ex.GetType().Name, ex.Message));
             return new InvalidOperationException("El script falló" + donde + ": " + ex.GetType().Name + ": " + ex.Message + sufijo);
         }
 

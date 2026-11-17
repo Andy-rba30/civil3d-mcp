@@ -27,6 +27,11 @@ namespace ArbaMcp.Nucleo
         public string TipoFachada = "ArbaMcp.Fachada";
         /// <summary>Nombre completo de CodigoVigilante: el script (y el código que se inserta) solo puede llamar a Revisar().</summary>
         public string TipoVigilante = "ArbaMcp.Nucleo.CodigoVigilante";
+        /// <summary>
+        /// solo_lectura=true (desde 1.17.6): lo que escribe (CodigoReglas, categoría «solo lectura») no compila. Sin ella
+        /// esos usos solo se cuentan en 'escrituras' (para el aviso que sugiere solo_lectura).
+        /// </summary>
+        public bool SoloLectura;
     }
 
     /// <summary>
@@ -41,6 +46,13 @@ namespace ArbaMcp.Nucleo
         public const int MaximoProblemas = 20;
 
         public static List<ProblemaCodigo> Revisar(SemanticModel modelo, IReadOnlyList<TextSpan> zonas, OpcionesRevision op = null)
+            => Revisar(modelo, zonas, op, null);
+
+        /// <summary>
+        /// Igual, y además deja en 'escrituras' (si no es null) cada uso que escribe según las reglas de solo lectura
+        /// (desde 1.17.6), haya o no solo_lectura: con op.SoloLectura también van a los problemas y el script no compila.
+        /// </summary>
+        public static List<ProblemaCodigo> Revisar(SemanticModel modelo, IReadOnlyList<TextSpan> zonas, OpcionesRevision op, List<ProblemaCodigo> escrituras)
         {
             op = op ?? new OpcionesRevision();
             var r = new Recorrido(modelo, op);
@@ -60,6 +72,7 @@ namespace ArbaMcp.Nucleo
                 foreach (var tr in raiz.DescendantTrivia(zona))
                     r.Trivia(tr, zona);
             }
+            escrituras?.AddRange(r.Escrituras.OrderBy(p => p.Linea).ThenBy(p => p.Columna).Take(MaximoProblemas));
             return r.Problemas.OrderBy(p => p.Linea).ThenBy(p => p.Columna).Take(MaximoProblemas).ToList();
         }
 
@@ -68,7 +81,10 @@ namespace ArbaMcp.Nucleo
             private readonly SemanticModel _m;
             private readonly OpcionesRevision _op;
             private readonly HashSet<string> _vistos = new HashSet<string>(StringComparer.Ordinal);
+            private readonly HashSet<string> _vistasEscrituras = new HashSet<string>(StringComparer.Ordinal);
             public readonly List<ProblemaCodigo> Problemas = new List<ProblemaCodigo>();
+            /// <summary>Usos que escriben según las reglas de solo lectura (1.17.6), con o sin solo_lectura.</summary>
+            public readonly List<ProblemaCodigo> Escrituras = new List<ProblemaCodigo>();
 
             public Recorrido(SemanticModel m, OpcionesRevision op) { _m = m; _op = op; }
 
@@ -85,6 +101,20 @@ namespace ArbaMcp.Nucleo
 
             private void Bloqueo(SyntaxNode nodo, string categoria, string nombre)
                 => Anotar(nodo, categoria, nombre + ": " + CodigoReglas.Explicacion(categoria));
+
+            /// <summary>
+            /// Un uso que escribe (1.17.6): siempre se cuenta en Escrituras; con solo_lectura además es un problema y el
+            /// script no compila.
+            /// </summary>
+            private void Escritura(SyntaxNode nodo, string que)
+            {
+                string mensaje = que + ": " + CodigoReglas.Explicacion(CodigoReglas.SoloLectura);
+                var span = nodo.GetLocation().GetMappedLineSpan();
+                int linea = span.StartLinePosition.Line + 1, columna = span.StartLinePosition.Character + 1;
+                if (_vistasEscrituras.Add(linea + "|" + mensaje))
+                    Escrituras.Add(new ProblemaCodigo { Linea = linea, Columna = columna, Categoria = CodigoReglas.SoloLectura, Mensaje = mensaje });
+                if (_op.SoloLectura) Anotar(nodo, CodigoReglas.SoloLectura, mensaje);
+            }
 
             // ------------------------------------------------------------------ sintaxis
             public void Token(SyntaxToken t)
@@ -179,7 +209,134 @@ namespace ArbaMcp.Nucleo
                     var ti = _m.GetTypeInfo(e);
                     Tipo(ti.Type, n);
                     if (!SymbolEqualityComparer.Default.Equals(ti.Type, ti.ConvertedType)) Tipo(ti.ConvertedType, n);
+                    ModoDeApertura(e, ti.Type);
+                    OpenModeEnTipoCompuesto(e, ti);
                 }
+                OpenModeEnMetodosYTypeof(n);
+            }
+
+            // ------------------------------------------------------------------ OpenMode escondido (auditoría de la ronda C, I4)
+            // Sin escribir ninguna expresión OpenMode se podía abrir para escritura: new[] { id }.Zip(Enum.GetValues<OpenMode>()
+            // .Skip(1), F.Tr.GetObject), o una función local genérica con T = OpenMode. Con solo_lectura no compila ningún tipo
+            // que lleve OpenMode dentro (OpenMode[], IEnumerable<OpenMode>, Func<..., OpenMode, ...>), ni typeof(OpenMode), ni
+            // un método con OpenMode como argumento genérico, ni un grupo de métodos (delegado) con un parámetro OpenMode.
+
+            private static bool EsOpenMode(ITypeSymbol t) => t is INamedTypeSymbol nt && NombreCompleto(nt) == CodigoReglas.TipoOpenMode;
+
+            /// <summary>True si el tipo lleva OpenMode dentro (elemento de un arreglo, argumento genérico, elemento de una tupla), sin ser OpenMode.</summary>
+            private static bool ContieneOpenMode(ITypeSymbol t, int profundidad = 0)
+            {
+                if (t == null || profundidad > 8) return false;
+                switch (t)
+                {
+                    case IArrayTypeSymbol a: return EsOpenMode(a.ElementType) || ContieneOpenMode(a.ElementType, profundidad + 1);
+                    case INamedTypeSymbol nt:
+                        foreach (var ta in nt.TypeArguments)
+                            if (EsOpenMode(ta) || ContieneOpenMode(ta, profundidad + 1)) return true;
+                        return nt.IsTupleType && nt.TupleElements.Any(e => EsOpenMode(e.Type) || ContieneOpenMode(e.Type, profundidad + 1));
+                }
+                return false;
+            }
+
+            private void OpenModeEnTipoCompuesto(ExpressionSyntax e, TypeInfo ti)
+            {
+                var t = ContieneOpenMode(ti.Type) ? ti.Type : ContieneOpenMode(ti.ConvertedType) ? ti.ConvertedType : null;
+                if (t == null) return;
+                // Solo la expresión más exterior con ese tipo (en a.b.c, no también a.b si lleva el mismo tipo)
+                if (e.Parent is ExpressionSyntax padre)
+                {
+                    var tp = _m.GetTypeInfo(padre);
+                    if (ContieneOpenMode(tp.Type) || ContieneOpenMode(tp.ConvertedType)) return;
+                }
+                Escritura(e, "tipo con OpenMode dentro (" + t.ToDisplayString() + ")");
+            }
+
+            private void OpenModeEnMetodosYTypeof(SyntaxNode n)
+            {
+                if (n is TypeOfExpressionSyntax tof)
+                {
+                    if (EsOpenMode(_m.GetTypeInfo(tof.Type).Type)) Escritura(n, "typeof(OpenMode)");
+                    return;
+                }
+                if (!(n is SimpleNameSyntax sn)) return;
+                var info = _m.GetSymbolInfo(sn);
+                if (!((info.Symbol ?? info.CandidateSymbols.FirstOrDefault()) is IMethodSymbol m)) return;
+                if (m.TypeArguments.Any(t => EsOpenMode(t) || ContieneOpenMode(t)))
+                    Escritura(sn, "OpenMode como argumento genérico de " + m.Name);
+                if (EsGrupoDeMetodos(sn) && m.Parameters.Any(p => EsOpenMode(p.Type) || ContieneOpenMode(p.Type)))
+                    Escritura(sn, "grupo de métodos (delegado) con un parámetro OpenMode: " + m.Name);
+            }
+
+            /// <summary>True si el nombre de un método se usa sin llamarlo (F.Tr.GetObject pasado como delegado).</summary>
+            private static bool EsGrupoDeMetodos(SimpleNameSyntax sn)
+            {
+                SyntaxNode expr = sn;
+                if (sn.Parent is MemberAccessExpressionSyntax ma && ma.Name == sn) expr = ma;
+                else if (sn.Parent is MemberBindingExpressionSyntax mb) expr = mb;
+                if (expr.Parent is InvocationExpressionSyntax inv && inv.Expression == expr) return false;
+                // a?.Metodo(...): la llamada envuelve al acceso condicional
+                if (expr is MemberBindingExpressionSyntax && expr.Parent is InvocationExpressionSyntax inv2 && inv2.Expression == expr) return false;
+                return !(expr.Parent is MemberAccessExpressionSyntax padre && padre.Expression == expr);   // x.Metodo.Algo no es C# válido con un método
+            }
+
+            /// <summary>
+            /// Solo lectura (1.17.6): toda expresión de tipo OpenMode tiene que ser la constante OpenMode.ForRead. Atrapa
+            /// ForWrite y ForNotify, las conversiones ((OpenMode)1), las variables y las condiciones. Se mira la expresión
+            /// más exterior de ese tipo (en OpenMode.ForWrite, el acceso entero; en c ? a : b, la condición entera). El
+            /// valor de ForRead se toma del propio enumerado, no de un número.
+            /// </summary>
+            private void ModoDeApertura(ExpressionSyntax e, ITypeSymbol tipo)
+            {
+                if (!(tipo is INamedTypeSymbol nt) || NombreCompleto(nt) != CodigoReglas.TipoOpenMode) return;
+                var simbolo = _m.GetSymbolInfo(e).Symbol;
+                if (simbolo is ITypeSymbol || simbolo is IAliasSymbol || simbolo is INamespaceSymbol) return;   // el nombre del tipo, no un valor
+                if (e.Parent is MemberAccessExpressionSyntax pm && pm.Name == e) return;                          // ForWrite dentro de OpenMode.ForWrite
+                if (e.Parent is ExpressionSyntax padre && _m.GetTypeInfo(padre).Type is INamedTypeSymbol tp && NombreCompleto(tp) == CodigoReglas.TipoOpenMode
+                    && !(_m.GetSymbolInfo(padre).Symbol is ITypeSymbol)) return;                                     // se mira la expresión exterior
+                var lectura = nt.GetMembers(CodigoReglas.OpenModeLectura).OfType<IFieldSymbol>().FirstOrDefault();
+                var valor = _m.GetConstantValue(e);
+                if (lectura != null && lectura.HasConstantValue && valor.HasValue && Equals(valor.Value, lectura.ConstantValue)) return;
+                Escritura(e, "OpenMode distinto de OpenMode.ForRead (" + Primeras(e) + ")");
+            }
+
+            /// <summary>
+            /// Solo lectura (1.17.6): F.Agregar y F.EscribirTexto escriben; F.Abrir solo vale con 'escribir' ausente o la
+            /// constante false (F.Abrir&lt;Line&gt;(id) o F.Abrir&lt;Line&gt;(id, false)), y llamándola, no como grupo de métodos.
+            /// </summary>
+            private void FachadaSoloLectura(ISymbol s, SyntaxNode n)
+            {
+                if (CodigoReglas.FachadaQueEscribe.Contains(s.Name))
+                {
+                    Escritura(n, "F." + s.Name);
+                    return;
+                }
+                if (s.Name != CodigoReglas.FachadaAbrir || !(s is IMethodSymbol)) return;
+                SyntaxNode expr = n.Parent is MemberAccessExpressionSyntax ma && ma.Name == n ? ma
+                    : n.Parent is MemberBindingExpressionSyntax mb ? mb : n;
+                if (!(expr.Parent is InvocationExpressionSyntax inv) || inv.Expression != expr)
+                {
+                    Escritura(n, "F.Abrir usado sin llamarlo (como grupo de métodos)");
+                    return;
+                }
+                if (!(_m.GetOperation(inv) is IInvocationOperation op)) return;
+                foreach (var a in op.Arguments)
+                {
+                    if (a.Parameter == null || a.Parameter.Name != CodigoReglas.ParametroEscribir) continue;
+                    if (a.ArgumentKind == ArgumentKind.DefaultValue) return;
+                    var cv = a.Value.ConstantValue;
+                    if (cv.HasValue && Equals(cv.Value, false)) return;
+                    Escritura(a.Syntax, "F.Abrir con '" + CodigoReglas.ParametroEscribir + "' distinto de false (" + Primeras(a.Syntax) + ")");
+                    return;
+                }
+            }
+
+            /// <summary>Nombres completos del tipo sobre el que se usa un miembro y de sus bases, y del que lo declara y las suyas.</summary>
+            private static List<string> TiposConBases(INamedTypeSymbol receptor, INamedTypeSymbol declarante)
+            {
+                var l = new List<string>();
+                for (var t = receptor; t != null; t = t.BaseType) l.Add(NombreCompleto(t));
+                for (var t = declarante; t != null; t = t.BaseType) l.Add(NombreCompleto(t));
+                return l;
             }
 
             private static string Primeras(SyntaxNode n)
@@ -237,7 +394,11 @@ namespace ArbaMcp.Nucleo
                 if (declarante == null) return;
                 if (EsDelCompilado(declarante)) return;
                 string nombreTipo = NombreCompleto(declarante);
-                if (nombreTipo == _op.TipoFachada) return;
+                if (nombreTipo == _op.TipoFachada)
+                {
+                    FachadaSoloLectura(s, n);
+                    return;
+                }
                 if (nombreTipo == _op.TipoVigilante)
                 {
                     if (s.Name != "Revisar") Anotar(n, CodigoReglas.Plugin, nombreTipo + "." + s.Name + ": del vigilante del tiempo límite solo se puede llamar a Revisar().");
@@ -281,6 +442,11 @@ namespace ArbaMcp.Nucleo
                     Bloqueo(n, cat, Nombre(declarante) + "." + s.Name + (escritura ? " (asignación)" : ""));
                     return;
                 }
+
+                // Solo lectura (1.17.6): lo que escribe en el dibujo (UpgradeOpen, Erase, Add..., Create..., asignaciones...);
+                // desde la 1.19.1, también todo método de los objetos del dibujo que no sea de lectura (Curve.Extend)
+                if (CodigoReglas.CategoriaSoloLectura(TiposConBases(receptor, declarante), nombreMiembro, escritura, metodo != null, nombreTipo) != null)
+                    Escritura(n, Nombre(declarante) + "." + s.Name + (escritura ? " (asignación)" : ""));
 
                 // Punteros nativos devueltos o guardados (UnmanagedObject, campos IntPtr): solo IntPtr.Zero
                 bool esIntPtrPropio = nombreTipo == "System.IntPtr" || nombreTipo == "System.UIntPtr";
@@ -347,8 +513,19 @@ namespace ArbaMcp.Nucleo
                 SyntaxNode expr = n;
                 if (n.Parent is MemberAccessExpressionSyntax ma && ma.Name == n) expr = ma;
                 else if (n.Parent is MemberBindingExpressionSyntax mb) expr = mb;
+                // Auditoría de la ronda C (I5): (l.Layer, _) = ("0", 0) asigna cada elemento de la tupla de la izquierda,
+                // también en tuplas anidadas (el foreach con destinos que no son variables nuevas no compila: CS8186).
+                // Segunda revisión (N1): los paréntesis tampoco cambian el destino: (l.Layer) = "0", (l.ColorIndex)++,
+                // ((l.Layer), _) = ..., en cualquier anidación y combinados con tuplas
+                while (true)
+                {
+                    if (expr.Parent is ParenthesizedExpressionSyntax parentesis) { expr = parentesis; continue; }
+                    if (expr.Parent is ArgumentSyntax arg && arg.Parent is TupleExpressionSyntax tupla) { expr = tupla; continue; }
+                    break;
+                }
                 var p = expr.Parent;
                 if (p is AssignmentExpressionSyntax a && a.Left == expr) return true;
+                if (p is ForEachVariableStatementSyntax fe && fe.Variable == expr) return true;
                 if (p is PrefixUnaryExpressionSyntax pre && (pre.IsKind(SyntaxKind.PreIncrementExpression) || pre.IsKind(SyntaxKind.PreDecrementExpression))) return true;
                 if (p is PostfixUnaryExpressionSyntax post && (post.IsKind(SyntaxKind.PostIncrementExpression) || post.IsKind(SyntaxKind.PostDecrementExpression))) return true;
                 return false;

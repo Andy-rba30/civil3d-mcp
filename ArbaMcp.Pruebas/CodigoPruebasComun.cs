@@ -29,6 +29,12 @@ namespace ArbaMcp.Pruebas
             CodigoVigilante.Revisar();
             return 2 * x;
         }
+
+        // 1.17.6: los miembros de la Fachada de verdad que cuentan en solo lectura (los tipos dan igual: el revisor los
+        // reconoce por el nombre en la Fachada; en la nube no hay entidades ni ObjectId de AutoCAD).
+        public int Agregar(object entidad) { CodigoVigilante.Revisar(); return 0; }
+        public T Abrir<T>(object id, bool escribir = false) where T : class { CodigoVigilante.Revisar(); return null; }
+        public void EscribirTexto(string nombre, string texto) { CodigoVigilante.Revisar(); }
     }
 
     /// <summary>
@@ -70,10 +76,11 @@ namespace Autodesk.AutoCAD.Geometry
         public double Z { get; }
         public double DistanceTo(Point3d p) => 0;
     }
+    public struct Matrix3d { public static Matrix3d Identity => default(Matrix3d); }
 }
 namespace Autodesk.AutoCAD.DatabaseServices
 {
-    public enum OpenMode { ForRead, ForWrite }
+    public enum OpenMode { ForRead, ForWrite, ForNotify }
     public struct ObjectId
     {
         public bool IsNull => true;
@@ -84,18 +91,60 @@ namespace Autodesk.AutoCAD.DatabaseServices
     {
         public ObjectId ObjectId => default(ObjectId);
         public void Erase() { }
+        public void UpgradeOpen() { }
+        // Auditoría de la ronda C (I3, I6)
+        public DBObject DeepClone(DBObject owner, object idMap, bool isPrimary) => null;
+        public DBObject WblockClone(object owner, object idMap, bool isPrimary) => null;
+        public void Close() { }
+        public void Cancel() { }
+        public void DowngradeOpen() { }
+        public void DisableUndoRecording(bool disable) { }
+        public void CopyFrom(object otro) { }
+        public int ColorIndex { get; set; }
+    }
+    // Auditoría de la ronda C (I3): gestores que heredan de RXObject, no de DBObject, y cambian el dibujo
+    public class LayoutManager : Autodesk.AutoCAD.Runtime.RXObject
+    {
+        public static LayoutManager Current => null;
+        public string CurrentLayout { get; set; }
+        public ObjectId CreateLayout(string newLayoutName) => default(ObjectId);
+        public void DeleteLayout(string layoutName) { }
+        public ObjectId GetLayoutId(string layoutName) => default(ObjectId);
+        public int LayoutCount => 0;
+    }
+    public class LayerStateManager : Autodesk.AutoCAD.Runtime.RXObject
+    {
+        public void SaveLayerState(string sName, int mask, ObjectId idVp) { }
+        public void DeleteLayerState(string sName) { }
+        public bool HasLayerState(string sName) => false;
+    }
+    public class ObjectIdCollection
+    {
+        public int Count => 0;
+        public int Add(ObjectId id) => 0;
+    }
+    public struct Extents3d
+    {
+        public void AddExtents(Extents3d otra) { }
+        public void AddPoint(Autodesk.AutoCAD.Geometry.Point3d p) { }
     }
     public class Entity : DBObject
     {
         public string Layer { get; set; }
+        public void SetDatabaseDefaults() { }
         public void IntersectWith(Entity otra, int modo, object puntos, System.IntPtr thisGraphicSystemMarker, System.IntPtr otherGraphicSystemMarker) { }
     }
-    public class Curve : Entity { }
+    public class Curve : Entity
+    {
+        public void Extend(bool extendStart, Autodesk.AutoCAD.Geometry.Point3d toPoint) { }
+    }
     public class Line : Curve
     {
         public Line() { }
         public Line(Autodesk.AutoCAD.Geometry.Point3d inicio, Autodesk.AutoCAD.Geometry.Point3d fin) { }
         public double Length => 0;
+        public Autodesk.AutoCAD.Geometry.Point3d StartPoint { get; set; }
+        public Autodesk.AutoCAD.Geometry.Point3d EndPoint { get; set; }
         [System.Obsolete(""Usa Length."")] public double Largo => 0;
     }
     public class Transaction : Autodesk.AutoCAD.Runtime.DisposableWrapper
@@ -120,10 +169,40 @@ namespace Autodesk.AutoCAD.DatabaseServices
         public void SaveAs(string fileName, bool bakAndRename) { }
         public void ReadDwgFile(string fileName, int mode, bool allowCPConversion, string password) { }
         public void Insert(string blockName, Database dataBase, bool preserveSourceDatabase) { }
+        public void Insert(Autodesk.AutoCAD.Geometry.Matrix3d transform, Database dataBase, bool preserveSourceDatabase) { }
+        public void Insert(string sourceBlockName, string destinationBlockName, Database dataBase, bool preserveSourceDatabase) { }
+        public ObjectId AddDBObject(DBObject o) => default(ObjectId);
+        public LayerStateManager LayerStateManager => null;
+        public void XBindXrefs(ObjectIdCollection xrefBlocks, bool insertBind) { }
+        public void DetachXref(ObjectId xrefId) { }
+        public void ReloadXrefs(ObjectIdCollection xrefIds) { }
+        public void UnloadXrefs(ObjectIdCollection xrefIds) { }
+        public void ResolveXrefs(bool useThreadEngine, bool doNewOnly) { }
+        public void RestoreOriginalXrefSymbols() { }
+        public void RestoreForwardingXrefSymbols() { }
+        public int EvaluateFields() => 0;
+        public void DisableUndoRecording(bool disable) { }
+        public void DeepCloneObjects(ObjectIdCollection ids, ObjectId owner, object mapping, bool deferTranslation) { }
+        public void WblockCloneObjects(ObjectIdCollection ids, ObjectId owner, object mapping, int cloning, bool deferTranslation) { }
+        public void EraseEmptyObjects(int flags) { }
+        public void ReclaimMemoryFromErasedObjects(ObjectIdCollection ids) { }
+        public Database Wblock() => null;
+        public void BindXrefs(ObjectIdCollection xrefIds, bool insertBind) { }
+        public ObjectId AttachXref(string fileName, string blockName) => default(ObjectId);
+        public void Purge(ObjectIdCollection ids) { }
         public event ObjectEventHandler ObjectAppended;
     }
     public class RasterImageDef : DBObject { public string SourceFileName { get; set; } }
-    public class BlockTableRecord : DBObject { public string PathName { get; set; } public string Name { get; set; } }
+    // Solo para la prueba de parámetros que contienen 'name' y no son archivos (en la API real, BlockTable.Has(string key))
+    public class BlockTable : DBObject { public bool Has(string blockName) => false; }
+    public class BlockTableRecord : DBObject, System.Collections.Generic.IEnumerable<ObjectId>
+    {
+        public System.Collections.Generic.IEnumerator<ObjectId> GetEnumerator() => null;
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => null;
+        public string PathName { get; set; }
+        public string Name { get; set; }
+        public ObjectId AppendEntity(Entity e) => default(ObjectId);
+    }
     public class HostApplicationServices
     {
         public static HostApplicationServices Current => null;
@@ -138,6 +217,7 @@ namespace Autodesk.AutoCAD.EditorInput
         public void WriteMessage(string mensaje) { }
         public object GetPoint(string mensaje) => null;
         public object GetCurrentView() => null;
+        public void SetImpliedSelection(object ids) { }
         public object SelectAll() => null;
         public void Command(params object[] parametros) { }
     }
@@ -153,6 +233,7 @@ namespace Autodesk.AutoCAD.ApplicationServices
         public TransactionManager TransactionManager => null;
         public Autodesk.AutoCAD.EditorInput.Editor Editor => null;
         public void SendStringToExecute(string comando, bool activate, bool wrapUpInactiveDoc, bool echoCommand) { }
+        public System.IDisposable LockDocument() => null;
     }
     public static class DocumentExtension { public static void CloseAndDiscard(this Document doc) { } }
     public class DocumentCollection
@@ -185,13 +266,26 @@ namespace Autodesk.Civil.DatabaseServices
     public class Alignment : Entity
     {
         public static Autodesk.AutoCAD.DatabaseServices.ObjectId Create(object documento, string alignmentName, string siteName, string layerName, string styleName, string labelSetName) => default(Autodesk.AutoCAD.DatabaseServices.ObjectId);
+        public void PointLocation(double station, double offset, ref double easting, ref double northing) { }
+        public void StationOffset(double easting, double northing, ref double station, ref double offset) { }
     }
     public class Profile : Entity
     {
         public static Autodesk.AutoCAD.DatabaseServices.ObjectId CreateByLayout(string profileName, Autodesk.AutoCAD.DatabaseServices.ObjectId alignmentId, string layerName) => default(Autodesk.AutoCAD.DatabaseServices.ObjectId);
+        public double ElevationAt(double station) => 0;
     }
-    public class Surface : Entity { }
-    public class TinSurface : Surface { public void AddPointFile(string pointFilePath, int formato) { } }
+    public class Surface : Entity
+    {
+        public void Rebuild() { }
+        public object GetGeneralProperties() => null;
+        public double FindElevationAtXY(double x, double y) => 0;
+    }
+    public class SurfaceStyleCollection
+    {
+        public bool Contains(string nombre) => false;
+        public Autodesk.AutoCAD.DatabaseServices.ObjectId Add(string nombre) => default(Autodesk.AutoCAD.DatabaseServices.ObjectId);
+    }
+    public class TinSurface : Surface { public void AddPointFile(string pointFilePath, int formato) { } public void RaiseSurface(double amount) { } }
     public class BaselineRegionCollection
     {
         public int Count => 0;

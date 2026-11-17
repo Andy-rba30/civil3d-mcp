@@ -43,8 +43,11 @@ namespace ArbaMcp.Nucleo
         public string TipoFachada = "ArbaMcp.Fachada";
         public string TipoVigilante = "ArbaMcp.Nucleo.CodigoVigilante";
         public IList<string> Usings = UsingsPorDefecto.ToList();
+        /// <summary>solo_lectura=true (desde 1.17.6): lo que escribe no compila (CodigoReglas, categoría «solo lectura»).</summary>
+        public bool SoloLectura;
 
-        internal string Firma => TipoFachada + "|" + TipoVigilante + "|" + string.Join(";", Usings);
+        // Desde 1.17.6 la firma (parte de la clave de la caché) distingue solo_lectura: el mismo código puede compilar sin ella y no con ella
+        internal string Firma => TipoFachada + "|" + TipoVigilante + "|" + string.Join(";", Usings) + "|solo_lectura=" + (SoloLectura ? "1" : "0");
     }
 
     /// <summary>Resultado de compilar un script: el ensamblado y su PDB en memoria, o el mensaje de error para el agente.</summary>
@@ -69,11 +72,17 @@ namespace ArbaMcp.Nucleo
         public List<ProblemaCodigo> Problemas = new List<ProblemaCodigo>();
         /// <summary>Errores de compilación ya formateados (para las pruebas).</summary>
         public List<string> Errores = new List<string>();
+        /// <summary>
+        /// Usos que escriben según las reglas de solo lectura (desde 1.17.6), con o sin solo_lectura. Sin solo_lectura,
+        /// una lista vacía permite sugerir solo_lectura si además el script no cambia nada.
+        /// </summary>
+        public List<ProblemaCodigo> Escrituras = new List<ProblemaCodigo>();
 
         internal ResultadoCompilacion Copia(bool deCache) => new ResultadoCompilacion
         {
             Ok = Ok, Ensamblado = Ensamblado, Pdb = Pdb, Mensaje = Mensaje, Avisos = Avisos.ToList(), Ms = Ms, DeCache = deCache,
-            Lineas = Lineas, NombreEnsamblado = NombreEnsamblado, Problemas = Problemas.ToList(), Errores = Errores.ToList()
+            Lineas = Lineas, NombreEnsamblado = NombreEnsamblado, Problemas = Problemas.ToList(), Errores = Errores.ToList(),
+            Escrituras = Escrituras.ToList()
         };
     }
 
@@ -173,7 +182,9 @@ namespace ArbaMcp.Nucleo
             string estructura = ComprobarEstructura(arbol, zonaCuerpo);
             var diagnosticos = compilacion.GetDiagnostics();
             var errores = diagnosticos.Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
-            r.Problemas = CodigoRevisor.Revisar(modelo, zonas, new OpcionesRevision { TipoFachada = op.TipoFachada, TipoVigilante = op.TipoVigilante });
+            var escrituras = new List<ProblemaCodigo>();
+            r.Problemas = CodigoRevisor.Revisar(modelo, zonas, new OpcionesRevision { TipoFachada = op.TipoFachada, TipoVigilante = op.TipoVigilante, SoloLectura = op.SoloLectura }, escrituras);
+            r.Escrituras = escrituras;
 
             foreach (var d in errores.OrderBy(d => d.Location.SourceSpan.Start))
                 r.Errores.Add(Formatear(d, zonas, lineas));
@@ -490,9 +501,10 @@ namespace ArbaMcp.Nucleo
 
         /// <summary>
         /// Compila el script contra las DLL de 'rutas'. Devuelve { ok, ensamblado, pdb, mensaje, avisos[], ms, deCache,
-        /// lineas, tipo, metodo, nombreEnsamblado, referenciasFallidas[] }.
+        /// lineas, tipo, metodo, nombreEnsamblado, referenciasFallidas[], escrituras[] }. 'soloLectura' (desde 1.17.6):
+        /// solo_lectura=true, lo que escribe no compila; 'escrituras' son esos usos como texto, con o sin solo_lectura.
         /// </summary>
-        public static object[] Compilar(string codigo, string[] rutas, string tipoFachada)
+        public static object[] Compilar(string codigo, string[] rutas, string tipoFachada, bool soloLectura = false)
         {
             var refs = new List<MetadataReference>();
             var fallidas = new List<string>();
@@ -501,13 +513,14 @@ namespace ArbaMcp.Nucleo
                 try { refs.Add(Referencias.GetOrAdd(ruta, p => MetadataReference.CreateFromFile(p))); }
                 catch (Exception ex) { fallidas.Add(Path.GetFileName(ruta) + ": " + ex.Message); }
             }
-            var op = new OpcionesCompilacion();
+            var op = new OpcionesCompilacion { SoloLectura = soloLectura };
             if (!string.IsNullOrWhiteSpace(tipoFachada)) op.TipoFachada = tipoFachada;
             var r = CodigoCompilador.Compilar(codigo, refs, op);
             return new object[]
             {
                 r.Ok, r.Ensamblado, r.Pdb, r.Mensaje, r.Avisos.ToArray(), r.Ms, r.DeCache, r.Lineas,
-                ResultadoCompilacion.Tipo, ResultadoCompilacion.Metodo, r.NombreEnsamblado, fallidas.ToArray()
+                ResultadoCompilacion.Tipo, ResultadoCompilacion.Metodo, r.NombreEnsamblado, fallidas.ToArray(),
+                r.Escrituras.Select(x => x.ToString()).ToArray()
             };
         }
 
