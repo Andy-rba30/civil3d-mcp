@@ -181,6 +181,8 @@ namespace ArbaMcp.Nucleo
         public string Metodo;
         public string NombreEnsamblado;
         public string[] ReferenciasFallidas = new string[0];
+        /// <summary>Usos que escriben según las reglas de solo lectura (desde 1.17.6), como texto; vacío si no hay ninguno.</summary>
+        public string[] Escrituras = new string[0];
 
         public static ResultadoAislado DesdeArreglo(object[] a)
         {
@@ -198,7 +200,8 @@ namespace ArbaMcp.Nucleo
                 Tipo = a[8] as string,
                 Metodo = a[9] as string,
                 NombreEnsamblado = a[10] as string,
-                ReferenciasFallidas = a[11] as string[] ?? new string[0]
+                ReferenciasFallidas = a[11] as string[] ?? new string[0],
+                Escrituras = a.Length > 12 ? a[12] as string[] ?? new string[0] : new string[0]
             };
         }
     }
@@ -225,7 +228,8 @@ namespace ArbaMcp.Nucleo
             _rutaNucleo = rutaNucleo;
         }
 
-        public ResultadoAislado Compilar(string codigo, string[] referencias, string tipoFachada)
+        /// <summary>Compila en el contexto del compilador. 'soloLectura' (desde 1.17.6): solo_lectura=true de ejecutar_codigo.</summary>
+        public ResultadoAislado Compilar(string codigo, string[] referencias, string tipoFachada, bool soloLectura = false)
         {
             MethodInfo m;
             lock (_cerrojo)
@@ -233,7 +237,7 @@ namespace ArbaMcp.Nucleo
                 if (_compilar == null) Preparar();
                 m = _compilar;
             }
-            var arreglo = (object[])m.Invoke(null, BindingFlags.DoNotWrapExceptions, null, new object[] { codigo, referencias, tipoFachada }, null);
+            var arreglo = (object[])m.Invoke(null, BindingFlags.DoNotWrapExceptions, null, new object[] { codigo, referencias, tipoFachada, soloLectura }, null);
             return ResultadoAislado.DesdeArreglo(arreglo);
         }
 

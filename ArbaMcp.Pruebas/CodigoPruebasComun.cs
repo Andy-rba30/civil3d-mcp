@@ -29,6 +29,12 @@ namespace ArbaMcp.Pruebas
             CodigoVigilante.Revisar();
             return 2 * x;
         }
+
+        // 1.17.6: los miembros de la Fachada de verdad que cuentan en solo lectura (los tipos dan igual: el revisor los
+        // reconoce por el nombre en la Fachada; en la nube no hay entidades ni ObjectId de AutoCAD).
+        public int Agregar(object entidad) { CodigoVigilante.Revisar(); return 0; }
+        public T Abrir<T>(object id, bool escribir = false) where T : class { CodigoVigilante.Revisar(); return null; }
+        public void EscribirTexto(string nombre, string texto) { CodigoVigilante.Revisar(); }
     }
 
     /// <summary>
@@ -73,7 +79,7 @@ namespace Autodesk.AutoCAD.Geometry
 }
 namespace Autodesk.AutoCAD.DatabaseServices
 {
-    public enum OpenMode { ForRead, ForWrite }
+    public enum OpenMode { ForRead, ForWrite, ForNotify }
     public struct ObjectId
     {
         public bool IsNull => true;
@@ -84,18 +90,34 @@ namespace Autodesk.AutoCAD.DatabaseServices
     {
         public ObjectId ObjectId => default(ObjectId);
         public void Erase() { }
+        public void UpgradeOpen() { }
+    }
+    public class ObjectIdCollection
+    {
+        public int Count => 0;
+        public int Add(ObjectId id) => 0;
+    }
+    public struct Extents3d
+    {
+        public void AddExtents(Extents3d otra) { }
+        public void AddPoint(Autodesk.AutoCAD.Geometry.Point3d p) { }
     }
     public class Entity : DBObject
     {
         public string Layer { get; set; }
+        public void SetDatabaseDefaults() { }
         public void IntersectWith(Entity otra, int modo, object puntos, System.IntPtr thisGraphicSystemMarker, System.IntPtr otherGraphicSystemMarker) { }
     }
-    public class Curve : Entity { }
+    public class Curve : Entity
+    {
+        public void Extend(bool extendStart, Autodesk.AutoCAD.Geometry.Point3d toPoint) { }
+    }
     public class Line : Curve
     {
         public Line() { }
         public Line(Autodesk.AutoCAD.Geometry.Point3d inicio, Autodesk.AutoCAD.Geometry.Point3d fin) { }
         public double Length => 0;
+        public Autodesk.AutoCAD.Geometry.Point3d StartPoint { get; set; }
         [System.Obsolete(""Usa Length."")] public double Largo => 0;
     }
     public class Transaction : Autodesk.AutoCAD.Runtime.DisposableWrapper
@@ -120,10 +142,16 @@ namespace Autodesk.AutoCAD.DatabaseServices
         public void SaveAs(string fileName, bool bakAndRename) { }
         public void ReadDwgFile(string fileName, int mode, bool allowCPConversion, string password) { }
         public void Insert(string blockName, Database dataBase, bool preserveSourceDatabase) { }
+        public ObjectId AddDBObject(DBObject o) => default(ObjectId);
         public event ObjectEventHandler ObjectAppended;
     }
     public class RasterImageDef : DBObject { public string SourceFileName { get; set; } }
-    public class BlockTableRecord : DBObject { public string PathName { get; set; } public string Name { get; set; } }
+    public class BlockTableRecord : DBObject
+    {
+        public string PathName { get; set; }
+        public string Name { get; set; }
+        public ObjectId AppendEntity(Entity e) => default(ObjectId);
+    }
     public class HostApplicationServices
     {
         public static HostApplicationServices Current => null;
@@ -138,6 +166,7 @@ namespace Autodesk.AutoCAD.EditorInput
         public void WriteMessage(string mensaje) { }
         public object GetPoint(string mensaje) => null;
         public object GetCurrentView() => null;
+        public void SetImpliedSelection(object ids) { }
         public object SelectAll() => null;
         public void Command(params object[] parametros) { }
     }
@@ -153,6 +182,7 @@ namespace Autodesk.AutoCAD.ApplicationServices
         public TransactionManager TransactionManager => null;
         public Autodesk.AutoCAD.EditorInput.Editor Editor => null;
         public void SendStringToExecute(string comando, bool activate, bool wrapUpInactiveDoc, bool echoCommand) { }
+        public System.IDisposable LockDocument() => null;
     }
     public static class DocumentExtension { public static void CloseAndDiscard(this Document doc) { } }
     public class DocumentCollection
@@ -190,7 +220,16 @@ namespace Autodesk.Civil.DatabaseServices
     {
         public static Autodesk.AutoCAD.DatabaseServices.ObjectId CreateByLayout(string profileName, Autodesk.AutoCAD.DatabaseServices.ObjectId alignmentId, string layerName) => default(Autodesk.AutoCAD.DatabaseServices.ObjectId);
     }
-    public class Surface : Entity { }
+    public class Surface : Entity
+    {
+        public void Rebuild() { }
+        public object GetGeneralProperties() => null;
+    }
+    public class SurfaceStyleCollection
+    {
+        public bool Contains(string nombre) => false;
+        public Autodesk.AutoCAD.DatabaseServices.ObjectId Add(string nombre) => default(Autodesk.AutoCAD.DatabaseServices.ObjectId);
+    }
     public class TinSurface : Surface { public void AddPointFile(string pointFilePath, int formato) { } }
     public class BaselineRegionCollection
     {
