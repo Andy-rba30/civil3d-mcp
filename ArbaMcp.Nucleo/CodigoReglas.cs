@@ -256,6 +256,10 @@ namespace ArbaMcp.Nucleo
             new ReglaMiembro("TransactionManager", "StartOpenCloseTransaction", Transaccion),
             new ReglaMiembro("TransactionManager", "TopTransaction", Transaccion),
             new ReglaMiembro("ObjectId", "Open", Transaccion),
+            // 1.17.6: Database.AddDBObject hace residente un objeto fuera de la transacción si no se sigue de
+            // AddNewlyCreatedDBObject; al abortar (simulación) quedaría en el dibujo. Para añadir: F.Agregar, o
+            // BlockTableRecord.AppendEntity / DBDictionary.SetAt más F.Tr.AddNewlyCreatedDBObject
+            new ReglaMiembro("Database", "AddDBObject", Transaccion),
             new ReglaMiembro("HostApplicationServices", "WorkingDatabase", Documentos, soloEscritura: true),
             new ReglaMiembro("HostApplicationServices", "GetRemoteFile", Red),
             new ReglaMiembro("HostApplicationServices", "PutRemoteFile", Red),

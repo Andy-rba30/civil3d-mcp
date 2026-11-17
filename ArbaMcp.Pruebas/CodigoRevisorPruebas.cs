@@ -245,6 +245,18 @@ return v;");
         }
 
         [Fact]
+        public void Transaccion_DatabaseAddDBObjectTambienSinSoloLectura()
+        {
+            // 1.17.6: hace residente un objeto fuera de la transacción (al abortar la simulación quedaría en el dibujo)
+            var p = Scripts.Bloqueado("Database db = null;\nvar id = db.AddDBObject(new Line());\nreturn id;", CodigoReglas.Transaccion);
+            Assert.Equal(2, p.Linea);
+            Assert.Contains("AddDBObject", p.Mensaje);
+            Assert.Contains("usa F.Tr o una transacción anidada", p.Mensaje);
+            // Añadir dentro de la transacción sigue compilando
+            Scripts.CompilarBien("BlockTableRecord b = null; Transaction tr = null; var l = new Line(); b.AppendEntity(l); tr.AddNewlyCreatedDBObject(l, true); return null;");
+        }
+
+        [Fact]
         public void Eventos_SuscribirseNoCompila()
         {
             Scripts.Bloqueado("AcApp.Idle += (s, e) => { };\nreturn null;", CodigoReglas.Eventos);

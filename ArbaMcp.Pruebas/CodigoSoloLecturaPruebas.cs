@@ -97,7 +97,6 @@ namespace ArbaMcp.Pruebas
         public void MetodosQueEscribenPorPrefijoEnObjetosDelDibujoYDeCivil()
         {
             Bloqueado("Line l = null;\nl.SetDatabaseDefaults();\nreturn null;", ".SetDatabaseDefaults");
-            Bloqueado("Database db = null;\ndb.AddDBObject(new Line());\nreturn null;", ".AddDBObject");
             Bloqueado("Autodesk.AutoCAD.EditorInput.Editor ed = null;\ned.SetImpliedSelection(null);\nreturn null;", ".SetImpliedSelection");
             Bloqueado("var id = Civ.Alignment.Create(null, \"Eje 1\", null, \"0\", \"Estilo\", \"Etiquetas\");\nreturn id;", "Autodesk.Civil.DatabaseServices.Alignment.Create");
             Bloqueado("Civ.Surface s = null;\ns.Rebuild();\nreturn null;", ".Rebuild");
@@ -151,6 +150,10 @@ return new { n, ids.Count, largo = linea.Length, g };");
             var r = SoloLectura("System.IO.File.WriteAllText(\"x.txt\", \"x\");\nreturn null;");
             Assert.False(r.Ok);
             Assert.Contains(r.Problemas, p => p.Categoria == CodigoReglas.Archivos);
+            // Database.AddDBObject: bloqueado en todo modo desde 1.17.6 (regla general de transacción)
+            var a = SoloLectura("Database db = null;\ndb.AddDBObject(new Line());\nreturn null;");
+            Assert.False(a.Ok);
+            Assert.Contains(a.Problemas, p => p.Categoria == CodigoReglas.Transaccion);
         }
 
         // ------------------------------------------------------------------ caché y puerta entre contextos
