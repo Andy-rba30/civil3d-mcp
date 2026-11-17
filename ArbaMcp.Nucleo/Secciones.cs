@@ -51,6 +51,92 @@ namespace ArbaMcp.Nucleo
     }
 
     /// <summary>
+    /// Nombres de un grupo nuevo con un nombre de grupo dado (crear_secciones, desde 1.19.3): sus líneas (únicas en el
+    /// dibujo, NombresLineasUnicos), sus vistas ('&lt;grupo&gt; &lt;progresiva&gt;', " (2)" si ya existen) y los avisos
+    /// que tocan. Se calcula para el nombre pedido y, si ese nombre ya lo usa un grupo de otro eje, también para el
+    /// alternativo, por si Civil 3D lo rechaza.
+    /// </summary>
+    public sealed class PlanNombresGrupo
+    {
+        public string Grupo;
+        public NombresDeLineas Lineas;
+        public List<string> Vistas = new List<string>();
+        public int VistasRenombradas;
+        public List<string> Avisos = new List<string>();
+    }
+
+    /// <summary>
+    /// Nombre del grupo nuevo frente a los grupos de los demás ejes (desde 1.19.3). Civil 3D no deja repetir el nombre de
+    /// una línea de muestreo en todo el dibujo (1.14.2); si tampoco deja repetir el de un grupo en otro eje está por
+    /// verificar (VALIDACION_1193). Si el nombre ya lo usa un grupo de otro eje, se prepara un nombre alternativo para
+    /// usarlo solo si Civil 3D rechaza el pedido.
+    /// </summary>
+    public sealed class NombreDeGrupo
+    {
+        /// <summary>El nombre pedido (o el de por defecto).</summary>
+        public string Pedido;
+        /// <summary>Ejes que ya tienen un grupo con ese nombre (sin distinguir mayúsculas); vacío si ninguno.</summary>
+        public List<string> EnOtrosEjes = new List<string>();
+        /// <summary>"&lt;eje&gt; - &lt;nombre&gt;" (o con " (2)"), libre en todo el dibujo; null si el nombre no está en otro eje.</summary>
+        public string Alternativo;
+        /// <summary>Aviso previo (simulación y antes de crear); null si el nombre no está en otro eje.</summary>
+        public string Aviso;
+        /// <summary>Grupos leídos de todos los ejes.</summary>
+        public int GruposLeidos;
+    }
+
+    /// <summary>
+    /// Una fuente muestreada del grupo, para saber de qué objeto del dibujo es cada sección de una línea (desde 1.19.3):
+    /// su nombre en el dibujo, su clase (Secciones.Clase*), la clave de su id, el corredor si es una superficie de
+    /// corredor y la clave de la sección que devolvió SampleLine.GetSectionId con su id (null si no se llamó o no dio nada).
+    /// </summary>
+    public sealed class FuenteParaIdentificar
+    {
+        public string Nombre;
+        public string Clase;
+        public string Id;
+        public string Corredor;
+        public string ClaveGetSectionId;
+        public FuenteParaIdentificar() { }
+        public FuenteParaIdentificar(string nombre, string clase, string id, string corredor = null, string claveGetSectionId = null)
+        {
+            Nombre = nombre; Clase = clase; Id = id; Corredor = corredor; ClaveGetSectionId = claveGetSectionId;
+        }
+    }
+
+    /// <summary>
+    /// De qué fuente del dibujo es una sección (datos.lineas[].secciones_detalle de crear_secciones, desde 1.19.3):
+    /// Section.SourceName, la superficie del dibujo (null si la fuente no es una superficie o no se identificó), la clase
+    /// de la fuente y con qué intento de IdentificacionSecciones se encontró (null si no se identificó).
+    /// </summary>
+    public sealed class SeccionDetalle
+    {
+        public string SourceName;
+        public string Superficie;
+        public string Clase;
+        public string Metodo;
+    }
+
+    /// <summary>Cuántas secciones del grupo se identificaron con cada intento y cuántas no (datos.secciones_identificadas, desde 1.19.3).</summary>
+    public sealed class ResumenSecciones
+    {
+        public Dictionary<string, int> Metodos = new Dictionary<string, int>();
+        public int Secciones, SinIdentificar;
+
+        public void Anotar(IEnumerable<SeccionDetalle> detalle)
+        {
+            foreach (var d in detalle ?? new SeccionDetalle[0])
+            {
+                if (d == null) continue;
+                Secciones++;
+                if (string.IsNullOrEmpty(d.Metodo)) { SinIdentificar++; continue; }
+                Metodos.TryGetValue(d.Metodo, out int n);
+                Metodos[d.Metodo] = n + 1;
+            }
+        }
+    }
+
+    /// <summary>
     /// Colocación de las vistas de sección en cuadrícula (crear_secciones, 1.13.0): columnas de izquierda a derecha y,
     /// dentro de cada columna, una vista encima de la otra (progresiva creciente de abajo arriba, como la esquina de
     /// inicio "inferior izquierda" de Civil 3D). Cada vista se coloca con la extensión real de la anterior: la siguiente
@@ -239,6 +325,126 @@ namespace ArbaMcp.Nucleo
         public static string MensajeNombreRepetido(string que, string nombre, double progresiva, int nombresLeidos)
             => "Civil 3D no deja crear " + que + " '" + nombre + "' (progresiva " + Num(progresiva) + "): ya hay otro objeto con ese nombre en el dibujo (Civil 3D no deja repetir ese nombre en todo el dibujo, aunque sea de otro grupo o de otro eje) y el plugin no lo encontró entre los "
                + nombresLeidos + " nombres que leyó (grupos de muestreo de todos los ejes y espacio modelo). Nada queda escrito (la transacción se descarta) y no se reintenta. Revisa los grupos de líneas de muestreo de todos los ejes en Prospector y anótalo como hallazgo (miembros_por_verificar_civil3d.md, sección 1.14.2).";
+
+        /// <summary>
+        /// Nombres de líneas y vistas de un grupo llamado 'grupo' (desde 1.19.3; la regla es la de 1.14.2): las líneas
+        /// frente a 'lineasExistentes' (NombresLineasUnicos) y las vistas '&lt;grupo&gt; &lt;progresiva&gt;' frente a
+        /// 'vistasExistentes' (" (2)" si chocan). Los avisos: el del prefijo de las líneas y, con vistas, el de las vistas
+        /// renombradas.
+        /// </summary>
+        public static PlanNombresGrupo PlanNombres(IList<double> progresivas, string grupo, IDictionary<string, string> lineasExistentes, IEnumerable<string> vistasExistentes, bool conVistas)
+        {
+            var p = new PlanNombresGrupo { Grupo = (grupo ?? "").Trim() };
+            p.Lineas = NombresLineasUnicos(progresivas, p.Grupo, lineasExistentes);
+            if (p.Lineas.Aviso != null) p.Avisos.Add(p.Lineas.Aviso);
+            var vistasBase = p.Lineas.Base.Select(b => NombreVista(p.Grupo, b)).ToList();
+            p.Vistas = NombresUnicos(vistasBase, vistasExistentes);
+            p.VistasRenombradas = vistasBase.Where((v, i) => !string.Equals(v, p.Vistas[i], StringComparison.Ordinal)).Count();
+            if (conVistas && p.VistasRenombradas > 0)
+                p.Avisos.Add(p.VistasRenombradas + " vistas de sección llevan ' (2)' detrás porque ya hay vistas con su nombre en el dibujo (por ejemplo '" + p.Vistas.First(v => !vistasBase.Contains(v)) + "').");
+            return p;
+        }
+
+        /// <summary>
+        /// Mira si el nombre del grupo nuevo ya lo usa un grupo de otro eje (desde 1.19.3). 'gruposDelDibujo': (nombre del
+        /// grupo, nombre de su eje) de los grupos de todos los ejes. Los del propio eje no cuentan como choque (ese caso
+        /// ya es error antes) pero sí como ocupados para el alternativo. Si choca: el alternativo es "&lt;eje&gt; -
+        /// &lt;nombre&gt;" ("Eje 2 - Muestreo 100"), o el nombre tal cual si ya empieza por el del eje, con " (2)", " (3)"...
+        /// mientras exista algún grupo así en el dibujo; y un aviso que dice qué pasará en cada caso.
+        /// </summary>
+        public static NombreDeGrupo NombreDeGrupoNuevo(string grupo, string eje, IEnumerable<(string grupo, string eje)> gruposDelDibujo)
+        {
+            var lista = (gruposDelDibujo ?? new (string, string)[0]).Where(x => !string.IsNullOrWhiteSpace(x.grupo)).ToList();
+            string g = Limpio(grupo), e = Limpio(eje);
+            var r = new NombreDeGrupo { Pedido = g, GruposLeidos = lista.Count };
+            r.EnOtrosEjes = lista
+                .Where(x => string.Equals(Limpio(x.grupo), g, StringComparison.OrdinalIgnoreCase) && !string.Equals(Limpio(x.eje), e, StringComparison.OrdinalIgnoreCase))
+                .Select(x => Limpio(x.eje)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (r.EnOtrosEjes.Count == 0) return r;
+
+            bool empiezaPorEje = e.Length > 0 && (string.Equals(g, e, StringComparison.OrdinalIgnoreCase) || g.StartsWith(e + " ", StringComparison.OrdinalIgnoreCase));
+            string candidato = e.Length == 0 || empiezaPorEje ? g : e + " - " + g;
+            r.Alternativo = NombresUnicos(new List<string> { candidato }, lista.Select(x => x.grupo).Concat(new[] { g }))[0];
+            r.Aviso = "Ya hay un grupo de líneas de muestreo llamado '" + g + "' en " + EnEjes(r.EnOtrosEjes)
+                + ". No se sabe todavía si Civil 3D deja repetir el nombre de un grupo en otro eje (por verificar, VALIDACION_1193): se intenta con '" + g
+                + "' y, si Civil 3D lo rechaza por repetido, el grupo se crea como '" + r.Alternativo + "' (con sus líneas y vistas) en la misma transacción, con otro aviso.";
+            return r;
+        }
+
+        /// <summary>
+        /// True si, tras rechazar Civil 3D el nombre del grupo, se puede intentar con el alternativo (desde 1.19.3): solo si
+        /// el rechazo es por nombre repetido (EsNombreRepetido), el plugin había visto ese nombre en otro eje (hay
+        /// alternativo) y el intento rechazado no dejó nada (el eje tiene los mismos grupos que antes, leídos los dos).
+        /// </summary>
+        public static bool PuedeReintentarGrupo(string mensajeCivil3d, string alternativo, int gruposAntes, int gruposDespues)
+            => EsNombreRepetido(mensajeCivil3d) && !string.IsNullOrWhiteSpace(alternativo) && gruposAntes >= 0 && gruposAntes == gruposDespues;
+
+        /// <summary>
+        /// Error cuando Civil 3D rechaza el nombre del grupo y no se reintenta (desde 1.19.3): porque no era por nombre
+        /// repetido no se llama aquí (sale el error de Civil 3D); sí cuando el plugin no vio el nombre en otro eje o cuando
+        /// el intento rechazado dejó algo en el eje. Sin el texto crudo de Civil 3D (va al historial).
+        /// </summary>
+        public static string MensajeGrupoRechazado(NombreDeGrupo grupo, string eje, int gruposAntes, int gruposDespues)
+        {
+            string g = grupo?.Pedido ?? "", cola = " Nada queda escrito (la transacción se descarta) y no se reintenta.";
+            if (grupo == null || string.IsNullOrWhiteSpace(grupo.Alternativo))
+                return "Civil 3D no deja crear el grupo de líneas de muestreo '" + g + "' en el eje '" + eje + "': dice que el nombre está repetido y el plugin no lo encontró entre los "
+                     + (grupo?.GruposLeidos ?? 0) + " grupos que leyó de todos los ejes." + cola
+                     + " Pasa otro 'nombre', revisa los grupos de líneas de muestreo de todos los ejes en Prospector y anótalo como hallazgo (miembros_por_verificar_civil3d.md, sección 1.19.3).";
+            return "Civil 3D no deja crear el grupo de líneas de muestreo '" + g + "' en el eje '" + eje + "' porque ya hay uno con ese nombre en " + EnEjes(grupo.EnOtrosEjes)
+                 + ", y no se prueba con '" + grupo.Alternativo + "' porque "
+                 + (gruposAntes < 0 || gruposDespues < 0 ? "no se pudieron contar los grupos del eje para comprobar que el intento rechazado no dejó nada"
+                                                         : "el eje pasó de " + gruposAntes + " a " + gruposDespues + " grupos con el intento rechazado")
+                 + "." + cola + " Pasa otro 'nombre' (por ejemplo '" + grupo.Alternativo + "').";
+        }
+
+        /// <summary>Error cuando Civil 3D rechaza también el nombre alternativo del grupo (desde 1.19.3).</summary>
+        public static string MensajeAlternativoRechazado(NombreDeGrupo grupo, string eje, string motivo)
+            => "Civil 3D no deja crear el grupo de líneas de muestreo '" + (grupo?.Pedido ?? "") + "' en el eje '" + eje + "' (ya hay uno con ese nombre en " + EnEjes(grupo?.EnOtrosEjes)
+             + ") ni con el nombre alternativo '" + (grupo?.Alternativo ?? "") + "': " + motivo + ". Nada queda escrito (la transacción se descarta) y no se reintenta más. Pasa otro 'nombre'.";
+
+        /// <summary>Aviso cuando Civil 3D rechazó el nombre del grupo y se creó con el alternativo (desde 1.19.3).</summary>
+        public static string AvisoGrupoRenombrado(NombreDeGrupo grupo, string eje)
+            => "Civil 3D no dejó crear el grupo '" + grupo.Pedido + "' en el eje '" + eje + "' porque ya hay uno con ese nombre en " + EnEjes(grupo.EnOtrosEjes)
+             + " (rechazo por nombre repetido, en datos.nombre_grupo.texto_civil3d): se creó como '" + grupo.Alternativo + "', y sus líneas y vistas llevan ese nombre. El grupo del otro eje no se tocó.";
+
+        /// <summary>Aviso cuando Civil 3D aceptó un nombre de grupo que ya usa otro eje (desde 1.19.3).</summary>
+        public static string AvisoGrupoAceptado(NombreDeGrupo grupo, string eje)
+            => "Civil 3D dejó crear el grupo '" + grupo.Pedido + "' en el eje '" + eje + "' aunque " + EnEjes(grupo.EnOtrosEjes)
+             + " ya tiene uno con ese nombre (datos.nombre_grupo.rechazado_por_civil3d: false): el nombre del grupo se dejó tal cual.";
+
+        private static string EnEjes(IList<string> ejes)
+        {
+            var l = (ejes ?? new List<string>()).ToList();
+            if (l.Count == 0) return "otro eje";
+            return (l.Count == 1 ? "el eje " : "los ejes ") + Enumerar(l, 5);
+        }
+
+        /// <summary>
+        /// De qué fuente del dibujo es cada sección de una línea (desde 1.19.3), con IdentificacionSecciones.Identificar
+        /// (el orden validado en calcular_volumenes: GetSectionId, CorridorSurfaceId, SourceId, SourceName y
+        /// "&lt;corredor&gt; &lt;superficie&gt;"). Primero las superficies (terreno y de corredor) y después los corredores
+        /// y lo demás; una sección nunca se asigna a dos fuentes. Devuelve un detalle por sección, en el orden de 'secciones'.
+        /// </summary>
+        public static List<SeccionDetalle> IdentificarSecciones(IList<SeccionCandidata> secciones, IList<FuenteParaIdentificar> fuentes)
+        {
+            var l = secciones ?? new List<SeccionCandidata>();
+            var detalle = l.Select(s => new SeccionDetalle { SourceName = s?.NombreFuente }).ToList();
+            var usadas = new HashSet<int>();
+            int Orden(FuenteParaIdentificar f) => f.Clase == ClaseSuperficie || f.Clase == ClaseSuperficieCorredor ? 0 : f.Clase == ClaseCorredor ? 1 : 2;
+            foreach (var f in (fuentes ?? new List<FuenteParaIdentificar>()).Where(x => x != null && !string.IsNullOrWhiteSpace(x.Nombre)).OrderBy(Orden))
+            {
+                var buscada = new SuperficieBuscada(f.Id, f.Nombre.Trim(), f.Clase == ClaseSuperficieCorredor ? f.Corredor : null);
+                var r = IdentificacionSecciones.Identificar(l, buscada, f.ClaveGetSectionId, usadas);
+                if (!r.Encontrada) continue;
+                usadas.Add(r.Indice);
+                var d = detalle[r.Indice];
+                d.Clase = f.Clase;
+                d.Metodo = r.Metodo;
+                d.Superficie = f.Clase == ClaseSuperficie || f.Clase == ClaseSuperficieCorredor ? f.Nombre.Trim() : null;
+            }
+            return detalle;
+        }
 
         private static HashSet<string> Ocupados(IEnumerable<string> nombres)
             => new HashSet<string>((nombres ?? new string[0]).Where(n => !string.IsNullOrWhiteSpace(n)).Select(Limpio), StringComparer.OrdinalIgnoreCase);
