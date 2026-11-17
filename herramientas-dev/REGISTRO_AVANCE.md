@@ -74,6 +74,8 @@ una presenta su plan y la orquestadora lo aprueba por `send_message`):
 | 6.10 Digitalizar las Figuras 302.02 a 302.05 (peralte) | `session_01CdHU34ytgX6VkmhiAmnegy` | `memoria-firma` (main) | — | plan pendiente; no toca la base hasta que acabe la 6.4 |
 | 6.8 XML DG-2018 corregido desde la base | — | `memoria-firma` | — | después de 6.4 y 6.10; base: los XML del dueño en `memoria-firma/normas/civil3d/` (commit `12a56d3`, con su permiso) |
 
+**Decisión del dueño (17/11/2026)**: las sesiones hijas se **archivan** en cuanto terminan, después de comprobar que su rama o su commit están en GitHub (el archivo se puede deshacer con `unarchive_session`). Archivadas: 6.2 y 6.7.
+
 Los informes del verificador independiente están en `memoria-firma/normas/tablas/VERIFICACION_PERALTE_SOBREANCHO_20261117_A.md`
 y `VERIFICACION_CRITERIOS_PENDIENTES_20261117_B.md` (commit `b2dc3e4`).
 
