@@ -513,8 +513,15 @@ namespace ArbaMcp.Nucleo
                 if (n.Parent is MemberAccessExpressionSyntax ma && ma.Name == n) expr = ma;
                 else if (n.Parent is MemberBindingExpressionSyntax mb) expr = mb;
                 // Auditoría de la ronda C (I5): (l.Layer, _) = ("0", 0) asigna cada elemento de la tupla de la izquierda,
-                // también en tuplas anidadas (el foreach con destinos que no son variables nuevas no compila: CS8186)
-                while (expr.Parent is ArgumentSyntax arg && arg.Parent is TupleExpressionSyntax tupla) expr = tupla;
+                // también en tuplas anidadas (el foreach con destinos que no son variables nuevas no compila: CS8186).
+                // Segunda revisión (N1): los paréntesis tampoco cambian el destino: (l.Layer) = "0", (l.ColorIndex)++,
+                // ((l.Layer), _) = ..., en cualquier anidación y combinados con tuplas
+                while (true)
+                {
+                    if (expr.Parent is ParenthesizedExpressionSyntax parentesis) { expr = parentesis; continue; }
+                    if (expr.Parent is ArgumentSyntax arg && arg.Parent is TupleExpressionSyntax tupla) { expr = tupla; continue; }
+                    break;
+                }
                 var p = expr.Parent;
                 if (p is AssignmentExpressionSyntax a && a.Left == expr) return true;
                 if (p is ForEachVariableStatementSyntax fe && fe.Variable == expr) return true;
