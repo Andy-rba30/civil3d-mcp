@@ -71,7 +71,7 @@ una presenta su plan y la orquestadora lo aprueba por `send_message`):
 | 6.6 Bordes de calzada (`crear_bordes_calzada`, `listar_bordes_calzada`) | `session_01CdHU37Cy3fgHeSz8Jv7MJf` | `tarea/6.6-bordes-sobreancho` | 1.21.0 | plan aprobado, trabajando |
 | 6.7 Evaluación honesta (comprobaciones manuales) | `session_01CdHU38kGV8ado1NVu2nujn` | `memoria-firma` (main) | — | **terminada** (commit `8f35eea`): banco versión 2, las tareas 1, 2, 3, 5, 8, 9 y 10 solo dan OK con lo que se lee por el MCP; lo visual es revisión de la persona. Ojo: el eje de prueba mide 848,4956 y la tarea 5 pedía fin 1000 (el OK viejo no podía ser cierto). Quedan frases manuales menores en las tareas 4 y 6. La próxima corrida puede pasar de OK a FALLO por el criterio nuevo |
 | 6.9 `verificar_norma` y propuesta de radios con las decisiones del dueño | `session_01CdHU36FFBPjbfjEgijDCci` | `tarea/6.9-norma-decisiones` | 1.21.1 | plan pendiente |
-| 6.10 Digitalizar las Figuras 302.02 a 302.05 (peralte) | `session_01CdHU34ytgX6VkmhiAmnegy` | `memoria-firma` (main) | — | plan pendiente; no toca la base hasta que acabe la 6.4 |
+| 6.10 Digitalizar las Figuras 302.02 a 302.05 (peralte) | `session_01CdHU34ytgX6VkmhiAmnegy` | `memoria-firma` (main) | — | plan aprobado: las figuras son VECTORIALES (peralte en el eje horizontal, radio log en el vertical); fase 1 (script, CSV, imágenes de control) en marcha; fase 2 (tabla `peralte_figura` en la base, regla «Decisión 6») tras la 6.4 |
 | 6.8 XML DG-2018 corregido desde la base | — | `memoria-firma` | — | después de 6.4 y 6.10; base: los XML del dueño en `memoria-firma/normas/civil3d/` (commit `12a56d3`, con su permiso) |
 
 **Decisión del dueño (17/11/2026)**: las sesiones hijas se **archivan** en cuanto terminan, después de comprobar que su rama o su commit están en GitHub (el archivo se puede deshacer con `unarchive_session`). Archivadas: 6.2 y 6.7.
@@ -104,6 +104,8 @@ descansos solo si suman ≥ 500 m; f: no escribir un radio bajo el mínimo sin c
 g: 215 m mientras solo haya arcos, ofreciendo 125 m con clotoide). **Peralte por radio: digitalizar las Figuras 302.02 a
 302.05** de la DG-2018. Se añaden la **6.8** (XML DG-2018 corregido, generado desde la base) y la **6.9** (corrección de
 `verificar_norma` y la propuesta de radios con esas decisiones).
+
+**Preguntas abiertas para Jose** (no bloquean): (1) el peralte mínimo del 2 %, ¿solo donde lo dice la T304.06 o para todo R por debajo del radio de la T304.04? (con R < 2500 m la figura da menos del 2 %); (2) R entre el radio mínimo de la tabla y el extremo de la curva dibujada (p. ej. 302.03 a 80 km/h: tabla 230 m, curva hasta 288 m): ¿p máx con aviso?; (3) los P2 a P9 de la 6.4 en `memoria-firma/normas/DECISIONES.md` (0,7p frente a T304.07, 30 m frente a V/3,6, segundo término de Sa, factor T302.20, L de los articulados, Sa < 0,40 m, desarrollo en 40 m o en la transición del peralte, tramo de 0 a 2 % en la espiral).
 
 **Siguiente**: aprobar los planes de 6.1, 6.3 y 6.7; pasar el esquema de la 6.4 a 6.5 y 6.6; lanzar 6.9 y la
 digitalización (6.10, en `memoria-firma`); después 6.8; juntar las ramas en una para la ronda D en la PC.
