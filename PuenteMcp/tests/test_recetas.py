@@ -366,6 +366,62 @@ def test_si_el_plugin_simula_aunque_se_pida_real_no_suma(servidor, puente, con_r
     assert r["receta"]["sumada"] is False and leer_yaml(con_receta)["veces_usada"] == 0
 
 
+# 1.17.6: solo_lectura viaja al plugin (mismo significado que en ejecutar_codigo) y una lectura correcta suma
+def respuesta_lectura(resultado, solo_lectura=True):
+    r = respuesta_plugin(True, resultado)
+    if solo_lectura:
+        r["result"]["solo_lectura"] = True
+        r["result"]["copia"] = None
+    return r
+
+
+def test_solo_lectura_viaja_al_plugin_y_una_lectura_correcta_suma(servidor, puente, con_receta):
+    servidor.respuestas["ejecutar_codigo"] = respuesta_lectura(4)
+    r = receta(puente, parametros={"nombre_capa": "Capa B"}, solo_lectura=True, pedido="Cuenta sin tocar el dibujo")
+    assert servidor.llamadas == [{
+        "tool": "ejecutar_codigo",
+        "args": {"codigo_csharp": CODIGO, "simular": True, "parametros": '{"nombre_capa": "Capa B", "color": 7}',
+                 "solo_lectura": True, "pedido": "Cuenta sin tocar el dibujo"},
+        "timeout_s": puente._timeout_s("ejecutar_codigo", [{"name": "simular"}], {}),
+    }]
+    assert r["solo_lectura"] is True and r["copia"] is None and r["resultado"] == 4
+    assert r["receta"]["sumada"] is True and r["receta"]["veces_usada"] == 1
+    assert r["receta"]["nota"].startswith("Ejecución de solo lectura correcta: veces_usada sube a 1")
+    assert leer_yaml(con_receta)["veces_usada"] == 1
+
+
+def test_sin_solo_lectura_no_se_envia(servidor, puente, con_receta):
+    servidor.respuestas["ejecutar_codigo"] = respuesta_plugin(True, None)
+    receta(puente, parametros={"nombre_capa": "Capa B"})
+    receta(puente, parametros={"nombre_capa": "Capa B"}, solo_lectura=False)
+    assert all("solo_lectura" not in llamada["args"] for llamada in servidor.llamadas)
+
+
+def test_solo_lectura_con_un_plugin_anterior_no_suma(servidor, puente, con_receta):
+    # El plugin 1.17.5 no conoce solo_lectura: simula como siempre y no responde solo_lectura=true
+    servidor.respuestas["ejecutar_codigo"] = respuesta_lectura(4, solo_lectura=False)
+    r = receta(puente, parametros={"nombre_capa": "Capa B"}, solo_lectura=True)
+    assert r["receta"]["sumada"] is False and "anterior a la 1.17.6" in r["receta"]["nota"]
+    assert leer_yaml(con_receta)["veces_usada"] == 0
+
+
+def test_solo_lectura_con_error_no_suma(servidor, puente, con_receta):
+    servidor.respuestas["ejecutar_codigo"] = {
+        "ok": False, "id_log": "20261117-120002-aaa111",
+        "error": "ejecutar_codigo: el código no se puede ejecutar (1 uso no permitido). [bloqueado: solo lectura] F.Agregar"}
+    r = receta(puente, parametros={"nombre_capa": "Capa B"}, solo_lectura=True)
+    assert r["ok"] is False and "[bloqueado: solo lectura]" in r["error"]
+    assert r["receta"]["sumada"] is False and r["receta"]["nota"] == "La ejecución falló: veces_usada no cambia."
+    assert leer_yaml(con_receta)["veces_usada"] == 0
+
+
+def test_preparar_ejecucion_solo_lectura(con_receta):
+    p = recetas.preparar_ejecucion(NOMBRE, {"nombre_capa": "Capa B"}, solo_lectura=True)
+    assert p["solo_lectura"] is True and p["args"]["solo_lectura"] is True
+    q = recetas.preparar_ejecucion(NOMBRE, {"nombre_capa": "Capa B"})
+    assert q["solo_lectura"] is False and "solo_lectura" not in q["args"]
+
+
 def test_ejecutar_codigo_desactivada_no_suma(servidor, puente, con_receta):
     servidor.respuestas["ejecutar_codigo"] = {
         "ok": False, "id_log": "20261114-120001-def456",

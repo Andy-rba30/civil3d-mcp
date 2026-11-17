@@ -418,8 +418,8 @@ funciones locales, sin declarar clases ni métodos; puede empezar con `using`. U
    entrada en Deshacer.»; `datos.deshacer.comando` sale vacío (no hay pseudocomando). **Sugerencia**: sin
    `solo_lectura`, si el compilador no reconoció ninguna escritura (`escrituras_reconocidas: 0`) y el script no cambió
    nada, `avisos` trae «El script no cambió nada y no usa ninguna de las escrituras que el plugin reconoce: si solo lee,
-   pásalo con solo_lectura=true la próxima vez ...». `ejecutar_receta` (puente) no pasa `solo_lectura`: las recetas
-   siguen como en la 1.17.5.
+   pásalo con solo_lectura=true la próxima vez ...». `ejecutar_receta` (puente) acepta y pasa `solo_lectura` (ver
+   *Recetas de código*).
 
 **Roslyn dentro de Civil 3D**: las DLL (`Microsoft.CodeAnalysis.dll`, `Microsoft.CodeAnalysis.CSharp.dll` y sus
 traducciones en `es\`) vienen de NuGet al compilar y `instalar.ps1` las deja en `Contents\roslyn` del bundle, **nunca
@@ -487,7 +487,7 @@ corre desde PowerShell (ver más abajo).
 |---|---|---|---|
 | `buscar_api` | consulta* (texto libre, en español o con nombres de la API), limite (1 a 100, por defecto 10) | Texto compacto: cabecera con cuántas recetas, entradas del glosario y filas del catálogo; "Consulta ampliada con el glosario: ..."; **RECETAS** (archivo, título y primeras líneas; desde 1.17.0 también las recetas de código, ver *Recetas de código*), **GLOSARIO** (término, por qué coincidió, paso, sinónimos, cada concepto con `[confirmado]` o `[por confirmar]` y la nota) y **CATÁLOGO** (clase o enum con su base; método con `→ tipo de retorno`, `[estático]`, `firma:` y `parámetros:`; propiedad con tipo y lectura/escritura; `descripción:` si la hay y `OBSOLETO: mensaje` si aplica). Sin resultados: una línea "Sin resultados ..." con sugerencias. Falta algo: un texto que empieza por `Error:` y dice qué falta y cómo ponerlo | `PuenteMcp/buscar_api.py`; lee `MEMORIA_FIRMA_DIR` |
 | `guardar_receta` (1.17.0) | nombre* (3 a 64 caracteres en minúsculas, números y `_`), pedido* (el pedido de ejemplo en español, con las palabras del usuario), codigo* (el script de `ejecutar_codigo` tal cual), parametros (lista JSON de `{nombre, tipo, descripcion, obligatorio, por_defecto}`; tipos `string`, `number`, `boolean`, `json`), notas, aprobada_por_el_dueno (boolean, por defecto false), aprobacion_del_dueno (las palabras literales del dueño), reemplazar (boolean, por defecto false) | JSON. **Sin `aprobada_por_el_dueno=true` y `aprobacion_del_dueno` no escribe nada**: `{"ok":true,"guardada":false,"reemplazaria","archivos_previstos":{codigo,datos},"yaml","lineas_codigo","avisos","siguiente_paso"}`. Con las dos: `{"ok":true,"guardada":true,"reemplazada","archivos":{codigo,datos},"veces_usada","avisos","recordatorio"}`, con el recordatorio de correr L.2. Error: `{"ok":false,"guardada":false,"error"}` | `PuenteMcp/recetas.py`; escribe en `MEMORIA_FIRMA_DIR\recetas\` |
-| `ejecutar_receta` (1.17.0) | nombre*, parametros (objeto JSON con un valor por parámetro declarado; también como texto), simular (boolean, **por defecto true**), pedido | JSON: la respuesta de `ejecutar_codigo` tal cual (`resultado`, `simulado`, `id_log`, `ms`, `ms_espera`, `ms_ejecucion`, `ms_puente`...) más el bloque `receta`: `nombre`, `parametros` (los valores enviados, con los `por_defecto`), `veces_usada`, `sumada` y `nota` (y `aviso` si no se pudo anotar el uso). Error antes de llamar al plugin (receta o parámetros): `{"ok":false,"error","ms_puente"}` | `PuenteMcp/recetas.py` + `ejecutar_codigo` del plugin |
+| `ejecutar_receta` (1.17.0) | nombre*, parametros (objeto JSON con un valor por parámetro declarado; también como texto), simular (boolean, **por defecto true**), solo_lectura (boolean, por defecto false; desde 1.17.6, el mismo significado que en `ejecutar_codigo`), pedido | JSON: la respuesta de `ejecutar_codigo` tal cual (`resultado`, `simulado`, `id_log`, `ms`, `ms_espera`, `ms_ejecucion`, `ms_puente`...) más el bloque `receta`: `nombre`, `parametros` (los valores enviados, con los `por_defecto`), `veces_usada`, `sumada` y `nota` (y `aviso` si no se pudo anotar el uso). Error antes de llamar al plugin (receta o parámetros): `{"ok":false,"error","ms_puente"}` | `PuenteMcp/recetas.py` + `ejecutar_codigo` del plugin |
 
 `*` = obligatorio. `limite` cuenta el total de resultados con prioridad recetas > glosario > catálogo; dentro del
 catálogo van primero los nombres exactos que trae la consulta (`ProfilePVI`, `ProfilePVI Station`), luego los
@@ -587,9 +587,14 @@ aprobacion:
 3. Llama a `ejecutar_codigo` con este cuerpo (`parametros` viaja como **texto JSON**, igual que cualquier parámetro de
    tipo `json` que el puente pasa al plugin; el plugin lo convierte con `Argumentos.Json`), y el `timeout_s` que el
    puente elige para `ejecutar_codigo`:
-   `{"tool":"ejecutar_codigo","args":{"codigo_csharp":"<el .cs>","simular":true,"parametros":"{\"nombre_capa\": \"Capa B\", \"color\": 7}","pedido":"..."},"timeout_s":120}`
+   `{"tool":"ejecutar_codigo","args":{"codigo_csharp":"<el .cs>","simular":true,"parametros":"{\"nombre_capa\": \"Capa B\", \"color\": 7}","pedido":"..."},"timeout_s":120}`.
+   Desde 1.17.6, con `solo_lectura=true` el cuerpo lleva además `"solo_lectura":true` (sin él, el cuerpo es el de
+   siempre): la receta corre como en `ejecutar_codigo` con `solo_lectura` (dibujo bloqueado para lectura, sin copia de
+   seguridad y sin entrada en Deshacer; no compila si el código escribe).
 4. **`veces_usada`** sube 1 (y `ultima_vez` pasa a la fecha de hoy) **solo** si se pidió `simular=false`, el plugin
-   respondió `ok` y su resultado no trae `simulado: true`. Una simulación, un error del plugin (también
+   respondió `ok` y su resultado no trae `simulado: true`; o, desde 1.17.6, si se pidió `solo_lectura=true` y el plugin
+   respondió `ok` con `solo_lectura: true` (una lectura no es un ensayo: su resultado es el definitivo; si el plugin no
+   lo devuelve, es anterior a la 1.17.6, se ejecutó como una simulación normal y no suma). Una simulación, un error del plugin (también
    `ejecutar_codigo está desactivada`) o Civil 3D cerrado no suman, y `receta.nota` lo dice. Si el plugin no conoce
    `ejecutar_codigo`, el error empieza por `ejecutar_receta necesita la herramienta ejecutar_codigo del plugin
    (1.16.0 o posterior)`. El contador vive en la PC: L.2 lo sube a GitHub.
