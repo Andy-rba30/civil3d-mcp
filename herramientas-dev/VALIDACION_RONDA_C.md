@@ -7,7 +7,7 @@ Civil 3D.
 
 ## Requisitos (una sola instalación para todo)
 
-- **Rama**: `tarea/4.3-norma-alineamiento`. Lleva las tres versiones juntas: la corrección 1.17.6, `verificar_norma`
+- **Rama**: `tarea/ronda-c`. Lleva las tres versiones juntas: la corrección 1.17.6, `verificar_norma`
   (1.18.0) y la norma dentro del eje (1.19.0). Se instala **una vez**. Con Civil 3D cerrado, en PowerShell desde la
   raíz del repo: `powershell -ExecutionPolicy Bypass -File .\ArbaMcp\instalar.ps1`. Después, en `PuenteMcp`, `uv sync`.
   Reinicia el puente y el cliente MCP.
