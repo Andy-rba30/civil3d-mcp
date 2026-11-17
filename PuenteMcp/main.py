@@ -553,8 +553,15 @@ async def _aplicar_peralte_con_norma(nombre: str, parametros: list, datos: dict)
             return con_ms({"ok": False, "error": f"El eje '{eje}' no tiene curvas circulares: no hay peralte que aplicar. "
                                                  "No se llamó a aplicar_peralte.", "propuesta_norma": bloque})
         if calculo["problemas"]:
-            return con_ms({"ok": False, "error": "El peralte de la norma no cabe en el eje: " + " ".join(calculo["problemas"])
-                                                 + " No se llamó a aplicar_peralte.", "propuesta_norma": bloque})
+            return con_ms({"ok": False, "error": "El peralte de la norma no cumple o no cabe en el eje: "
+                                                 + " ".join(calculo["problemas"]) + " No se llamó a aplicar_peralte.",
+                           "propuesta_norma": bloque})
+        if calculo["error_tablas"]:
+            return con_ms({"ok": False, "error": calculo["error_tablas"], "propuesta_norma": bloque})
+        if not any(c["estaciones"] for c in calculo["curvas"]):
+            return con_ms({"ok": False, "error": f"Ninguna curva del eje '{eje}' lleva peralte según la norma (todas sin "
+                                                 "peralte, bombeo normal): no se llamó a aplicar_peralte.",
+                           "propuesta_norma": bloque})
         try:
             curvas_plugin = norma_peralte.curvas_para_el_plugin(calculo["curvas"])
         except norma_vial.ErrorNorma as e:

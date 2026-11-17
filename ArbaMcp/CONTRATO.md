@@ -930,29 +930,49 @@ herramienta → (módulo, manejador); la 1.19.0 no cambia.
 
 **Orden** (si un paso falla, responde sin seguir; el puente no escribe nada, la única escritura es la del plugin):
 
-1. Datos del proyecto con `norma.preparar` y los del peralte (`preparar_peralte`). Si falta alguno: `{"ok": false,
-   "error": "Faltan datos del proyecto para calcular el peralte con la DG-2018: ... No se llamó a Civil 3D ...", "faltan":
-   [...]}`. Si la base no tiene todavía las tablas de peralte: «La base de la norma todavía no tiene las tablas de
-   peralte ... actualiza memoria-firma (git pull)», sin llamar a Civil 3D.
+1. Datos del proyecto con `norma.preparar` y los del peralte (`preparar_peralte`): la **figura** de peralte según el
+   radio sale de la condición de la T304.05 del proyecto (urbana → F302.02, 4 %; rural en terreno plano u ondulado →
+   F302.03, 8 %; rural en terreno accidentado o escarpado → F302.04, 12 %; con peligro de hielo → F302.05, 6 %); en
+   terreno accidentado, de la que elige el usuario con `peralte_maximo` (Decisión 5). La velocidad tiene que ser una de
+   las curvas de esa figura: si no, `faltan` con `velocidad_diseno` y las velocidades de la figura (no se interpola
+   entre velocidades). Si falta algo: `{"ok": false, "error": "Faltan datos del proyecto para calcular el peralte con la
+   DG-2018: ... No se llamó a Civil 3D ...", "faltan": [...]}`. Si la base no tiene la tabla `peralte_figura` (tarea
+   6.10): «La base de la norma no tiene la tabla peralte_figura ...», sin llamar a Civil 3D.
 2. `leer_variable` con `INSUNITS`: si no es `6`, error sin escribir (como en 1.19.0).
 3. `listar_pis` del eje: las curvas circulares (las espirales y otros tipos, `avisos`, sin peralte). Un eje sin curvas
    circulares: error sin escribir.
-4. Por curva, de la base: peralte de diseño `e`, bombeo `b`, longitud de transición del peralte `Lp` (de 0 a e) y del
-   bombeo `Lb` (de −b a 0), y proporción `p` de `Lp` en la tangente, cada valor con su tabla, sección y página.
-   *(Las consultas se completan con el esquema de las tablas de peralte de `dg2018.sqlite`, sesión 6.4 de
-   memoria-firma.)* Progresivas críticas, con giro alrededor del eje: entrada, fin del bombeo normal (BN − Lb), bombeo
+4. Por curva, el **peralte de diseño `e`** con la regla de la Decisión 6 (**A CONFIRMAR por Jose**), sobre la figura
+   digitalizada (`peralte_figura`: un nodo por fila, `orden` 1 = radio menor):
+   1. R menor que el radio mínimo (T302.02/T302.04, como en `verificar_norma`): «No cumple» y no se lee la figura.
+   2. R mayor o igual que el radio de la T304.04: sin peralte (bombeo normal); la curva no recibe progresivas.
+   3. Radio mínimo ≤ R < radio del extremo superior de la curva de esa velocidad: el p máx de la figura, con aviso
+      (`a_confirmar: true`).
+   4. Si no, interpolación lineal en log10(R) entre los dos nodos consecutivos de la misma curva que lo rodean.
+      Se entrega con **1 decimal** (la mitad hacia arriba: 7,55 → 7,6; `peralte_calculado_pct` lleva el valor sin
+      redondear), con la etiqueta **«lectura gráfica»** y su `error_pct` (el mayor de los dos nodos).
+   5. Si aplica la T304.06, el peralte es el mayor entre la lectura y el 2 %.
+   6. R más allá del extremo inferior de la curva (sin que la T304.04 diga que no lleva peralte): «Sin valor en la
+      norma», `a_confirmar: true`.
+   Siempre un aviso de que el valor sale **de una figura digitalizada** (o leída a mano, o de una tabla tipo AASHTO,
+   según la columna `metodo`), no de una tabla de la DG-2018, y otro si queda por debajo del bombeo. Después, de la
+   base, bombeo `b`, longitud de transición del peralte `Lp` (de 0 a e) y del bombeo `Lb` (de −b a 0), y proporción `p`
+   de `Lp` en la tangente, cada valor con su tabla, sección y página. *(La T304.04, la T304.06, el bombeo y la
+   transición son tablas de la sesión 6.4 de memoria-firma: hasta que estén, esas reglas salen en `pendientes` y la
+   respuesta es «La base de la norma todavía no tiene las tablas de bombeo y de longitud de transición del peralte
+   (sesión 6.4) ...» con el peralte de cada curva en `propuesta_norma`, sin escribir.)* Progresivas críticas, con giro alrededor del eje: entrada, fin del bombeo normal (BN − Lb), bombeo
    nivelado (BN = PC − p·Lp; el carril exterior en 0 %), bombeo invertido (BN + Lp·b/e, el exterior en +b; solo si
    e > b) e inicio del peralte total (BN + Lp, ±e); salida, simétrica respecto al PT (fin del peralte total, bombeo
    invertido, bombeo nivelado, inicio del bombeo normal). Pendientes en %, del eje hacia el borde (negativa = baja): en
    una curva a la derecha el carril exterior es el izquierdo (+e) y el interior el derecho (−e). **Convención por
-   verificar** en Civil 3D (`VALIDACION_120`, paso 8).
-5. Cabida: error sin escribir si una curva no deja tramo con el peralte total, si las transiciones salen del eje o si se
+   verificar** en Civil 3D (`VALIDACION_120`, paso 9).
+5. Cabida y norma: error sin escribir si una curva tiene «No cumple» o «Sin valor en la norma» en el paso 4, si no
+   deja tramo con el peralte total, si las transiciones salen del eje o si se
    cruzan con las de la curva siguiente (las curvas de sentido contrario, R302.02-9, no se resuelven todavía).
 6. Traducción de los conceptos (`fin_bombeo_normal`, `bombeo_nivelado`, `bombeo_invertido`, `inicio_peralte_total`,
    `fin_peralte_total`, `inicio_bombeo_normal`; regiones `entrada` y `salida`; segmentos `carril_izquierdo` y
    `carril_derecho`) a los nombres de Civil 3D con `norma_peralte.CORRESPONDENCIA`. **Está vacía a propósito**: los
    valores de los enumerados no están en el catálogo y no se inventan; se rellena con `listar_peralte` → `enumerados`
-   (paso 1 de `VALIDACION_120`). Mientras falte un nombre: `{"ok": false, "error": "Falta la correspondencia entre la
+   (paso 2 de `VALIDACION_120`). Mientras falte un nombre: `{"ok": false, "error": "Falta la correspondencia entre la
    DG-2018 y los nombres de Civil 3D para ...", "propuesta_norma": {...}}`, sin llamar a `aplicar_peralte`.
 7. Llamada al plugin con `curvas` y el resto de `args` tal cual (`simular` incluido). Con la escritura real,
    `listar_peralte` del eje y `verificacion`: por curva y carril, el peralte total pedido frente al leído en el inicio
@@ -961,11 +981,15 @@ herramienta → (módulo, manejador); la 1.19.0 no cambia.
 
 **Respuesta**: la del plugin tal cual más `propuesta_norma`: `norma`, `velocidad_diseno`, `proyecto`,
 `avisos_proyecto`, `convencion`, `unidades` (`INSUNITS`, `id_log`), `lecturas` (`id_log` de `leer_variable` y
-`listar_pis`), `avisos` y `curvas[]` (por curva: `pi`, `radio`, `giro`, `progresiva_pc`, `progresiva_pt`,
-`peralte_pct`, `bombeo_pct`, `longitud_peralte_m`, `longitud_bombeo_m`, `proporcion_tangente`, `valores` con la
-referencia de cada uno y `estaciones[]`: `concepto`, `nombre`, `region`, `progresiva`, `progresiva_texto` y
-`pendientes` por carril). Entre dos filas de radio de la tabla de peralte se toma por defecto **la más exigente**, con
-aviso y `pendiente_de_decision` (decisión del dueño pendiente; si la norma dice otra cosa, manda la norma).
+`listar_pis`), `avisos` (con el PI delante) y `curvas[]` (por curva: `pi`, `radio`, `giro`, `progresiva_pc`,
+`progresiva_pt`, `peralte_pct`; `peralte`: `figura`, `figura_nombre`, `referencia`, `velocidad_kmh`, `radio_m`,
+`radio_minimo_m` y su referencia, `regla` (3, 4, 6 o 7 de la Decisión 6), `resultado` («Lectura gráfica», «Peralte
+máximo de la figura», «Sin peralte (bombeo normal)», «No cumple» o «Sin valor en la norma»), `peralte_calculado_pct`,
+`peralte_pct`, `error_pct`, `etiqueta`, `nodos` usados, `avisos`, `pendientes` y `a_confirmar`; y, con las tablas de
+la 6.4, `bombeo_pct`, `longitud_peralte_m`, `longitud_bombeo_m`, `proporcion_tangente`, `valores` con la referencia
+de cada uno y `estaciones[]`: `concepto`, `nombre`, `region`, `progresiva`, `progresiva_texto` y `pendientes` por
+carril; vacía si la curva no lleva peralte). Si ninguna curva lleva peralte: error «Ninguna curva del eje ... lleva
+peralte según la norma ...», sin escribir.
 
 ### `exportar_dataset` (script del puente, desde 1.6.0)
 

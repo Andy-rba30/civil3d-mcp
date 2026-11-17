@@ -13,7 +13,10 @@ Copia este texto tal cual en el agente que tiene conectado el MCP de Civil 3D. R
   **61** herramientas, **57** del plugin (las 55 de antes más `listar_peralte` y `aplicar_peralte`) y **4** del puente
   (`buscar_api`, `guardar_receta`, `ejecutar_receta` y `verificar_norma`).
 - `memoria-firma` al día (`git pull`) en `C:\Proyectos\memoria-firma`, con `MEMORIA_FIRMA_DIR` apuntando ahí (variable
-  de usuario) y la base `C:\Proyectos\memoria-firma\normas\tablas\dg2018.sqlite`.
+  de usuario) y la base `C:\Proyectos\memoria-firma\normas\tablas\dg2018.sqlite`. Para el paso 10 la base debe traer la
+  tabla `peralte_figura` (las Figuras 302.02 a 302.05 digitalizadas, tarea 6.10); si no la trae, el paso 10 lo dirá.
+- Para el paso 11 (solo referencia), el archivo XML de criterios de diseño «DG2018» que el dueño usa hoy en Civil 3D. Es
+  suyo y **no** va al repositorio: en el informe, solo los valores leídos, nunca el archivo ni su ruta.
 - `ARBA_MCP_CODIGO` no hace falta: esta validación no usa `ejecutar_codigo`.
 - Reparto de papeles: el agente local **instala y verifica**; el código y este prompt los mantiene la sesión de
   desarrollo a partir del informe. El agente no edita ningún archivo del repositorio salvo su informe en
@@ -28,9 +31,11 @@ Copia este texto tal cual en el agente que tiene conectado el MCP de Civil 3D. R
      valores que se le pasan (`curvas`: por PI, progresivas críticas con tipo, región y pendientes en %). Comprobación
      previa, copia, **una** entrada de Deshacer, relectura y verificación. Si el eje ya tiene peralte, error sin tocar
      nada (no lo borra).
-  3. En el puente, `aplicar_peralte` con `velocidad_diseno` y los datos del proyecto: calcula el peralte con la
-     DG-2018. En esta ronda **no escribe todavía**: la correspondencia entre los conceptos de la norma y los nombres de
-     Civil 3D se rellena con lo que salga del paso 2 (paso 10).
+  3. En el puente, `aplicar_peralte` con `velocidad_diseno` y los datos del proyecto: calcula el peralte de cada curva
+     con la DG-2018 leyendo la figura de peralte según el radio digitalizada («lectura gráfica», regla de la Decisión 6,
+     A CONFIRMAR por Jose). En esta ronda **no escribe todavía**: faltan las tablas de bombeo y transición (sesión 6.4)
+     y la correspondencia entre los conceptos de la norma y los nombres de Civil 3D, que se rellena con lo que salga
+     del paso 2 (paso 10).
   **Los pasos 0, 2, 4, 5, 7, 9 y 10 son los decisivos.**
 - Miembros de la API que esta validación decide: los de la sección 1.20.0 de
   `herramientas-dev/miembros_por_verificar_civil3d.md` (`SuperelevationCurves`, `AddUserDefinedCurve`,
@@ -48,7 +53,7 @@ Reglas:
 
 - **No marques OK lo que no viste.** Cada OK va con la respuesta literal.
 - Si un paso falla, anota el error literal y sigue con el siguiente salvo que el prompt diga que pares.
-- `ejecutar_comando` solo para lo que dicen los pasos 1 y 7, con el texto exacto. Si algo no funciona, es un hallazgo:
+- `ejecutar_comando` solo para lo que dicen los pasos 1, 7 y 10a, con el texto exacto. Si algo no funciona, es un hallazgo:
   no lo arregles con comandos.
 - Los valores de peralte de los pasos 3 a 9 son **de ejemplo** (6 % de peralte, 2 % de bombeo, transición de 30 m con
   el 60 % en la tangente): solo prueban que el plugin escribe y lee bien; **no son de la norma**.
@@ -230,28 +235,55 @@ Reglas:
    con `args={"alineamiento":"Eje Peralte","intervalo":10,"ancho_izquierdo":10,"ancho_derecho":10,"inicio":270,"fin":290,"pedido":"crea las secciones de los pk 270 a 290"}`)
    y describe la inclinación de los carriles.
 
-10. **Peralte con la norma en el puente (decisivo).** Sobre un eje nuevo sin peralte:
-    a. `crear_alineamiento_desde_polilinea` con
-       `args={"nombre":"Eje Norma 120","capa":"EJE_PERALTE","radio":80,"pedido":"crea un segundo eje para el peralte de la norma"}`.
-       Cuenta las líneas de `mcp_log.jsonl` (N10).
+10. **Peralte con la norma en el puente (decisivo).** Sobre un eje nuevo sin peralte con curvas de 150 m:
+    a. `ejecutar_comando` con `args={"comando":"_.-LAYER _M EJE_NORMA_A  ","timeout_s":20,"pedido":"crea la capa EJE_NORMA_A"}`
+       y `args={"comando":"_.PLINE 1000,2000 1500,2000 1500,2700 2100,2700  ","timeout_s":20,"pedido":"dibuja la polilínea A"}`
+       (dos espacios al final; la de `VALIDACION_119.md`), y `crear_alineamiento_desde_polilinea` con
+       `args={"nombre":"Eje Norma 120","capa":"EJE_NORMA_A","radio":150,"pedido":"crea el eje Eje Norma 120 con radio 150"}`
+       → 2 curvas de radio 150. Cuenta las líneas de `mcp_log.jsonl` (N10).
     b. `aplicar_peralte` con `args={"alineamiento":"Eje Norma 120","simular":true,"velocidad_diseno":60}` → `ok: false`,
        `error` que empieza por «Faltan datos del proyecto para calcular el peralte con la DG-2018:» y `faltan` con
        `clasificacion`, `orografia` y los demás que falten, con sus valores válidos. **N10** líneas (no llamó a Civil 3D).
     c. `aplicar_peralte` con `curvas` (cualquier texto) **y** `velocidad_diseno` → «Pasa 'curvas' ... o
        'velocidad_diseno' ..., no los dos.», sin llamar a Civil 3D.
     d. `aplicar_peralte` con
-       `args={"alineamiento":"Eje Norma 120","simular":true,"velocidad_diseno":60,"clasificacion":"Carretera de tercera clase","orografia":"Ondulado","ubicacion":"rural","pavimentada":false,"peralte_maximo":8,"pedido":"simula el peralte de la norma"}`
-       (más los datos del peralte que pida el `faltan`, si pide alguno: anótalos con sus valores válidos y usa los que
-       el dueño te diga; no los inventes). En esta ronda lo esperado es **una** de estas respuestas, sin escribir nada:
-       - «La base de la norma todavía no tiene las tablas de peralte ...»: `memoria-firma` no trae aún las tablas de la
-         sesión 6.4 o esta rama no tiene sus consultas. Anótalo.
-       - `ok: false` con «Falta la correspondencia entre la DG-2018 y los nombres de Civil 3D para ...» y
-         `propuesta_norma`: pega `propuesta_norma.curvas` completo (peralte, bombeo, longitudes, proporción, `valores`
-         con su referencia y las 8 `estaciones` de cada curva). La correspondencia se rellena con tu tabla del paso 3.
-       En los dos casos, **no** debe haber llamada a `aplicar_peralte` en `mcp_log.jsonl` (sí `leer_variable` y
-       `listar_pis` en el segundo).
+       `args={"alineamiento":"Eje Norma 120","simular":true,"velocidad_diseno":60,"clasificacion":"Carretera de tercera clase","orografia":"Ondulado","ubicacion":"rural","pavimentada":false,"peralte_maximo":8,"pedido":"simula el peralte de la norma"}`.
+       En esta ronda lo esperado es **una** de estas respuestas, sin escribir nada:
+       - «La base de la norma no tiene la tabla peralte_figura ...»: `memoria-firma` aún no trae la tarea 6.10. Anótalo
+         y salta al paso 11. Sin llamadas nuevas en `mcp_log.jsonl`.
+       - `ok: false` con «La base de la norma todavía no tiene las tablas de bombeo y de longitud de transición del
+         peralte (sesión 6.4) ...» y `propuesta_norma`. Pega `propuesta_norma.curvas` completo. En las dos curvas,
+         `peralte`: `figura: "F302.03"`, `velocidad_kmh: 60`, `radio_m: 150`, `regla: 7`,
+         `resultado: "Lectura gráfica"`, **`peralte_calculado_pct` ≈ 7,55** (±0,05; valor de control de la tarea 6.10),
+         **`peralte_pct: 7.6`**, `etiqueta: "lectura gráfica"`, un `error_pct`, los dos `nodos` usados, el aviso «El
+         peralte sale de la figura digitalizada ... no es una tabla de la norma» y `pendientes` con la T304.04, la
+         T304.06 y el bombeo. `estaciones: []`. En `mcp_log.jsonl`, **N10 + 2** líneas: `leer_variable` y
+         `listar_pis`, ninguna de `aplicar_peralte`.
+       - (Si las tablas de la 6.4 ya están) «Falta la correspondencia entre la DG-2018 y los nombres de Civil 3D para
+         ...» con `propuesta_norma`: pega `curvas` completo (también bombeo, longitudes y las 8 `estaciones` de cada
+         curva). La correspondencia se rellena con tu tabla del paso 3.
+    e. **Valores de control de la figura** (no decisivo; solo si 10d dio `propuesta_norma`). Repite 10d cambiando lo
+       que dice cada fila y anota `peralte.figura` y `peralte.peralte_calculado_pct` de las dos curvas (radio 150):
 
-11. **Deshacer y copias.** Abre el menú Deshacer: las entradas nuevas de `aplicar_peralte` son solo las de las
+       | Cambios sobre 10d | Figura esperada | `peralte_calculado_pct` esperado (±0,05) |
+       |---|---|---|
+       | `"velocidad_diseno":50` | F302.03 | 6,55 |
+       | `"velocidad_diseno":40` | F302.03 | 5,49 |
+       | `"orografia":"Accidentado","velocidad_diseno":30` (con `peralte_maximo` 8) | F302.03 | 3,91 |
+       | `"orografia":"Accidentado","peralte_maximo":12` (60 km/h) | F302.04 | 10,35 |
+
+       Si alguna velocidad no es válida para esa orografía, anota el `faltan` literal. Ninguna fila escribe nada.
+
+11. **Comparación con el XML de criterios del dueño (solo referencia, no decisivo).** `crear_alineamiento_desde_polilinea`
+    con `args={"nombre":"Eje XML 120","capa":"EJE_NORMA_A","radio":150,"pedido":"crea una copia del eje para comparar con el XML"}`.
+    En Civil 3D, sobre `Eje XML 120` (nunca sobre `Eje Norma 120`): en las propiedades del alineamiento, ficha de
+    criterios de diseño, activa el archivo de criterios del dueño con **60 km/h** y la tabla de peralte de **e máx.
+    8 %**; luego el comando de calcular el peralte del eje con esos criterios y abre el editor tabular. Anota el peralte
+    total de las dos curvas (radio 150) y compáralo con el `peralte_pct` del paso 10d (7,6 %) y con el
+    `peralte_calculado_pct` (7,55 %). Es solo una referencia: **manda la figura de la DG-2018**, no el XML (que tiene
+    errores conocidos). No pegues el archivo ni su ruta.
+
+12. **Deshacer y copias.** Abre el menú Deshacer: las entradas nuevas de `aplicar_peralte` son solo las de las
     escrituras reales (paso 4 y, si se repitió, paso 7); **ninguna** de los pasos 2, 3, 5, 6 ni 10. En `backups\`,
     las copias de las escrituras reales (o reutilizadas). No deshagas nada más.
 
@@ -268,4 +300,5 @@ una tabla paso / resultado (OK, FALLO) / respuesta literal / tiempo, y **en secc
    3D añadió por su cuenta.
 5. El resultado del `_.UNDO 1` del paso 7.
 6. La tabla de pendientes medidas del paso 9 y los valores del parámetro de peralte de `LaneSuperelevationAOR`.
-7. La respuesta del paso 10d (y `propuesta_norma.curvas` si salió).
+7. La respuesta del paso 10d (y `propuesta_norma.curvas` si salió) y la tabla de valores de control del paso 10e.
+8. La comparación del paso 11: peralte de Civil 3D con el XML frente al de la herramienta, curva a curva.

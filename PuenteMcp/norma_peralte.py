@@ -10,8 +10,9 @@ alguno de ellos, el puente:
 1. valida los datos del proyecto (norma.preparar y los datos del peralte); si falta algo, responde «faltan» sin llamar
    al plugin;
 2. comprueba que el dibujo está en metros (INSUNITS = 6) y lee las curvas del eje con listar_pis;
-3. por curva circular: peralte de diseño e, bombeo b, longitudes de transición del peralte y del bombeo y su reparto
-   entre tangente y curva (de la base de la norma), y las progresivas críticas (progresivas_criticas);
+3. por curva circular: peralte de diseño e leído en la figura de peralte según el radio digitalizada (peralte_figura,
+   regla de la Decisión 6, «lectura gráfica»); bombeo b, longitudes de transición del peralte y del bombeo y su reparto
+   entre tangente y curva (tablas de la sesión 6.4), y las progresivas críticas (progresivas_criticas);
 4. comprueba que las transiciones caben (dentro del eje, sin cruzarse con las de la curva vecina y con peralte total
    no negativo); si no, responde el error sin escribir;
 5. traduce los conceptos de la norma a los nombres de Civil 3D (CORRESPONDENCIA) y llama al plugin; con escritura
@@ -33,6 +34,7 @@ Progresivas críticas de una curva circular sin espirales, con giro alrededor de
   bombeo normal (IBN).
 """
 import math
+from decimal import ROUND_HALF_UP, Decimal
 
 import norma as n
 import norma_alineamiento as ne
@@ -51,10 +53,11 @@ DESCRIPCION = (
     "\n\nCON LA NORMA DG-2018 (puente, desde 1.20.0): con 'velocidad_diseno' y los datos del proyecto ('clasificacion', "
     "'orografia', 'ubicacion', 'peralte_maximo', 'pavimentada': los de verificar_norma, y los del peralte que pida), "
     "dentro de 'args' y SIN 'curvas', el puente lee las curvas del eje con listar_pis y calcula en cada curva circular el "
-    "peralte de diseño, el bombeo, las longitudes de transición y las progresivas críticas (fin del bombeo normal, bombeo "
-    "nivelado, bombeo invertido, inicio y fin del peralte total, inicio del bombeo normal), y las aplica. Si las "
-    "transiciones no caben (fuera del eje, cruzadas con las de la curva vecina o sin tramo de peralte total) responde el "
-    "error sin escribir. Si falta un dato del proyecto responde 'faltan' sin llamar a Civil 3D: pregúntalo al usuario, no "
+    "peralte de diseño (leído en la figura de peralte según el radio de la DG-2018 digitalizada: 'lectura gráfica', con "
+    "su error; explícalo así al usuario), el bombeo, las longitudes de transición y las progresivas críticas (fin del "
+    "bombeo normal, bombeo nivelado, bombeo invertido, inicio y fin del peralte total, inicio del bombeo normal), y las "
+    "aplica. Si una curva no cumple el radio mínimo, la figura no da valor o las transiciones no caben (fuera del eje, "
+    "cruzadas con las de la curva vecina o sin tramo de peralte total) responde el error sin escribir. Si falta un dato del proyecto responde 'faltan' sin llamar a Civil 3D: pregúntalo al usuario, no "
     "lo supongas. Lee INSUNITS (debe ser 6, metros). Devuelve la respuesta del plugin más 'propuesta_norma' (por curva: "
     "cada valor con su tabla, sección y página, y las progresivas) y, con la escritura real, 'verificacion' (el peralte "
     "total leído con listar_peralte). Simula primero (simular=true). Necesita MEMORIA_FIRMA_DIR."
@@ -126,24 +129,229 @@ def respuesta_faltan(faltan: list) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------------------------- valores de la norma
-# Tablas de dg2018.sqlite que hacen falta para el peralte (sesión 6.4 de memoria-firma). Se completan con su esquema.
-TABLAS_PERALTE: tuple = ()
-SIN_TABLAS = ("La base de la norma todavía no tiene las tablas de peralte (peralte según el radio, bombeo y longitud de "
-              "transición): actualiza memoria-firma (git pull). No se llamó a aplicar_peralte.")
+# ---------------------------------------------------------------------------------------------- peralte según el radio
+# Las Figuras 302.02 a 302.05 de la DG-2018 digitalizadas (tarea 6.10 de memoria-firma), en la tabla peralte_figura:
+# una fila por nodo de cada curva de velocidad (orden 1 = radio menor, el extremo superior). Regla de lectura: Decisión
+# 6 del dueño, «A CONFIRMAR por Jose» (mensaje de la orquestadora del 17/11/2026):
+#   1) la figura sale de la condición de la T304.05 (en terreno accidentado, la que elige el usuario con peralte_maximo);
+#   2) la velocidad tiene que ser una de las curvas de la figura: no se interpola entre velocidades;
+#   3) R < radio mínimo (T302.02/T302.04): «No cumple» y no se lee la figura;
+#   4) R ≥ radio de la T304.04: sin peralte (bombeo normal);
+#   5) si aplica la T304.06, el peralte es el mayor entre la lectura y el 2 %;
+#   6) radio mínimo ≤ R < extremo superior de la curva: el p máx de la figura, con aviso (A CONFIRMAR);
+#   7) si no, interpolación lineal en log10(R) entre dos nodos consecutivos de la misma curva, con 1 decimal, la
+#      etiqueta «lectura gráfica» y su error_pct.
+# Además se avisa si la lectura queda por debajo del bombeo. La T304.04, la T304.06 y el bombeo vienen de las tablas de
+# la sesión 6.4: hasta que lleguen, esas reglas quedan como «pendientes» en la respuesta y no se escribe nada.
+TABLA_FIGURA = "peralte_figura"
+FIGURAS = {"F302.02": "zona urbana (4 %)", "F302.03": "zona rural, terreno plano u ondulado (8 %)",
+           "F302.04": "zona rural, terreno accidentado o escarpado (12 %)", "F302.05": "zona con peligro de hielo (6 %)"}
+ETIQUETA_GRAFICA = "lectura gráfica"
+DECISION_6 = "Decisión 6, A CONFIRMAR por Jose"
+PERALTE_MINIMO_T30406_PCT = 2.0   # regla 5 de la Decisión 6
+SIN_PERALTE = "Sin peralte (bombeo normal)"
+LECTURA = "Lectura gráfica"
+P_MAXIMO = "Peralte máximo de la figura"
+SIN_FIGURA = ("La base de la norma no tiene la tabla peralte_figura (las Figuras 302.02 a 302.05 de la DG-2018 "
+              "digitalizadas, tarea 6.10): actualiza memoria-firma (git pull). No se llamó a Civil 3D.")
+SIN_TABLAS = ("La base de la norma todavía no tiene las tablas de bombeo y de longitud de transición del peralte (sesión "
+              "6.4): actualiza memoria-firma (git pull). El peralte de cada curva va en 'propuesta_norma'; no se llamó a "
+              "aplicar_peralte.")
 
 
+def _un_decimal(valor: float) -> float:
+    """1 decimal, redondeando la mitad hacia arriba (7,55 → 7,6), sin el error de la coma flotante."""
+    return float(Decimal(repr(round(valor, 9))).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+
+
+def tiene_tabla(base: n.BaseNorma, tabla: str) -> bool:
+    return base.fila("SELECT name FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?", tabla) is not None
+
+
+def figura_de_condicion(condicion: str | None) -> str | None:
+    """Figura de peralte de una condición de la T304.05 (por su texto: urbana, hielo, accidentado o escarpado, rural)."""
+    t = n.normalizar(condicion)
+    if not t:
+        return None
+    if "urban" in t:
+        return "F302.02"
+    if "hielo" in t:
+        return "F302.05"
+    if "escarpado" in t:
+        return "F302.04"
+    if "rural" in t:
+        return "F302.03"
+    return None
+
+
+def condicion_del_proyecto(base: n.BaseNorma, ctx: dict) -> str | None:
+    """La condición de la T304.05 del proyecto. Si la fila tiene dos (terreno accidentado: Decisión 5), la que tiene el
+    peralte máximo que eligió el usuario."""
+    condiciones = [ctx.get("condicion_peralte")]
+    for f in base.equivalencias(ctx["clasificacion"], ctx["orografia"], ctx.get("zona")) if ctx.get("zona") else []:
+        condiciones += [f["condicion_peralte"], f["condicion_peralte_otra"]]
+    condiciones = list(dict.fromkeys(c for c in condiciones if c))
+    pmax = ctx.get("peralte_maximo")
+    if pmax is not None and len(condiciones) > 1:
+        for c in condiciones:
+            absoluto = base.peralte_de_condicion(c)
+            if absoluto is not None and abs(absoluto - pmax) <= n.TOLERANCIA:
+                return c
+    return ctx.get("condicion_peralte")
+
+
+def velocidades_de_figura(base: n.BaseNorma, ref: str) -> list[int]:
+    return [int(r["velocidad_kmh"]) for r in base.filas(
+        f"SELECT DISTINCT velocidad_kmh FROM {TABLA_FIGURA} WHERE ref = ? ORDER BY velocidad_kmh", ref)]
+
+
+def nodos_de_figura(base: n.BaseNorma, ref: str, v: int) -> list[dict]:
+    return base.filas(f"SELECT * FROM {TABLA_FIGURA} WHERE ref = ? AND velocidad_kmh = ? ORDER BY orden, radio_m", ref, v)
+
+
+def peralte_maximo_de_figura(base: n.BaseNorma, ref: str) -> float | None:
+    r = base.fila(f"SELECT MAX(peralte_pct) AS pmax FROM {TABLA_FIGURA} WHERE ref = ?", ref)
+    return r["pmax"] if r else None
+
+
+def _aviso_grafico(ref: str, metodo: str | None, error_pct) -> str:
+    m = n.normalizar(metodo)
+    if "aashto" in m:
+        origen = "de una tabla tipo AASHTO, no de la DG-2018"
+    elif m in ("", "vectorial"):
+        origen = "de la figura digitalizada (" + (metodo or "método sin indicar") + ")"
+    else:
+        origen = f"de la figura leída a mano ({metodo})"
+    error = f", error ±{n._limpio(error_pct)} %" if error_pct is not None else ""
+    return (f"El peralte sale {origen}: {ref} de la DG-2018 ({ETIQUETA_GRAFICA}{error}); no es una tabla de la norma, "
+            "revísalo en la figura.")
+
+
+def peralte_de_figura(base: n.BaseNorma, ref: str, v: int, radio: float, radio_minimo: dict,
+                      t30404: dict | None = None, t30406: dict | None = None, bombeo_pct: float | None = None) -> dict:
+    """Peralte de diseño de una curva de radio R con la Decisión 6 (ver arriba). radio_minimo: la salida de
+    norma.radio_minimo_exigido. t30404: {"radio_m", "referencia"} o None si la base aún no la tiene; t30406:
+    {"aplica", "minimo_pct", "referencia"} o None; bombeo_pct: el del proyecto o None. Lo que falta queda en
+    'pendientes'."""
+    salida = {"figura": ref, "figura_nombre": FIGURAS.get(ref), "referencia": n.texto_referencia(base.referencia(ref)),
+              "velocidad_kmh": v, "radio_m": n._limpio(radio), "radio_minimo_m": n._limpio(radio_minimo.get("exigido")),
+              "radio_minimo_referencia": n.texto_referencia(radio_minimo.get("referencia")),
+              "regla": None, "resultado": None, "peralte_calculado_pct": None, "peralte_pct": None, "error_pct": None,
+              "etiqueta": None, "nodos": [], "avisos": [], "pendientes": [], "a_confirmar": False}
+    rmin = radio_minimo.get("exigido")
+    if rmin is not None and radio < rmin - n.TOLERANCIA:
+        salida.update(regla=3, resultado=n.NO_CUMPLE)
+        salida["avisos"].append(f"R = {n._limpio(radio)} m es menor que el radio mínimo ({n._limpio(rmin)} m, "
+                                f"{salida['radio_minimo_referencia']}): «No cumple»; no se lee la figura. Corrige el eje.")
+        return salida
+    if rmin is None:
+        salida["pendientes"].append("radio mínimo (T302.02/T302.04): la base no lo da para esta velocidad")
+    if t30404 is None:
+        salida["pendientes"].append("T304.04 (radio a partir del cual no hace falta peralte): falta en la base (sesión 6.4)")
+    elif t30404.get("radio_m") is not None and radio >= t30404["radio_m"] - n.TOLERANCIA:
+        salida.update(regla=4, resultado=SIN_PERALTE)
+        salida["avisos"].append(f"R = {n._limpio(radio)} m no es menor que el radio de la T304.04 "
+                                f"({n._limpio(t30404['radio_m'])} m): la curva no lleva peralte (bombeo normal).")
+        return salida
+
+    nodos = sorted(nodos_de_figura(base, ref, v), key=lambda x: x["radio_m"])
+    if not nodos:
+        raise n.ErrorNorma(f"La {ref} no tiene la curva de {v} km/h en la base: no se interpola entre velocidades.")
+    salida["etiqueta"] = ETIQUETA_GRAFICA
+    primero, ultimo = nodos[0], nodos[-1]
+    if radio < primero["radio_m"] - n.TOLERANCIA:
+        pmax = peralte_maximo_de_figura(base, ref)
+        salida.update(regla=6, resultado=P_MAXIMO, peralte_calculado_pct=n._limpio(pmax), error_pct=primero["error_pct"],
+                      nodos=[primero], a_confirmar=True)
+        salida["avisos"].append(f"R = {n._limpio(radio)} m está entre el radio mínimo ({n._limpio(rmin)} m) y el extremo "
+                                f"superior de la curva de {v} km/h de la {ref} ({n._limpio(primero['radio_m'])} m): se usa "
+                                f"el p máx de la figura, {n._limpio(pmax)} % ({DECISION_6}).")
+        valor = pmax
+    elif radio > ultimo["radio_m"] + n.TOLERANCIA:
+        salida.update(regla=7, resultado=n.SIN_VALOR, nodos=[ultimo], a_confirmar=True)
+        salida["avisos"].append(f"R = {n._limpio(radio)} m está más allá del extremo inferior de la curva de {v} km/h de la "
+                                f"{ref} ({n._limpio(ultimo['radio_m'])} m) y la T304.04 no dice que no lleve peralte: la "
+                                f"figura no da valor ({DECISION_6}).")
+        return salida
+    else:
+        i = next(k for k in range(len(nodos) - 1) if nodos[k]["radio_m"] - n.TOLERANCIA <= radio
+                 <= nodos[k + 1]["radio_m"] + n.TOLERANCIA) if len(nodos) > 1 else 0
+        a = nodos[i]
+        b = nodos[i + 1] if len(nodos) > 1 else nodos[i]
+        if b["radio_m"] == a["radio_m"]:
+            valor = a["peralte_pct"]
+        else:
+            t = (math.log10(radio) - math.log10(a["radio_m"])) / (math.log10(b["radio_m"]) - math.log10(a["radio_m"]))
+            t = min(1.0, max(0.0, t))
+            valor = a["peralte_pct"] + t * (b["peralte_pct"] - a["peralte_pct"])
+        errores = [x["error_pct"] for x in (a, b) if x["error_pct"] is not None]
+        salida.update(regla=7, resultado=LECTURA, peralte_calculado_pct=round(valor, 3),
+                      error_pct=max(errores) if errores else None, nodos=[a] if a is b else [a, b])
+    salida["avisos"].append(_aviso_grafico(ref, salida["nodos"][0].get("metodo"), salida["error_pct"]))
+
+    entregado = _un_decimal(valor)
+    if t30406 is None:
+        salida["pendientes"].append("T304.06 (peralte mínimo del 2 %): falta en la base (sesión 6.4)")
+    elif t30406.get("aplica"):
+        minimo = t30406.get("minimo_pct", PERALTE_MINIMO_T30406_PCT)
+        if entregado < minimo - n.TOLERANCIA:
+            salida["avisos"].append(f"La lectura ({n._limpio(entregado)} %) es menor que el peralte mínimo de la T304.06 "
+                                    f"({n._limpio(minimo)} %): se usa {n._limpio(minimo)} %.")
+            entregado = float(minimo)
+    if bombeo_pct is None:
+        salida["pendientes"].append("bombeo del proyecto: falta en la base (sesión 6.4)")
+    elif entregado < bombeo_pct - n.TOLERANCIA:
+        salida["avisos"].append(f"El peralte ({n._limpio(entregado)} %) queda por debajo del bombeo ({n._limpio(bombeo_pct)} %).")
+    salida["peralte_pct"] = entregado
+    salida["nodos"] = [{k: x.get(k) for k in ("orden", "radio_m", "peralte_pct", "error_pct", "tipo_punto", "metodo")}
+                       for x in salida["nodos"]]
+    return salida
+
+
+# ---------------------------------------------------------------------------------------------- datos del proyecto
 def preparar_peralte(base: n.BaseNorma, ctx: dict | None, proyecto: dict) -> tuple[dict | None, list]:
-    """Datos del peralte del proyecto comprobados contra la base: (datos, faltan). Si `faltan` no está vacío hay que
-    preguntar esos datos al usuario con sus valores válidos."""
-    raise n.ErrorNorma(SIN_TABLAS)
+    """Datos del peralte del proyecto comprobados contra la base: (datos, faltan). Elige la figura (regla 1) y comprueba
+    que la velocidad es una de sus curvas (regla 2). Lanza ErrorNorma si la base no tiene peralte_figura."""
+    if not tiene_tabla(base, TABLA_FIGURA):
+        raise n.ErrorNorma(SIN_FIGURA)
+    if ctx is None:
+        return None, []
+    condicion = condicion_del_proyecto(base, ctx)
+    ref = figura_de_condicion(condicion)
+    if ref is None:
+        raise n.ErrorNorma(f"No se sabe qué figura de peralte (302.02 a 302.05) corresponde a la condición «{condicion}» de "
+                           "la T304.05. Revisa la base de la norma. No se llamó a Civil 3D.")
+    velocidades = velocidades_de_figura(base, ref)
+    if ctx["velocidad"] not in velocidades:
+        return None, [n._falta("velocidad_diseno", f"La {ref} no tiene curva para {ctx['velocidad']} km/h: no se interpola "
+                                                    "entre velocidades.", velocidades)]
+    return {"figura": ref, "condicion_t30405": condicion, "radio_minimo": n.radio_minimo_exigido(base, ctx)}, []
 
 
-def valores_de_curva(base: n.BaseNorma, ctx: dict, datos: dict, curva: dict) -> dict:
-    """Peralte de diseño e (%), bombeo b (%), longitudes de transición del peralte (lp) y del bombeo (lb) en m y
-    proporción de lp en la tangente (p), con la referencia de cada valor y los avisos:
-    {"peralte_pct", "bombeo_pct", "longitud_peralte_m", "longitud_bombeo_m", "proporcion_tangente", "valores": [...],
-    "avisos": [...]}."""
+def t30404(base: n.BaseNorma, ctx: dict) -> dict | None:
+    """Radio a partir del cual no hace falta peralte (T304.04). None hasta que la sesión 6.4 dé su esquema."""
+    return None
+
+
+def t30406(base: n.BaseNorma, ctx: dict) -> dict | None:
+    """Si aplica el peralte mínimo de la T304.06. None hasta que la sesión 6.4 dé su esquema."""
+    return None
+
+
+def bombeo(base: n.BaseNorma, ctx: dict, datos: dict) -> float | None:
+    """Bombeo del proyecto en %. None hasta que la sesión 6.4 dé su esquema."""
+    return None
+
+
+def peralte_de_curva(base: n.BaseNorma, ctx: dict, datos: dict, curva: dict) -> dict:
+    return peralte_de_figura(base, datos["figura"], ctx["velocidad"], curva["radio"], datos["radio_minimo"],
+                             t30404(base, ctx), t30406(base, ctx), bombeo(base, ctx, datos))
+
+
+def transicion_de_curva(base: n.BaseNorma, ctx: dict, datos: dict, curva: dict, peralte_pct: float) -> dict:
+    """Bombeo b (%), longitudes de transición del peralte (lp) y del bombeo (lb) en m y proporción de lp en la tangente
+    (p), con la referencia de cada valor: {"bombeo_pct", "longitud_peralte_m", "longitud_bombeo_m",
+    "proporcion_tangente", "valores": [...], "avisos": [...]}. Lanza ErrorNorma hasta que la sesión 6.4 dé su esquema."""
     raise n.ErrorNorma(SIN_TABLAS)
 
 
@@ -161,24 +369,37 @@ def unidades_no_metros(resultado) -> str | None:
 
 
 def calcular(base: n.BaseNorma, ctx: dict, datos: dict, tabla_pis: dict) -> dict:
-    """Propuesta por curva circular del eje: valores de la norma, progresivas críticas y problemas de cabida.
-    Devuelve {curvas, avisos, problemas}."""
+    """Propuesta por curva circular del eje: peralte de la figura, transiciones, progresivas críticas y problemas.
+    Devuelve {curvas, avisos, problemas, error_tablas}: si error_tablas no es None, faltan tablas de la 6.4 y las curvas
+    traen solo el peralte."""
     curvas, avisos = curvas_del_eje(tabla_pis)
-    salida = []
+    salida, problemas, error_tablas = [], [], None
     for curva in curvas:
-        v = valores_de_curva(base, ctx, datos, curva)
+        pf = peralte_de_curva(base, ctx, datos, curva)
+        avisos.extend(f"PI {curva['pi']}: {a}" for a in pf["avisos"])
+        fila = {**curva, "peralte": pf, "peralte_pct": pf["peralte_pct"], "estaciones": []}
+        salida.append(fila)
+        if pf["resultado"] in (n.NO_CUMPLE, n.SIN_VALOR):
+            problemas.append(f"PI {curva['pi']}: {pf['resultado']} ({pf['avisos'][0] if pf['avisos'] else ''})")
+            continue
+        if pf["resultado"] == SIN_PERALTE:
+            continue
+        try:
+            v = transicion_de_curva(base, ctx, datos, curva, pf["peralte_pct"])
+        except n.ErrorNorma as e:
+            error_tablas = str(e)
+            continue
         avisos.extend(v.get("avisos") or [])
-        estaciones = progresivas_criticas(curva, v["peralte_pct"], v["bombeo_pct"], v["longitud_peralte_m"],
-                                          v["longitud_bombeo_m"], v["proporcion_tangente"])
-        salida.append({**curva, "peralte_pct": n._limpio(v["peralte_pct"]), "bombeo_pct": n._limpio(v["bombeo_pct"]),
-                       "longitud_peralte_m": n._limpio(v["longitud_peralte_m"]),
-                       "longitud_bombeo_m": n._limpio(v["longitud_bombeo_m"]),
-                       "proporcion_tangente": n._limpio(v["proporcion_tangente"]),
-                       "valores": v.get("valores") or [], "estaciones": estaciones})
+        fila.update({"bombeo_pct": n._limpio(v["bombeo_pct"]), "longitud_peralte_m": n._limpio(v["longitud_peralte_m"]),
+                     "longitud_bombeo_m": n._limpio(v["longitud_bombeo_m"]),
+                     "proporcion_tangente": n._limpio(v["proporcion_tangente"]), "valores": v.get("valores") or [],
+                     "estaciones": progresivas_criticas(curva, pf["peralte_pct"], v["bombeo_pct"], v["longitud_peralte_m"],
+                                                        v["longitud_bombeo_m"], v["proporcion_tangente"])})
     inicio = float(((tabla_pis or {}).get("inicio") or {}).get("progresiva") or 0.0)
     fin = ((tabla_pis or {}).get("fin") or {}).get("progresiva")
     fin = float(fin) if fin is not None else math.inf
-    return {"curvas": salida, "avisos": avisos, "problemas": comprobar_cabida(salida, inicio, fin)}
+    problemas += comprobar_cabida([c for c in salida if c["estaciones"]], inicio, fin)
+    return {"curvas": salida, "avisos": avisos, "problemas": problemas, "error_tablas": error_tablas}
 
 
 # ---------------------------------------------------------------------------------------------- curvas del eje
@@ -289,7 +510,7 @@ def curvas_para_el_plugin(curvas: list, correspondencia: dict | None = None) -> 
     return [{"pi": cu["pi"], "estaciones": [
         {"progresiva": e["progresiva"], "tipo": c["tipo"][e["concepto"]], "region": c["region"][e["region"]],
          "pendientes": {c["segmento"][s]: v for s, v in e["pendientes"].items()}} for e in cu["estaciones"]]}
-        for cu in curvas]
+        for cu in curvas if cu.get("estaciones")]
 
 
 # ---------------------------------------------------------------------------------------------- verificación
@@ -299,7 +520,7 @@ def verificar_lectura(curvas: list, leido: dict, correspondencia: dict | None = 
     c = correspondencia or CORRESPONDENCIA
     estaciones = [e for cu in (leido or {}).get("curvas") or [] for e in cu.get("estaciones") or []]
     filas, avisos = [], []
-    for cu in curvas:
+    for cu in (x for x in curvas if x.get("estaciones")):
         ipt = next(e for e in cu["estaciones"] if e["concepto"] == IPT)
         real = next((e for e in estaciones if abs(float(e.get("progresiva") or 0) - ipt["progresiva"]) <= TOLERANCIA_M),
                     None)
