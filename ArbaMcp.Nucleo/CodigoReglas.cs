@@ -35,6 +35,8 @@ namespace ArbaMcp.Nucleo
         public const string Borrado = "regla del proyecto";
         public const string Sintaxis = "sintaxis";
         public const string ListaBlanca = "lista blanca";
+        /// <summary>Con solo_lectura=true (desde 1.17.6): el script usa algo que escribe en el dibujo o en un archivo.</summary>
+        public const string SoloLectura = "solo lectura";
 
         /// <summary>Explicación de cada categoría para el agente (va detrás del nombre bloqueado).</summary>
         public static string Explicacion(string categoria)
@@ -56,6 +58,7 @@ namespace ArbaMcp.Nucleo
                 case Sistema: return "ejecutar_codigo no admite cambiar variables de sistema ni del dibujo (propiedades de Database) ni el perfil de AutoCAD: la simulación no podría deshacerlas.";
                 case Plugin: return "de ArbaMcp, el script solo puede usar la Fachada F.";
                 case Borrado: return "ninguna herramienta borra ni recrea regiones, líneas base, ensamblajes, corredores ni superficies.";
+                case SoloLectura: return "con solo_lectura=true el script solo puede leer: no compila nada que cree, cambie o borre objetos del dibujo, abra objetos para escritura ni escriba archivos. Si el script necesita escribir, quita solo_lectura y simula primero (simular=true).";
                 default: return "no está en la lista blanca de ejecutar_codigo (lo básico de System, colecciones, LINQ, texto, JSON, Path y la API de AutoCAD y Civil 3D).";
             }
         }
@@ -253,6 +256,19 @@ namespace ArbaMcp.Nucleo
             new ReglaMiembro("TransactionManager", "StartOpenCloseTransaction", Transaccion),
             new ReglaMiembro("TransactionManager", "TopTransaction", Transaccion),
             new ReglaMiembro("ObjectId", "Open", Transaccion),
+            // 1.17.6: Database.AddDBObject hace residente un objeto fuera de la transacción si no se sigue de
+            // AddNewlyCreatedDBObject; al abortar (simulación) quedaría en el dibujo. Para añadir: F.Agregar, o
+            // BlockTableRecord.AppendEntity / DBDictionary.SetAt más F.Tr.AddNewlyCreatedDBObject
+            new ReglaMiembro("Database", "AddDBObject", Transaccion),
+            // 1.17.6 (catálogo, consulta de la orquestadora del 17/11/2026): métodos de Database que meten, clonan o
+            // borran objetos fuera del flujo normal de la transacción, o trabajan con otros dibujos o referencias externas
+            new ReglaMiembro("Database", "DeepCloneObjects", Transaccion),
+            new ReglaMiembro("Database", "WblockCloneObjects", Transaccion),
+            new ReglaMiembro("Database", "EraseEmptyObjects", Transaccion),
+            new ReglaMiembro("Database", "ReclaimMemoryFromErasedObjects", Transaccion),
+            new ReglaMiembro("Database", "Insert", Transaccion),   // las 3 sobrecargas: añade objetos de otra base al dibujo
+            new ReglaMiembro("Database", "Wblock", Documentos),
+            new ReglaMiembro("Database", "BindXrefs", Documentos),
             new ReglaMiembro("HostApplicationServices", "WorkingDatabase", Documentos, soloEscritura: true),
             new ReglaMiembro("HostApplicationServices", "GetRemoteFile", Red),
             new ReglaMiembro("HostApplicationServices", "PutRemoteFile", Red),
@@ -379,6 +395,84 @@ namespace ArbaMcp.Nucleo
             foreach (var (prefijo, categoria) in lista)
                 if (espacio == prefijo || espacio.StartsWith(prefijo + ".", StringComparison.Ordinal)) return categoria;
             return null;
+        }
+
+        // ------------------------------------------------------------------ solo lectura (desde 1.17.6)
+        // Con solo_lectura=true el script corre con el dibujo bloqueado para lectura, en contexto de aplicación, con la
+        // transacción abortada al final y sin copia ni entrada en Deshacer. Estas reglas son la primera capa: rechazan al
+        // compilar las formas habituales de escribir. No pueden ser completas (la API de Civil 3D tiene cientos de métodos
+        // que escriben): lo que se les escape lo para el bloqueo de lectura y, si aun así cambia algo, la comprobación de
+        // después (las cinco fuentes de CodigoCambios y DBMOD) responde error. Sin solo_lectura no bloquean nada: solo se
+        // cuentan, para el aviso que sugiere solo_lectura cuando un script no escribe.
+
+        /// <summary>Miembros de la Fachada que escriben: F.Agregar (añade al dibujo) y F.EscribirTexto (escribe un archivo).</summary>
+        public static readonly HashSet<string> FachadaQueEscribe = new HashSet<string>(StringComparer.Ordinal) { "Agregar", "EscribirTexto" };
+
+        /// <summary>F.Abrir(id, escribir): con solo_lectura, 'escribir' tiene que faltar o ser la constante false.</summary>
+        public const string FachadaAbrir = "Abrir";
+        public const string ParametroEscribir = "escribir";
+
+        /// <summary>Tipo del modo de apertura: con solo_lectura, toda expresión de este tipo tiene que ser la constante ForRead.</summary>
+        public const string TipoOpenMode = "Autodesk.AutoCAD.DatabaseServices.OpenMode";
+        public const string OpenModeLectura = "ForRead";
+
+        /// <summary>
+        /// Métodos que escriben o se saltan el bloqueo de lectura, en cualquier tipo de Autodesk (por nombre exacto):
+        /// abrir para escritura un objeto ya abierto, borrar, añadir al dibujo, intercambiar o clonar objetos, auditar
+        /// (corrige errores) y bloquear el documento (LockDocument pide bloqueo de escritura).
+        /// </summary>
+        public static readonly HashSet<string> MetodosQueEscriben = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "UpgradeOpen", "UpgradeFromNotify", "Erase", "AppendEntity", "AddNewlyCreatedDBObject", "SwapIdWith", "HandOverTo",
+            "DeepCloneObjects", "WblockCloneObjects", "Wblock", "Audit", "LockDocument"
+        };
+
+        /// <summary>
+        /// Prefijos de métodos que escriben (Add..., Create..., Set...) en los tipos del dibujo: DBObject y derivados,
+        /// Database, Transaction, TransactionManager, Editor (SetCurrentView, SetImpliedSelection) y cualquier tipo de
+        /// Civil 3D. El prefijo cuenta si va solo o seguido de mayúscula, dígito o '_' («SetTargets», no «Settings»).
+        /// Lo que vive solo en memoria (Point3d, Extents3d.AddExtents, ObjectIdCollection.Add) no se toca.
+        /// </summary>
+        public static readonly string[] PrefijosQueEscriben =
+        {
+            "Add", "Append", "Create", "Remove", "Delete", "Set", "Rebuild", "Paste", "Import", "Update", "Rename", "Insert",
+            "Extract", "Clear", "Reverse", "Join", "Transform"
+        };
+
+        /// <summary>Tipos de AutoCAD (nombre completo) en los que, con sus derivados, cuentan los prefijos y las asignaciones.</summary>
+        public static readonly HashSet<string> TiposDelDibujo = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "Autodesk.AutoCAD.DatabaseServices.DBObject",
+            "Autodesk.AutoCAD.DatabaseServices.Database",
+            "Autodesk.AutoCAD.DatabaseServices.Transaction",
+            "Autodesk.AutoCAD.DatabaseServices.TransactionManager",
+            "Autodesk.AutoCAD.EditorInput.Editor",
+        };
+
+        /// <summary>
+        /// Categoría SoloLectura si este uso de un miembro escribe, o null. 'tipos': nombres completos del tipo sobre el que
+        /// se usa y de todas sus bases, y del que declara el miembro y sus bases. 'escritura': se asigna (propiedad o
+        /// indexador). 'esMetodo': es una llamada a un método (no una propiedad).
+        /// </summary>
+        public static string CategoriaSoloLectura(IEnumerable<string> tipos, string miembro, bool escritura, bool esMetodo)
+        {
+            var lista = (tipos ?? Enumerable.Empty<string>()).Where(t => t != null).ToList();
+            if (!lista.Any(t => t.StartsWith("Autodesk.", StringComparison.Ordinal))) return null;
+            if (esMetodo && MetodosQueEscriben.Contains(miembro ?? "")) return SoloLectura;
+            bool delDibujo = lista.Any(t => TiposDelDibujo.Contains(t) || t.StartsWith("Autodesk.Civil.", StringComparison.Ordinal));
+            if (!delDibujo) return null;
+            if (escritura) return SoloLectura;
+            if (esMetodo && PrefijosQueEscriben.Any(p => EmpiezaPorPalabra(miembro, p))) return SoloLectura;
+            return null;
+        }
+
+        /// <summary>True si 'nombre' empieza por 'prefijo' como palabra: solo, o seguido de mayúscula, dígito o '_'.</summary>
+        public static bool EmpiezaPorPalabra(string nombre, string prefijo)
+        {
+            if (string.IsNullOrEmpty(nombre) || string.IsNullOrEmpty(prefijo) || !nombre.StartsWith(prefijo, StringComparison.Ordinal)) return false;
+            if (nombre.Length == prefijo.Length) return true;
+            char c = nombre[prefijo.Length];
+            return char.IsUpper(c) || char.IsDigit(c) || c == '_';
         }
     }
 

@@ -289,6 +289,7 @@ namespace ArbaMcp
 
                     ObjectId idPolilinea = ObjectId.Null, idEstilo = ObjectId.Null, idEtiquetas = ObjectId.Null, idSitio = ObjectId.Null, idCapa = ObjectId.Null;
                     string referencia = null, handlePolilinea = null, capaPolilinea = null, estiloUsado = estilo, conjuntoUsado = conjunto, capaEje = null, sitioLeido = null;
+                    string estiloPrevisto = null, estiloReleido = null;   // 1.17.6: relectura del estilo sin reflexión
                     PlanAlineamiento plan = null;
                     List<Dictionary<string, object>> curvas = null;
                     double longitudReal = 0, inicioReal = 0, finReal = 0;
@@ -369,7 +370,11 @@ namespace ArbaMcp
                             var al = (CivAlignment)tr.GetObject(id, OpenMode.ForRead);
                             longitudReal = al.Length; inicioReal = al.StartingStation; finReal = al.EndingStation;
                             curvas = CurvasDelAlineamiento(al);
-                            estiloUsado = Api.Leer<string>(al, estiloUsado, "StyleName") ?? estiloUsado;
+                            // 1.17.6: enlace directo (Entity.StyleId → DBObject.Name); si falla, aviso; si es otro estilo, error en Verificar
+                            estiloPrevisto = estiloUsado;
+                            estiloReleido = LeerEstiloDe(tr, al, out string falloEstilo);
+                            if (estiloReleido != null) estiloUsado = estiloReleido;
+                            else ctx.Avisos.Add(RelecturaEstilo.Aviso("del alineamiento '" + nombre + "'", falloEstilo, estiloPrevisto));
                             try { sitioLeido = string.IsNullOrWhiteSpace(al.SiteName) ? null : al.SiteName; } catch { sitioLeido = sitio; }
                             try { capaEje = al.Layer ?? capaEje; } catch { }
                             return EstadoPrevisto(true);
@@ -377,6 +382,8 @@ namespace ArbaMcp
                         Verificar = d =>
                         {
                             string cola = " No se reintenta; deshaz con Ctrl+Z si no quieres el eje. despues=" + Nucleo.Json.Serializar(d);
+                            string distinto = RelecturaEstilo.Discrepancia("del alineamiento '" + nombre + "'", estiloReleido, estiloPrevisto);
+                            if (distinto != null) throw new InvalidOperationException(distinto + cola);
                             if (longitudReal <= 0)
                                 throw new InvalidOperationException("El alineamiento '" + nombre + "' se creó pero su longitud es " + longitudReal + " (debería ser " + Math.Round(plan.LongitudTotal, 3) + ")." + cola);
                             if (curvas.Count != plan.NumeroCurvas)

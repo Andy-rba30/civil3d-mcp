@@ -505,17 +505,23 @@ def leer_receta(nombre, memoria: str | None = None) -> dict:
             "ruta_cs": ruta_cs, "ruta_yaml": ruta_yaml}
 
 
-def preparar_ejecucion(nombre, parametros=None, simular=True, pedido=None, memoria: str | None = None) -> dict:
+def preparar_ejecucion(nombre, parametros=None, simular=True, pedido=None, memoria: str | None = None,
+                       solo_lectura=False) -> dict:
     """Lee la receta y prepara los argumentos de ejecutar_codigo. `parametros` viaja como texto JSON, igual que
-    cualquier parámetro de tipo json que el puente pasa al plugin (el plugin lo convierte con Argumentos.Json)."""
+    cualquier parámetro de tipo json que el puente pasa al plugin (el plugin lo convierte con Argumentos.Json).
+    `solo_lectura` (desde 1.17.6) se envía solo si es true, con el mismo significado que en ejecutar_codigo: el
+    script corre con el dibujo bloqueado para lectura, sin copia de seguridad y sin entrada en Deshacer."""
     receta = leer_receta(nombre, memoria)
     valores = preparar_parametros(receta["declarados"], parametros)
     simular = simular is not False
+    solo_lectura = solo_lectura is True
     args = {"codigo_csharp": receta["codigo"], "simular": simular,
             "parametros": json.dumps(valores, ensure_ascii=False)}
+    if solo_lectura:
+        args["solo_lectura"] = True
     if isinstance(pedido, str) and pedido.strip():
         args["pedido"] = pedido
-    return {**receta, "valores": valores, "simular": simular, "args": args}
+    return {**receta, "valores": valores, "simular": simular, "solo_lectura": solo_lectura, "args": args}
 
 
 def traducir_error(respuesta: dict) -> dict:
@@ -539,24 +545,38 @@ def anotar_uso(ruta_yaml: str, hoy=None) -> int:
 
 
 def cerrar_ejecucion(preparada: dict, respuesta: dict, hoy=None) -> dict:
-    """Bloque `receta` de la respuesta. Solo una ejecución real (simular=false) que salió bien suma 1 a veces_usada."""
+    """Bloque `receta` de la respuesta. Solo una ejecución real (simular=false) que salió bien suma 1 a veces_usada.
+    Desde 1.17.6 también suma una ejecución con solo_lectura=true que salió bien: no es un ensayo, el resultado leído
+    es el definitivo (y el plugin tiene que responder solo_lectura=true; si no, era un plugin anterior y no suma)."""
     veces = _veces(preparada["datos"])
     bloque = {"nombre": preparada["nombre"], "parametros": preparada["valores"], "veces_usada": veces, "sumada": False}
     resultado = respuesta.get("resultado")
     simulado_por_plugin = isinstance(resultado, dict) and resultado.get("simulado") is True
+    leida_por_plugin = isinstance(resultado, dict) and resultado.get("solo_lectura") is True
     if "error" in respuesta:
         bloque["nota"] = "La ejecución falló: veces_usada no cambia."
+    elif preparada.get("solo_lectura") and not leida_por_plugin:
+        bloque["nota"] = ("Se pidió solo_lectura=true y el plugin no respondió solo_lectura=true (¿plugin anterior a la "
+                          "1.17.6?): se ejecutó como una simulación normal, con copia y entrada en Deshacer; "
+                          "veces_usada no cambia.")
+    elif preparada.get("solo_lectura"):
+        _sumar_uso(bloque, preparada, hoy, "Ejecución de solo lectura correcta")
     elif preparada["simular"]:
         bloque["nota"] = ("Simulación: veces_usada no cambia; solo suma una ejecución real (simular=false) que sale bien. "
                           "Si el resultado es el esperado, confírmalo con el usuario y ejecútala con simular=false.")
     elif simulado_por_plugin:
         bloque["nota"] = "El plugin respondió simulado=true: veces_usada no cambia."
     else:
-        try:
-            bloque["veces_usada"] = anotar_uso(preparada["ruta_yaml"], hoy)
-            bloque["sumada"] = True
-            bloque["nota"] = (f"Ejecución real correcta: veces_usada sube a {bloque['veces_usada']}. El contador está en "
-                              "esta PC; L.2 lo sube a GitHub.")
-        except (ErrorReceta, OSError) as e:
-            bloque["aviso"] = f"La receta se ejecutó, pero no se pudo anotar el uso en {preparada['ruta_yaml']}: {e}"
+        _sumar_uso(bloque, preparada, hoy, "Ejecución real correcta")
     return bloque
+
+
+def _sumar_uso(bloque: dict, preparada: dict, hoy, que: str) -> None:
+    """Suma 1 a veces_usada en el .yaml y lo anota en el bloque (o el aviso si no se pudo escribir)."""
+    try:
+        bloque["veces_usada"] = anotar_uso(preparada["ruta_yaml"], hoy)
+        bloque["sumada"] = True
+        bloque["nota"] = (f"{que}: veces_usada sube a {bloque['veces_usada']}. El contador está en "
+                          "esta PC; L.2 lo sube a GitHub.")
+    except (ErrorReceta, OSError) as e:
+        bloque["aviso"] = f"La receta se ejecutó, pero no se pudo anotar el uso en {preparada['ruta_yaml']}: {e}"

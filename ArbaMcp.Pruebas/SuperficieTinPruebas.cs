@@ -442,5 +442,42 @@ namespace ArbaMcp.Pruebas
             Assert.Contains("(descartados): 'Border Only'", sinNinguno);
             Assert.DoesNotContain("elige con 'estilo'", sinNinguno);
         }
+
+        // ------------------------------------------------------------------ 1.17.6: aviso de la relectura del estilo
+        [Fact]
+        public void RelecturaDelEstiloSinAvisoSiSeLeyoConSusIntervalos()
+        {
+            var releido = new EstiloCurvas { Nombre = "Contours 1m and 5m (Background)", Menor = 1, Mayor = 5, MenorVisible = true, MayorVisible = true };
+            Assert.Null(SuperficieTin.AvisoRelecturaEstilo(true, null, releido, 1, 5, null));
+            // Solo se pidió el menor: el mayor no hace falta
+            Assert.Null(SuperficieTin.AvisoRelecturaEstilo(true, null, new EstiloCurvas { Nombre = "X", Menor = 1 }, 1, null, null));
+            // Sin intervalos pedidos no hay aviso, aunque no se pudiera releer nada
+            Assert.Null(SuperficieTin.AvisoRelecturaEstilo(false, "id vacío", null, null, null, null));
+        }
+
+        [Fact]
+        public void RelecturaDelEstiloAvisaDeQueFalloElId()
+        {
+            string vacio = SuperficieTin.AvisoRelecturaEstilo(true, null, null, 1, 5, null);
+            Assert.Equal("No se pudo releer el estilo de la superficie creada (Entity.StyleId: id vacío): 'intervalos_curvas' usa el estilo previsto.", vacio);
+            string lanza = SuperficieTin.AvisoRelecturaEstilo(true, "InvalidOperationException: eNotApplicable", null, 1, 5, null);
+            Assert.Contains("(Entity.StyleId: InvalidOperationException: eNotApplicable)", lanza);
+            Assert.Contains("usa el estilo previsto", lanza);
+        }
+
+        [Fact]
+        public void RelecturaDelEstiloAvisaSiFaltanLosIntervalos()
+        {
+            var sinIntervalos = new EstiloCurvas { Nombre = "Contours 1m and 5m (Background)" };
+            string a = SuperficieTin.AvisoRelecturaEstilo(true, null, sinIntervalos, 1, 5, "intervalos del estilo 'X' (ContourStyle): eInvalidInput");
+            Assert.Contains("Se releyó el estilo de la superficie creada ('Contours 1m and 5m (Background)')", a);
+            Assert.Contains("(SurfaceStyle.ContourStyle: intervalos del estilo 'X' (ContourStyle): eInvalidInput)", a);
+            Assert.Contains("'aplicados' no se puede confirmar", a);
+            Assert.DoesNotContain("Entity.StyleId", a);
+            // Falta solo el mayor pedido
+            string b = SuperficieTin.AvisoRelecturaEstilo(true, null, new EstiloCurvas { Menor = 1 }, 1, 5, null);
+            Assert.Contains("('sin nombre legible')", b);
+            Assert.Contains("(SurfaceStyle.ContourStyle)", b);
+        }
     }
 }

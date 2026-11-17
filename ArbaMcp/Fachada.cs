@@ -20,6 +20,9 @@ namespace ArbaMcp
     /// (using (var tr = F.Db.TransactionManager.StartTransaction()) {...}), el plugin puede deshacerlo todo al simular,
     /// porque la transacción exterior es suya y el script no la ve. Los archivos de F.EscribirTexto se escriben al
     /// final y solo si el script termina bien y no es una simulación.
+    ///
+    /// Con solo_lectura=true (desde 1.17.6) F.Agregar, F.EscribirTexto y F.Abrir(id, true) lanzan al ejecutarse: es el
+    /// respaldo de las reglas de compilación (CodigoReglas, categoría «solo lectura»), que ya no dejan compilarlos.
     /// </summary>
     public sealed class Fachada
     {
@@ -27,6 +30,7 @@ namespace ArbaMcp
         private readonly Transaction _tr;
         private readonly JsonElement _parametros;
         private readonly bool _simulando;
+        private readonly bool _soloLectura;
         private readonly string _carpeta;
         private readonly Dictionary<string, string> _pendientes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private long _bytesPendientes;
@@ -37,13 +41,14 @@ namespace ArbaMcp
         /// <summary>Lo que el script añadió con F.Agregar (desde 1.17.5, fuente 'fachada' de datos.objetos.fuente_deteccion).</summary>
         internal readonly List<ObjectId> Agregados = new List<ObjectId>();
 
-        internal Fachada(Document doc, Transaction tr, JsonElement parametros, bool simulando, string carpeta)
+        internal Fachada(Document doc, Transaction tr, JsonElement parametros, bool simulando, string carpeta, bool soloLectura = false)
         {
             _doc = doc;
             _tr = tr;
             _parametros = parametros;
             _simulando = simulando;
             _carpeta = carpeta;
+            _soloLectura = soloLectura;
         }
 
         // ------------------------------------------------------------------ lo básico
@@ -69,6 +74,9 @@ namespace ArbaMcp
         /// <summary>True si es una simulación (simular=true): los cambios se deshacen al final y no se escribe ningún archivo.</summary>
         public bool Simulando => _simulando;
 
+        /// <summary>True con solo_lectura=true (desde 1.17.6): el dibujo está bloqueado para lectura y el script no puede escribir.</summary>
+        public bool SoloLectura => _soloLectura;
+
         /// <summary>El JSON de 'parametros' (un objeto; vacío si no se pasó). Es de solo lectura.</summary>
         public JsonElement Parametros => _parametros;
 
@@ -77,6 +85,7 @@ namespace ArbaMcp
         public T Abrir<T>(ObjectId id, bool escribir = false) where T : DBObject
         {
             Revisar();
+            if (escribir && _soloLectura) throw new InvalidOperationException(CodigoSoloLectura.MensajeFachada("F.Abrir(id, true)"));
             var o = _tr.GetObject(id, escribir ? OpenMode.ForWrite : OpenMode.ForRead);
             if (o is T t) return t;
             throw new InvalidOperationException("El objeto " + id.Handle + " es " + (o?.GetType().Name ?? "null") + ", no " + typeof(T).Name + ".");
@@ -135,6 +144,7 @@ namespace ArbaMcp
         public ObjectId Agregar(Entity entidad)
         {
             Revisar();
+            if (_soloLectura) throw new InvalidOperationException(CodigoSoloLectura.MensajeFachada("F.Agregar"));
             if (entidad == null) throw new ArgumentNullException(nameof(entidad));
             var bloques = (BlockTable)_tr.GetObject(_doc.Database.BlockTableId, OpenMode.ForRead);
             var modelo = (BlockTableRecord)_tr.GetObject(bloques[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
@@ -187,6 +197,7 @@ namespace ArbaMcp
         public void EscribirTexto(string nombre, string texto)
         {
             Revisar();
+            if (_soloLectura) throw new InvalidOperationException(CodigoSoloLectura.MensajeFachada("F.EscribirTexto"));
             string ruta = CodigoCarpeta.Resolver(_carpeta, nombre);
             texto = texto ?? "";
             long bytes = Encoding.UTF8.GetByteCount(texto);

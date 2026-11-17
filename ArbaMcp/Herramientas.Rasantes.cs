@@ -60,6 +60,48 @@ namespace ArbaMcp
             return null;
         }
 
+        /// <summary>
+        /// Estilo de un objeto de Civil 3D releído después de crearlo (desde 1.17.6), con enlace directo a
+        /// Autodesk.Civil.DatabaseServices.Entity: StyleId → NombreDeEstilo (DBObject.Name) y, si no sale nombre,
+        /// StyleName. Nunca por reflexión: varias clases vuelven a declarar StyleId o StyleName solo de escritura
+        /// (Surface.StyleId, SectionView.StyleId, Corridor) y Api.Leer devolvía null sin error, así que la respuesta
+        /// repetía el estilo previsto sin decirlo. Null si no se pudo; 'fallo' dice qué falló (null si se leyó).
+        /// </summary>
+        private static string LeerEstiloDe(Transaction tr, DBObject o, out string fallo)
+        {
+            fallo = null;
+            if (!(o is Civ.Entity e))
+            {
+                fallo = "el objeto (" + (o?.GetType().Name ?? "null") + ") no es Autodesk.Civil.DatabaseServices.Entity";
+                return null;
+            }
+            var fallos = new List<string>();
+            string nombre = null;
+            try
+            {
+                ObjectId id = e.StyleId;
+                if (id.IsNull) fallos.Add("Entity.StyleId: id vacío");
+                else
+                {
+                    nombre = NombreDeEstilo(tr, id);
+                    if (string.IsNullOrWhiteSpace(nombre)) fallos.Add("DBObject.Name del estilo " + id.Handle + ": sin nombre");
+                }
+            }
+            catch (Exception ex) { fallos.Add("Entity.StyleId: " + ex.GetType().Name + ": " + ex.Message); }
+            if (string.IsNullOrWhiteSpace(nombre))
+            {
+                try
+                {
+                    nombre = e.StyleName;
+                    if (string.IsNullOrWhiteSpace(nombre)) fallos.Add("Entity.StyleName: vacío");
+                }
+                catch (Exception ex) { fallos.Add("Entity.StyleName: " + ex.GetType().Name + ": " + ex.Message); }
+            }
+            if (!string.IsNullOrWhiteSpace(nombre)) return nombre.Trim();
+            fallo = string.Join("; ", fallos);
+            return null;
+        }
+
         /// <summary>Nombres legibles de una colección de estilos (para los errores y la memoria técnica); vacío si ninguno se pudo leer.</summary>
         private static List<string> NombresDeEstilos(Transaction tr, IEnumerable coleccion)
         {
@@ -202,6 +244,7 @@ namespace ArbaMcp
 
                     ObjectId idAl = ObjectId.Null, idEstilo = ObjectId.Null, idEtiquetas = ObjectId.Null, idCapa = ObjectId.Null;
                     string nombreAlReal = nombreAl, estiloUsado = estilo, conjuntoUsado = conjunto, capaPerfil = null, tipoLeido = null, vistaLeida = null;
+                    string estiloPrevisto = null, estiloReleido = null;   // 1.17.6: relectura del estilo sin reflexión
                     double inicioEje = 0, finEje = 0, inicioReal = 0, finReal = 0, cotaMinReal = double.NaN, cotaMaxReal = double.NaN;
                     PlanRasante plan = null;
                     List<Dictionary<string, object>> pvisLeidos = null, entidadesLeidas = null, curvasLeidas = null;
@@ -301,7 +344,11 @@ namespace ArbaMcp
                             inicioReal = pr.StartingStation; finReal = pr.EndingStation;
                             try { cotaMinReal = pr.ElevationMin; cotaMaxReal = pr.ElevationMax; } catch { }
                             try { tipoLeido = pr.ProfileType.ToString(); } catch { tipoLeido = null; }
-                            estiloUsado = Api.Leer<string>(pr, estiloUsado, "StyleName") ?? estiloUsado;
+                            // 1.17.6: enlace directo (Entity.StyleId → DBObject.Name); si falla, aviso; si es otro estilo, error en Verificar
+                            estiloPrevisto = estiloUsado;
+                            estiloReleido = LeerEstiloDe(tr, pr, out string falloEstilo);
+                            if (estiloReleido != null) estiloUsado = estiloReleido;
+                            else ctx.Avisos.Add(RelecturaEstilo.Aviso("de la rasante '" + nombre + "'", falloEstilo, estiloPrevisto));
                             try { capaPerfil = pr.Layer ?? capaPerfil; } catch { }
                             try { pvisLeidos = PvisDelPerfil(pr, out puntosLeidos); } catch (Exception ex) { pvisLeidos = null; puntosLeidos = null; ctx.Avisos.Add("No se pudieron releer los PVI del perfil (" + ex.GetType().Name + ": " + ex.Message + ")."); }
                             try { entidadesLeidas = EntidadesDelPerfil(pr, out tangentesLeidas, out curvasLeidas); } catch (Exception ex) { entidadesLeidas = null; curvasLeidas = null; ctx.Avisos.Add("No se pudieron releer las entidades del perfil (" + ex.GetType().Name + ": " + ex.Message + ")."); }
@@ -315,6 +362,8 @@ namespace ArbaMcp
                         Verificar = d =>
                         {
                             string cola = " No se reintenta; deshaz con Ctrl+Z si no quieres el perfil. despues=" + Nucleo.Json.Serializar(d);
+                            string distinto = RelecturaEstilo.Discrepancia("de la rasante '" + nombre + "'", estiloReleido, estiloPrevisto);
+                            if (distinto != null) throw new InvalidOperationException(distinto + cola);
                             string motivo = Rasante.MotivoPvisNoCoinciden(plan.Pvis, puntosLeidos);
                             if (motivo != null) throw new InvalidOperationException("La rasante '" + nombre + "' se creó pero " + motivo + "." + cola);
                             motivo = Rasante.MotivoRangoNoCoincide(plan.ProgresivaInicial, plan.ProgresivaFinal, inicioReal, finReal);

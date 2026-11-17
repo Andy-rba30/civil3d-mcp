@@ -814,11 +814,27 @@ namespace ArbaMcp
                                 extension = ExtensionDe(su, out puntos);
                                 try { triangulos = ((Civ.TinSurface)su).GetTinProperties().NumberOfTriangles; }
                                 catch (Exception ex) { ctx.Avisos.Add("No se pudo leer el número de triángulos (TinSurface.GetTinProperties): " + ex.Message); }
-                                // El estilo se relee de la superficie creada (Entity.StyleId), con sus intervalos y su visibilidad
-                                var releido = LeerEstiloCurvas(tr, Api.Leer<ObjectId>(su, ObjectId.Null, "StyleId"));
-                                estiloUsado = Api.Leer<string>(su, null, "StyleName") ?? releido?.Nombre ?? estiloUsado;
+                                // El estilo se relee de la superficie creada, con sus intervalos y su visibilidad. Desde 1.17.6 con
+                                // enlace directo a Autodesk.Civil.DatabaseServices.Entity.StyleId/StyleName (lectura y escritura),
+                                // como crear_secciones con SectionView desde 1.13.0. Por reflexión (Api.Leer "StyleId") daba
+                                // ObjectId.Null sin error: Autodesk.Civil.DatabaseServices.Surface vuelve a declarar StyleId solo de
+                                // escritura y GetProperty encuentra esa (catálogo, consulta de la orquestadora del 17/11/2026;
+                                // informe 1.17.2, pasos 2 y 4). El nombre, con DBObject.Name del id (validado en 1.10.1).
+                                ObjectId idEstiloLeido = ObjectId.Null;
+                                string falloId = null;
+                                try { idEstiloLeido = ((Civ.Entity)su).StyleId; if (idEstiloLeido.IsNull) falloId = "id vacío"; }
+                                catch (Exception ex) { falloId = ex.GetType().Name + ": " + ex.Message; }
+                                var erroresEstilo = new List<string>();
+                                var releido = LeerEstiloCurvas(tr, idEstiloLeido, erroresEstilo);
+                                string nombreLeido = releido?.Nombre;
+                                if (string.IsNullOrWhiteSpace(nombreLeido)) nombreLeido = Seguro(() => ((Civ.Entity)su).StyleName, null);
+                                if (!string.IsNullOrWhiteSpace(nombreLeido)) estiloUsado = nombreLeido;
                                 if (releido != null) delEstilo = (releido.Menor, releido.Mayor);
-                                else if (eleccion != null) ctx.Avisos.Add("No se pudo releer el estilo de la superficie creada (Entity.StyleId): 'intervalos_curvas' usa el estilo previsto.");
+                                string avisoRelectura = SuperficieTin.AvisoRelecturaEstilo(eleccion != null, falloId, releido, menor, mayor, erroresEstilo.FirstOrDefault());
+                                if (avisoRelectura != null) ctx.Avisos.Add(avisoRelectura);
+                                if (falloId != null || erroresEstilo.Count > 0)
+                                    Historial.Registrar("crear_superficie_tin: relectura del estilo de '" + nombre + "': " + (falloId != null ? "Entity.StyleId: " + falloId : "id leído")
+                                        + (erroresEstilo.Count > 0 ? "; " + erroresEstilo.Count + " fallo(s) al leer el estilo, el primero: " + erroresEstilo[0] : "") + ".");
                                 resumenIntervalos = SuperficieTin.ResumenIntervalos(menor, mayor, eleccion, releido ?? eleccion?.Usado);
                                 if (eleccion != null && eleccion.Eleccion == EleccionEstilo.PorDefecto)
                                 {

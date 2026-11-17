@@ -281,22 +281,26 @@ async def guardar_receta(nombre: str, pedido: str, codigo: str,
 
 
 async def ejecutar_receta(nombre: str, parametros: typing.Union[dict, str, None] = None, simular: bool = True,
-                          pedido: typing.Optional[str] = None) -> str:
+                          solo_lectura: bool = False, pedido: typing.Optional[str] = None) -> str:
     """Reutiliza una receta de código de la memoria técnica (buscar_api la muestra en RECETAS como «receta de
     código»): lee MEMORIA_FIRMA_DIR\\recetas\\<nombre>.cs y <nombre>.yaml, comprueba parametros contra los declarados
     (objeto JSON con un valor por parámetro, {"nombre_capa": "Capa 1"}; los que faltan toman su por_defecto) y ejecuta
     el código guardado con la herramienta ejecutar_codigo del plugin (tiene que estar activada). simular=true por
     defecto: simula primero, enseña el resultado, confirma con el usuario y después repite con simular=false. Solo una
-    ejecución real (simular=false) que sale bien suma 1 a veces_usada; una simulación no suma. Devuelve la respuesta de
-    ejecutar_codigo (resultado, id_log, tiempos) más el bloque receta (nombre, parametros usados, veces_usada, sumada y
-    nota). Envía pedido con las palabras del usuario. Argumentos directos (no dentro de 'args'); responde JSON."""
+    ejecución real (simular=false) que sale bien suma 1 a veces_usada; una simulación no suma. Si la receta solo lee
+    (contar, listar, medir), pasa solo_lectura=true (desde 1.17.6, igual que en ejecutar_codigo): corre con el dibujo
+    bloqueado para lectura, sin copia de seguridad y sin entrada en Deshacer, no compila si el código escribe, y si sale
+    bien suma 1 a veces_usada. Devuelve la respuesta de ejecutar_codigo (resultado, id_log, tiempos) más el bloque
+    receta (nombre, parametros usados, veces_usada, sumada y nota). Envía pedido con las palabras del usuario.
+    Argumentos directos (no dentro de 'args'); responde JSON."""
     inicio = time.perf_counter()
 
     def ms() -> int:
         return int((time.perf_counter() - inicio) * 1000)
 
     try:
-        preparada = await anyio.to_thread.run_sync(lambda: recetas.preparar_ejecucion(nombre, parametros, simular, pedido))
+        preparada = await anyio.to_thread.run_sync(
+            lambda: recetas.preparar_ejecucion(nombre, parametros, simular, pedido, solo_lectura=solo_lectura))
     except recetas.ErrorReceta as e:
         return _a_texto({"ok": False, "error": str(e), "ms_puente": ms()})
     args = preparada["args"]
