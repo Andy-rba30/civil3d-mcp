@@ -65,7 +65,7 @@ una presenta su plan y la orquestadora lo aprueba por `send_message`):
 |---|---|---|---|---|
 | 6.1 `ejecutar_codigo` protegido sin `solo_lectura` | `session_01CdHU3589GnkBnGhy7K9ugg` | `tarea/6.1-codigo-escritura-segura` | 1.19.2 | plan aprobado (sin Close/Cancel en la lista de excepciones), trabajando |
 | 6.2 Documentos pendientes | `session_01CdHU39JEMaAg6NgzUWPSRn` | `tarea/6.2-documentos-pendientes` | — | **terminada**, PR #50 (borrador) |
-| 6.3 `crear_secciones`: grupos y superficie | `session_01CdHU36NsaMFpqqxZwcY9Qd` | `tarea/6.3-secciones-grupos` | 1.19.3 | plan aprobado (opción A con salvaguardas; `secciones` sin cambiar de tipo + `secciones_detalle`), trabajando |
+| 6.3 `crear_secciones`: grupos y superficie | `session_01CdHU36NsaMFpqqxZwcY9Qd` | `tarea/6.3-secciones-grupos` | 1.19.3 | **terminada**, PR #53 (borrador), sesión archivada; la cadena de ramas la junta la orquestadora |
 | 6.4 Tablas DG-2018 de peralte y sobreancho | `session_01CdHU35F8CtvPhdpJWdzCMn` | `memoria-firma` (main) | — | plan aprobado, trabajando |
 | 6.5 Peralte (`listar_peralte`, `aplicar_peralte`) | `session_01CdHU35tiuKgqTBqsCUGeTE` | `tarea/6.5-peralte` | 1.20.0 | PR #51 (borrador): plugin y puente listos; falta la norma (esquema de la 6.4 y tabla `peralte_figura` de la 6.10, regla «Decisión 6» ya enviada) |
 | 6.6 Bordes de calzada (`crear_bordes_calzada`, `listar_bordes_calzada`) | `session_01CdHU37Cy3fgHeSz8Jv7MJf` | `tarea/6.6-bordes-sobreancho` | 1.21.0 | PR #52 (borrador): plugin y puente listos; falta el esquema real de la 6.4 |
@@ -74,7 +74,7 @@ una presenta su plan y la orquestadora lo aprueba por `send_message`):
 | 6.10 Digitalizar las Figuras 302.02 a 302.05 (peralte) | `session_01CdHU34ytgX6VkmhiAmnegy` | `memoria-firma` (main) | — | plan aprobado: las figuras son VECTORIALES (peralte en el eje horizontal, radio log en el vertical); fase 1 **subida** (`memoria-firma` 3ae81db: 1295 nodos; controles del verificador dentro de ±0,2; comparada con el XML Corregido_2 del dueño al 8 %: diferencias < 0,2 % donde p ≥ 2,2 %); fase 2 (tabla `peralte_figura` en la base, regla «Decisión 6») tras la 6.4 |
 | 6.8 XML DG-2018 corregido desde la base | — | `memoria-firma` | — | después de 6.4 y 6.10; base: los XML del dueño en `memoria-firma/normas/civil3d/` (commit `12a56d3`, con su permiso) |
 
-**Decisión del dueño (17/11/2026)**: las sesiones hijas se **archivan** en cuanto terminan, después de comprobar que su rama o su commit están en GitHub (el archivo se puede deshacer con `unarchive_session`). Archivadas: 6.2 y 6.7.
+**Decisión del dueño (17/11/2026)**: las sesiones hijas se **archivan** en cuanto terminan, después de comprobar que su rama o su commit están en GitHub (el archivo se puede deshacer con `unarchive_session`). Archivadas: 6.2, 6.7 y 6.3.
 
 Los informes del verificador independiente están en `memoria-firma/normas/tablas/VERIFICACION_PERALTE_SOBREANCHO_20261117_A.md`
 y `VERIFICACION_CRITERIOS_PENDIENTES_20261117_B.md` (commit `b2dc3e4`).
