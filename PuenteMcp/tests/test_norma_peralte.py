@@ -7,10 +7,13 @@ Los valores de la norma (peralte, bombeo, longitudes de transición y proporció
 enumerados de Civil 3D de estas pruebas son «ejemplo»: inventados solo para probar la lógica. Los reales salen de
 dg2018.sqlite (sesión 6.4) y de listar_peralte → enumerados (VALIDACION_120, paso 1).
 """
+import io
 import json
 import sqlite3
 
 import pytest
+
+import casos_norma_reales
 
 import norma as n
 import norma_peralte as npe
@@ -497,3 +500,24 @@ def test_error_de_listar_pis(servidor, puente, plugin, norma_ejemplo):
                                          "id_log": "id-no"}
     r = aplicar(puente, alineamiento="X", simular=True, **TERCERA_60)
     assert r["ok"] is False and "No existe el alineamiento 'X'" in r["error"] and r["id_log"] == "id-no"
+
+
+# ---------------------------------------------------------------------------------------------- casos de control (PC)
+def test_casos_de_control_de_la_figura_se_saltan_sin_la_tabla(tmp_path):
+    with n.BaseNorma(crear_base(str(tmp_path / "m"))) as base:
+        informe = casos_norma_reales.Informe(io.StringIO())
+        casos_norma_reales.comprobar_figuras_peralte(base, informe)
+    assert "no tiene peralte_figura (tarea 6.10); se omiten 6 casos" in informe.salida.getvalue()
+    assert informe.ok == 0 and informe.fallos == 0
+
+
+def test_casos_de_control_de_la_figura_con_la_base_de_ejemplo(base_figura):
+    # «ejemplo»: los valores salen de NODOS_EJEMPLO, no son los de control reales
+    casos = (("F302.03", 60, 150, 7.61), ("F302.03", 50, 200, 7.55), ("F302.03", 60, 150, 8.0), ("F302.03", 70, 150, 5.0))
+    informe = casos_norma_reales.Informe(io.StringIO())
+    casos_norma_reales.comprobar_figuras_peralte(base_figura, informe, casos)
+    texto = informe.salida.getvalue()
+    assert informe.ok == 2 and informe.fallos == 2, texto
+    assert "[OK   ] F302.03 · 60 km/h · R = 150 m: esperado 7.61, obtenido 7.613 (tolerancia 0.2)" in texto
+    assert "[FALLO] F302.03 · 70 km/h · R = 150 m" in texto and "no se interpola entre velocidades" in texto
+    assert len(casos_norma_reales.CASOS_PERALTE_FIGURA) == 6

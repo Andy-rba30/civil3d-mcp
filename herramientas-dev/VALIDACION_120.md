@@ -273,6 +273,11 @@ Reglas:
        | `"orografia":"Accidentado","peralte_maximo":12` (60 km/h) | F302.04 | 10,35 |
 
        Si alguna velocidad no es válida para esa orografía, anota el `faltan` literal. Ninguna fila escribe nada.
+    f. **Casos de control contra la base real** (no decisivo; PowerShell, sin Civil 3D), en `PuenteMcp`:
+       `uv run --frozen python casos_norma_reales.py`. Al final sale la sección «Peralte según el radio (lectura de las
+       Figuras 302.02 a 302.05, Decisión 6), sin el radio mínimo:» con **6** líneas `[OK   ]` (F302.03 a 60, 30, 40 y
+       50 km/h con R 150; F302.04 a 60 km/h con R 150 y a 40 km/h con R 60; tolerancia 0,2 %), o «la base no tiene
+       peralte_figura (tarea 6.10); se omiten 6 casos de control.». Pega la sección y la línea «Resultado:».
 
 11. **Comparación con el XML de criterios del dueño (solo referencia, no decisivo).** `crear_alineamiento_desde_polilinea`
     con `args={"nombre":"Eje XML 120","capa":"EJE_NORMA_A","radio":150,"pedido":"crea una copia del eje para comparar con el XML"}`.
@@ -300,5 +305,6 @@ una tabla paso / resultado (OK, FALLO) / respuesta literal / tiempo, y **en secc
    3D añadió por su cuenta.
 5. El resultado del `_.UNDO 1` del paso 7.
 6. La tabla de pendientes medidas del paso 9 y los valores del parámetro de peralte de `LaneSuperelevationAOR`.
-7. La respuesta del paso 10d (y `propuesta_norma.curvas` si salió) y la tabla de valores de control del paso 10e.
+7. La respuesta del paso 10d (y `propuesta_norma.curvas` si salió), la tabla de valores de control del paso 10e y la
+   sección de peralte de `casos_norma_reales.py` del paso 10f.
 8. La comparación del paso 11: peralte de Civil 3D con el XML frente al de la herramienta, curva a curva.

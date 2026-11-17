@@ -10,7 +10,9 @@ Uso, desde PuenteMcp (con MEMORIA_FIRMA_DIR apuntando a memoria-firma, o con --m
 
 Lee normas/casos_prueba/casos_dg2018.yaml y normas/tablas/dg2018.sqlite. Además comprueba que las fórmulas del código
 dan lo mismo que `formulas.expresion_python` de la base, que los umbrales de las reglas coinciden con `reglas.valor_num`
-y que todas las referencias que cita el código existen en la base.
+y que todas las referencias que cita el código existen en la base. Desde 1.20.0, si la base trae `peralte_figura` (las
+Figuras 302.02 a 302.05 digitalizadas, tarea 6.10), compara la lectura de la figura de aplicar_peralte con los valores
+de control de la orquestadora (CASOS_PERALTE_FIGURA); si no la trae, los salta y lo dice.
 
 Sale con 0 si todo coincide, 1 si algo no coincide y 2 si falta la memoria, la base o el archivo de casos.
 """
@@ -24,6 +26,7 @@ import sys
 import yaml
 
 import norma
+import norma_peralte
 
 RUTA_CASOS = os.path.join("normas", "casos_prueba", "casos_dg2018.yaml")
 
@@ -284,6 +287,37 @@ def comprobar_referencias(base: norma.BaseNorma, informe: Informe):
                      "todas", "todas" if not faltan else "faltan " + ", ".join(faltan))
 
 
+# ---------------------------------------------------------------------------------------------- peralte según el radio
+# Valores de control de la lectura de las figuras de peralte (mensaje de la orquestadora del 17/11/2026, tarea 6.10):
+# (figura, velocidad en km/h, radio en m, peralte en %). Tolerancia ±0,2 %: es una lectura gráfica.
+CASOS_PERALTE_FIGURA = (
+    ("F302.03", 60, 150, 7.55),
+    ("F302.04", 60, 150, 10.35),
+    ("F302.03", 30, 150, 3.91),
+    ("F302.03", 40, 150, 5.49),
+    ("F302.03", 50, 150, 6.55),
+    ("F302.04", 40, 60, 11.00),
+)
+TOLERANCIA_FIGURA_PCT = 0.2
+
+
+def comprobar_figuras_peralte(base: norma.BaseNorma, informe: Informe, casos=CASOS_PERALTE_FIGURA):
+    if not norma_peralte.tiene_tabla(base, norma_peralte.TABLA_FIGURA):
+        informe.linea(f"Peralte según el radio: la base no tiene {norma_peralte.TABLA_FIGURA} (tarea 6.10); se omiten "
+                      f"{len(casos)} casos de control.")
+        return
+    informe.linea("Peralte según el radio (lectura de las Figuras 302.02 a 302.05, Decisión 6), sin el radio mínimo:")
+    for ref, v, radio, esperado_pct in casos:
+        que = f"{ref} · {v} km/h · R = {radio} m"
+        try:
+            r = norma_peralte.peralte_de_figura(base, ref, v, radio, {"exigido": None, "referencia": None})
+        except norma.ErrorNorma as e:
+            informe.comparar(que, esperado_pct, str(e))
+            continue
+        informe.comparar(que, esperado_pct, r["peralte_calculado_pct"], TOLERANCIA_FIGURA_PCT,
+                         f"{r['resultado']}, entregado {r['peralte_pct']} %")
+
+
 # ---------------------------------------------------------------------------------------------- principal
 def main(argv=None, salida=None) -> int:
     parser = argparse.ArgumentParser(description="Casos de la DG-2018 contra la base real de memoria-firma")
@@ -318,6 +352,7 @@ def main(argv=None, salida=None) -> int:
         comprobar_formulas(base, informe)
         comprobar_umbrales(base, informe)
         comprobar_referencias(base, informe)
+        comprobar_figuras_peralte(base, informe)
     informe.linea()
     informe.linea(f"Resultado: {informe.ok} comprobaciones OK, {informe.fallos} fallos, {informe.sin_comparar} sin comparar, "
                   f"{informe.fuera} casos fuera de alcance.")
