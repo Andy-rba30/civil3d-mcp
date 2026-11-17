@@ -276,11 +276,14 @@ namespace ArbaMcp.Nucleo
         /// Compara lo pedido con lo leído tras escribir. Devuelve las diferencias (vacía si todo cuadra): progresiva pedida
         /// que no está (a 0,001 m), tipo distinto o pendiente distinta (más de 0,001 %) o sin leer. 'extra' recibe las
         /// progresivas que el eje tiene y no se pidieron (Civil 3D pudo crearlas al añadir la curva): son aviso, no error.
+        /// Se buscan en las curvas de peralte y, además, en la colección del propio eje (EstacionesDelEje) las que no
+        /// están en ninguna curva: no se sabe aún si Civil 3D guarda las mismas en las dos (VALIDACION_120, paso 5a).
         /// </summary>
         public static List<string> Diferencias(IList<CurvaPeralte> pedido, PeralteLeido leido, out List<string> extra)
         {
             var dif = new List<string>();
             var leidas = leido.Curvas.SelectMany(c => c.Estaciones).ToList();
+            leidas.AddRange(leido.EstacionesDelEje.Where(x => !leidas.Any(y => Math.Abs(y.Progresiva - x.Progresiva) <= ToleranciaProgresiva)).ToList());
             var usadas = new HashSet<EstacionLeida>();
             foreach (var c in pedido)
                 foreach (var e in c.Estaciones)

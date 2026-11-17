@@ -175,6 +175,19 @@ namespace ArbaMcp.Pruebas
         }
 
         [Fact]
+        public void BuscaTambienEnLaColeccionDelEjeSinDuplicar()
+        {
+            var curvas = Peralte.LeerCurvas(J(UnaCurva));
+            var leido = Leido((80, "TipoA", -2, -2));
+            var delEje = new EstacionLeida { Progresiva = 110.5, Tipo = "TipoB", Curva = "Curva.1" };
+            delEje.Pendientes["SegmentoIzq"] = 6; delEje.Pendientes["SegmentoDer"] = -6;
+            leido.EstacionesDelEje.Add(delEje);
+            leido.EstacionesDelEje.Add(new EstacionLeida { Progresiva = 80, Tipo = "TipoA", Curva = "Curva.1" });   // la misma que la de la curva: no cuenta dos veces
+            Assert.Empty(Peralte.Diferencias(curvas, leido, out var extra));
+            Assert.Empty(extra);
+        }
+
+        [Fact]
         public void EstadoPrevisionYEsperado()
         {
             var curvas = Peralte.LeerCurvas(J(UnaCurva));
