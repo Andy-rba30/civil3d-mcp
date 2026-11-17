@@ -36,11 +36,13 @@ return new { ms = s.ElapsedMilliseconds, par.a, par.b, json = nodo.ToJsonString(
         [Fact]
         public void Permitido_ApiDeCivilConNombresQueNoSonArchivos()
         {
-            // 'profileName' y 'alignmentName' no son archivos aunque contengan 'file'/'name'
+            // 'profileName', 'alignmentName' y 'blockName' no son archivos aunque contengan 'file'/'name'.
+            // 1.17.6: el ejemplo de 'blockName' era Database.Insert, que ahora se bloquea por otra regla (transacción);
+            // la prueba conserva su intención con un método falso con un parámetro 'blockName' (BlockTable.Has)
             Scripts.CompilarBien(@"var idEje = Civ.Alignment.Create(null, ""Eje 1"", null, ""0"", ""Estilo"", ""Etiquetas"");
 var idPerfil = Civ.Profile.CreateByLayout(""Rasante"", idEje, ""0"");
-Database db = null;
-db.Insert(""Bloque"", null, false);
+BlockTable bt = null;
+bt.Has(""Bloque"");
 return idPerfil.IsNull;");
         }
 
@@ -269,6 +271,10 @@ return v;");
             Scripts.Bloqueado("Database db = null; db.BindXrefs(new ObjectIdCollection(), true); return null;", CodigoReglas.Documentos);
             // AttachXref ya estaba bloqueado por su parámetro de archivo ('fileName')
             Scripts.Bloqueado("Database db = null; return db.AttachXref(\"x.dwg\", \"X\");", CodigoReglas.Documentos);
+            // Database.Insert, las tres sobrecargas: añade al dibujo objetos de otra base (como AddDBObject)
+            Scripts.Bloqueado("Database db = null; db.Insert(\"Bloque\", null, false); return null;", CodigoReglas.Transaccion);
+            Scripts.Bloqueado("Database db = null; db.Insert(Matrix3d.Identity, null, false); return null;", CodigoReglas.Transaccion);
+            Scripts.Bloqueado("Database db = null; db.Insert(\"Origen\", \"Destino\", null, false); return null;", CodigoReglas.Transaccion);
             // Purge solo quita de la lista lo que no se puede purgar: no cambia el dibujo y sigue permitido
             Scripts.CompilarBien("Database db = null; var ids = new ObjectIdCollection(); db.Purge(ids); return ids.Count;");
         }

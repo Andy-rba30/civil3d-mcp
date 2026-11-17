@@ -266,6 +266,7 @@ namespace ArbaMcp.Nucleo
             new ReglaMiembro("Database", "WblockCloneObjects", Transaccion),
             new ReglaMiembro("Database", "EraseEmptyObjects", Transaccion),
             new ReglaMiembro("Database", "ReclaimMemoryFromErasedObjects", Transaccion),
+            new ReglaMiembro("Database", "Insert", Transaccion),   // las 3 sobrecargas: añade objetos de otra base al dibujo
             new ReglaMiembro("Database", "Wblock", Documentos),
             new ReglaMiembro("Database", "BindXrefs", Documentos),
             new ReglaMiembro("HostApplicationServices", "WorkingDatabase", Documentos, soloEscritura: true),

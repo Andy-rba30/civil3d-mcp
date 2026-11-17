@@ -76,6 +76,7 @@ namespace Autodesk.AutoCAD.Geometry
         public double Z { get; }
         public double DistanceTo(Point3d p) => 0;
     }
+    public struct Matrix3d { public static Matrix3d Identity => default(Matrix3d); }
 }
 namespace Autodesk.AutoCAD.DatabaseServices
 {
@@ -142,6 +143,8 @@ namespace Autodesk.AutoCAD.DatabaseServices
         public void SaveAs(string fileName, bool bakAndRename) { }
         public void ReadDwgFile(string fileName, int mode, bool allowCPConversion, string password) { }
         public void Insert(string blockName, Database dataBase, bool preserveSourceDatabase) { }
+        public void Insert(Autodesk.AutoCAD.Geometry.Matrix3d transform, Database dataBase, bool preserveSourceDatabase) { }
+        public void Insert(string sourceBlockName, string destinationBlockName, Database dataBase, bool preserveSourceDatabase) { }
         public ObjectId AddDBObject(DBObject o) => default(ObjectId);
         public void DeepCloneObjects(ObjectIdCollection ids, ObjectId owner, object mapping, bool deferTranslation) { }
         public void WblockCloneObjects(ObjectIdCollection ids, ObjectId owner, object mapping, int cloning, bool deferTranslation) { }
@@ -154,6 +157,8 @@ namespace Autodesk.AutoCAD.DatabaseServices
         public event ObjectEventHandler ObjectAppended;
     }
     public class RasterImageDef : DBObject { public string SourceFileName { get; set; } }
+    // Solo para la prueba de parámetros que contienen 'name' y no son archivos (en la API real, BlockTable.Has(string key))
+    public class BlockTable : DBObject { public bool Has(string blockName) => false; }
     public class BlockTableRecord : DBObject
     {
         public string PathName { get; set; }
