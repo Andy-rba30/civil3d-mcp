@@ -653,6 +653,7 @@ namespace ArbaMcp
                     VolumenesCivil civil = null;
                     ResumenVolumenes resumen = null;
                     string errorResumen = null, baseLeida = null, comparacionLeida = null, estiloLeido = null;
+                    string estiloReleido = null;   // 1.17.6: relectura del estilo sin reflexión (null si no se pudo)
                     int? triangulos = null;
                     Dictionary<string, object> extension = null;
                     object tabla = null;
@@ -822,7 +823,10 @@ namespace ArbaMcp
                             triangulos = vs == null ? null : Seguro(() => (int?)vs.GetTinProperties().NumberOfTriangles, null);
                             try { extension = ExtensionDe(su, out _); }
                             catch (Exception ex) { ctx.Avisos.Add("No se pudo leer la extensión de la superficie de volumen (Surface.GetGeneralProperties): " + ex.Message); }
-                            estiloLeido = Api.Leer<string>(su, estiloUsado, "StyleName") ?? estiloUsado;
+                            // 1.17.6: enlace directo (Entity.StyleId → DBObject.Name); si falla, aviso; si es otro estilo que el pedido, error en Verificar
+                            estiloReleido = LeerEstiloDe(tr, su, out string falloEstilo);
+                            estiloLeido = estiloReleido ?? estiloUsado;
+                            if (estiloReleido == null) ctx.Avisos.Add(RelecturaEstilo.Aviso("de la superficie de volumen '" + e.Nombre + "'", falloEstilo, estiloUsado));
 
                             // Tabla por progresivas (solo lectura de las secciones; nunca rompe la herramienta)
                             if (grupo != null)
@@ -883,6 +887,8 @@ namespace ArbaMcp
                         Verificar = d =>
                         {
                             string cola = " No se reintenta. La superficie '" + e.Nombre + "' queda en el dibujo: prueba _.UNDO 1 y comprueba con listar_superficies que desapareció; si sigue, bórrala en Prospector (Superficies → " + e.Nombre + " → Eliminar). despues=" + Nucleo.Json.Serializar(d);
+                            string distinto = RelecturaEstilo.Discrepancia("de la superficie de volumen '" + e.Nombre + "'", estiloReleido, estiloUsado);
+                            if (distinto != null) throw new InvalidOperationException(distinto + cola);
                             if (baseLeida != null && !string.Equals(baseLeida, e.Terreno, StringComparison.OrdinalIgnoreCase))
                                 throw new InvalidOperationException("La superficie de volumen '" + e.Nombre + "' se creó con base '" + baseLeida + "' y se pidió '" + e.Terreno + "'." + cola);
                             if (comparacionLeida != null && !string.Equals(comparacionLeida, e.Datum, StringComparison.OrdinalIgnoreCase))

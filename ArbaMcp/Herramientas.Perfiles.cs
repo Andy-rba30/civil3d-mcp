@@ -326,6 +326,8 @@ namespace ArbaMcp
 
                     ObjectId idAl = ObjectId.Null, idSu = ObjectId.Null, idEstiloPerfil = ObjectId.Null, idEtiquetas = ObjectId.Null, idEstiloVista = ObjectId.Null, idBandas = ObjectId.Null, idCapa = ObjectId.Null, idVista = ObjectId.Null;
                     string nombreAlReal = nombreAl, nombreSuReal = nombreSu, estiloPerfilUsado = estiloPerfil, conjuntoUsado = conjuntoEtiquetas, estiloVistaUsado = estiloVista, bandasUsadas = conjuntoBandas, capaPerfil = null, tipoLeido = null;
+                    // 1.17.6: relectura de los dos estilos sin reflexión
+                    string estiloPerfilPrevisto = null, estiloPerfilReleido = null, estiloVistaPrevisto = null, estiloVistaReleido = null;
                     double inicioEje = 0, finEje = 0, inicioPerfil = 0, finPerfil = 0, cotaMin = 0, cotaMax = 0, inicioVista = 0, finVista = 0;
                     Punto2 punto = default;
                     bool puntoAutomatico = !puntoPedido.HasValue;
@@ -401,7 +403,11 @@ namespace ArbaMcp
                             inicioPerfil = pr.StartingStation; finPerfil = pr.EndingStation;
                             cotaMin = pr.ElevationMin; cotaMax = pr.ElevationMax;
                             try { tipoLeido = pr.ProfileType.ToString(); } catch { tipoLeido = null; }
-                            estiloPerfilUsado = Api.Leer<string>(pr, estiloPerfilUsado, "StyleName") ?? estiloPerfilUsado;
+                            // 1.17.6: enlace directo (Entity.StyleId → DBObject.Name); si falla, aviso; si es otro estilo, error en Verificar
+                            estiloPerfilPrevisto = estiloPerfilUsado;
+                            estiloPerfilReleido = LeerEstiloDe(tr, pr, out string falloPerfil);
+                            if (estiloPerfilReleido != null) estiloPerfilUsado = estiloPerfilReleido;
+                            else ctx.Avisos.Add(RelecturaEstilo.Aviso("del perfil '" + nombrePerfil + "'", falloPerfil, estiloPerfilPrevisto));
                             try { capaPerfil = pr.Layer ?? capaPerfil; } catch { }
                             var al = (CivAlignment)tr.GetObject(idAl, OpenMode.ForRead);
                             ObjectId idV = BuscarVistaPerfilONull(tr, al, nombreVista);
@@ -414,7 +420,10 @@ namespace ArbaMcp
                                 nombreVistaLeido = pv.Name;
                                 inicioVista = pv.StationStart; finVista = pv.StationEnd;
                                 try { var loc = pv.Location; punto = new Punto2(loc.X, loc.Y); } catch { }
-                                estiloVistaUsado = Api.Leer<string>(pv, estiloVistaUsado, "StyleName") ?? estiloVistaUsado;
+                                estiloVistaPrevisto = estiloVistaUsado;
+                                estiloVistaReleido = LeerEstiloDe(tr, pv, out string falloVista);
+                                if (estiloVistaReleido != null) estiloVistaUsado = estiloVistaReleido;
+                                else ctx.Avisos.Add(RelecturaEstilo.Aviso("de la vista de perfil '" + nombreVista + "'", falloVista, estiloVistaPrevisto));
                                 bandasLeidas = NumeroBandas(pv);
                             }
                             var d = EstadoPrevisto(true);
@@ -425,6 +434,9 @@ namespace ArbaMcp
                         Verificar = d =>
                         {
                             string cola = " No se reintenta; deshaz con Ctrl+Z (una sola entrada quita el perfil y la vista). despues=" + Nucleo.Json.Serializar(d);
+                            string distinto = RelecturaEstilo.Discrepancia("del perfil '" + nombrePerfil + "'", estiloPerfilReleido, estiloPerfilPrevisto)
+                                ?? RelecturaEstilo.Discrepancia("de la vista de perfil '" + nombreVista + "'", estiloVistaReleido, estiloVistaPrevisto);
+                            if (distinto != null) throw new InvalidOperationException(distinto + cola);
                             string motivo = PerfilVista.MotivoPerfilNoValido(inicioPerfil, finPerfil, cotaMin, cotaMax);
                             if (motivo != null) throw new InvalidOperationException("El perfil '" + nombrePerfil + "' se creó pero " + motivo + "." + cola);
                             motivo = PerfilVista.MotivoVistaNoValida(nombreVista, inicioVista, finVista);
