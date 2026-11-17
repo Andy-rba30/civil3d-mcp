@@ -143,6 +143,14 @@ namespace Autodesk.AutoCAD.DatabaseServices
         public void ReadDwgFile(string fileName, int mode, bool allowCPConversion, string password) { }
         public void Insert(string blockName, Database dataBase, bool preserveSourceDatabase) { }
         public ObjectId AddDBObject(DBObject o) => default(ObjectId);
+        public void DeepCloneObjects(ObjectIdCollection ids, ObjectId owner, object mapping, bool deferTranslation) { }
+        public void WblockCloneObjects(ObjectIdCollection ids, ObjectId owner, object mapping, int cloning, bool deferTranslation) { }
+        public void EraseEmptyObjects(int flags) { }
+        public void ReclaimMemoryFromErasedObjects(ObjectIdCollection ids) { }
+        public Database Wblock() => null;
+        public void BindXrefs(ObjectIdCollection xrefIds, bool insertBind) { }
+        public ObjectId AttachXref(string fileName, string blockName) => default(ObjectId);
+        public void Purge(ObjectIdCollection ids) { }
         public event ObjectEventHandler ObjectAppended;
     }
     public class RasterImageDef : DBObject { public string SourceFileName { get; set; } }

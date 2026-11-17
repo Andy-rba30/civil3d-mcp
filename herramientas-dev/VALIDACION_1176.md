@@ -13,6 +13,13 @@ Copia este texto tal cual en el agente que tiene conectado el MCP de Civil 3D. R
      de seguridad y sin entrada en Deshacer**, y no compila si usa algo que escribe (`F.Agregar`, `OpenMode.ForWrite`,
      `F.Abrir(id, true)`...). Si aun así intenta escribir, responde error sin tocar el dibujo. **Sin `solo_lectura`,
      todo sigue como en la 1.17.5.**
+  3. Lo mismo que el punto 1 en `crear_alineamiento_desde_polilinea`, `crear_perfil_terreno_y_vista` (perfil y vista),
+     `crear_rasante` y `calcular_volumenes`: el estilo se relee directamente. Hasta ahora, si la lectura fallaba, la
+     respuesta repetía el estilo previsto **sin decirlo**; ahora lo dice en `avisos` («No se pudo releer el estilo...»)
+     y, si el estilo releído no es el pedido, responde error.
+  4. `ejecutar_receta` (del puente) acepta `solo_lectura`, con el mismo significado que en `ejecutar_codigo`.
+  5. `ejecutar_codigo` no compila `Database.AddDBObject` (ni con `solo_lectura` ni sin ella): hace residente un objeto
+     fuera de la transacción y, al abortar una simulación, quedaría en el dibujo.
 - **Dibujo**: una **copia nueva** de `C:\Proyectos\dibujos_prueba\PRUEBA_EVALUACION_BASE.dwg` (plantilla métrica y un
   ensamblaje, nada más) guardada como `C:\Proyectos\dibujos_prueba\PRUEBA_1176.dwg`. Tiene que estar **guardada en
   disco** (así la copia de seguridad es `copia_de_disco`). En esa carpeta aparecerán `mcp_log.jsonl` y `backups\`.
@@ -40,12 +47,12 @@ Copia este texto tal cual en el agente que tiene conectado el MCP de Civil 3D. R
 - Reparto de papeles: el agente local **instala y verifica**; el código, la tabla de miembros y este prompt los mantiene
   la sesión de desarrollo a partir del informe. El agente no edita ningún archivo del repositorio salvo su informe en
   `herramientas-dev/informes/` y no hace commits.
-- **Los pasos 0, 3, 5, 6, 7, 8, 9 y 10 son los decisivos.** Los pasos 5, 6 y 10 repiten la 1.17.5 (la escritura sigue
+- **Los pasos 0, 3, 5, 6, 7, 8, 9, 10, 13, 15, 16 y 17 son los decisivos.** Los pasos 5, 6 y 10 repiten la 1.17.5 (la escritura sigue
   igual); el 7 es el conteo de solo lectura; el 8 y el 9, los intentos de escribir con solo lectura.
 - Miembros de la API que esta validación decide (`herramientas-dev/miembros_por_verificar_civil3d.md`, sección
   1.17.6): `Autodesk.Civil.DatabaseServices.Entity.StyleId`/`StyleName` con enlace directo sobre una `TinSurface`,
   `Document.LockDocument(DocumentLockMode.Read, ...)` alrededor de un script en contexto de aplicación, qué hace AutoCAD
-  si un script de solo lectura intenta cambiar un objeto (`Curve.Extend`), y `DBMOD` en contexto de aplicación.
+  si un script de solo lectura intenta cambiar un objeto (`Curve.Extend`), y `DBMOD` en contexto de aplicación, y la relectura del estilo de `Alignment`, `Profile` y `ProfileView`.
 
 ---
 
@@ -59,7 +66,8 @@ Reglas:
 
 - **No marques OK lo que no viste.** Cada OK va con la respuesta literal.
 - Si un paso falla, anota el error literal y sigue con el siguiente salvo que el prompt diga que pares.
-- `ejecutar_comando` se usa **solo** donde este prompt lo indica (el `_.UNDO 1` del paso 10). Si algo no funciona, es un
+- `ejecutar_comando` se usa **solo** donde este prompt lo indica (el `_.UNDO 1` del paso 10 y la capa y la polilínea
+  del paso 12). Si algo no funciona, es un
   hallazgo: no lo arregles con otro comando ni con otro script, y **no cambies ningún estilo** del dibujo a mano.
 - En `codigo_csharp` y `pedido` usa **exactamente** el texto que se indica (los `\n` son saltos de línea dentro del
   texto).
@@ -71,7 +79,7 @@ Reglas:
   otro comando. Un zoom deja su propia entrada en Deshacer y el `_.UNDO 1` del paso 10 lo desharía a él (informe
   1.17.5, paso 9). Si Jose quiere mirar el dibujo, que lo haga **después** del paso 10 (y que lo anotes).
 - **`backups\`**: anota cuántos archivos hay (y el nombre del más reciente) antes del paso 3 y después de los pasos 3,
-  5, 6, 7, 8, 9 y 11.
+  5, 6, 7, 8, 9, 11, 16 y 17.
 - Abreviaturas:
   - `CSV` = `"C:\\Proyectos\\dibujos_prueba\\terreno_corredor.csv"`.
   - **Contar con solo lectura** es siempre esta llamada: `ejecutar_codigo` con
@@ -211,7 +219,63 @@ Reglas:
     `avisos`, un texto que empieza por `El script no cambió nada y no usa ninguna de las escrituras que el plugin
     reconoce: si solo lee, pásalo con solo_lectura=true la próxima vez`.
 
-12. **Cierre** (no decide). `leer_historial` con `args={"ultimas_n":30}`: anota las líneas de `ejecutar_codigo` (las de
+### E. Relectura del estilo en el eje, el perfil y la rasante
+
+Desde aquí ya se puede mirar el dibujo en pantalla.
+
+12. **Capa y polilínea del eje** (no decide). `ejecutar_comando` con
+    `args={"comando":"_.-LAYER _M EJE_PRUEBA\n\n","timeout_s":20,"pedido":"crea la capa EJE_PRUEBA"}` → `"terminado"`;
+    después `ejecutar_comando` con
+    `args={"comando":"_.PLINE 1000,2000 1300,2000 1300,2300 1600,2300  ","timeout_s":20,"pedido":"dibuja la polilínea del eje de prueba"}`
+    (**dos espacios** al final) → `"terminado"` (como en `VALIDACION_1101.md`, pasos 2 y 3).
+
+13. **Eje con el estilo de la configuración (decisivo).** Primero la simulación:
+    `crear_alineamiento_desde_polilinea` con
+    `args={"nombre":"Eje 1176","capa":"EJE_PRUEBA","radio":80,"simular":true,"pedido":"simula el eje Eje 1176 con radio 80"}`
+    → `simulado: true`, `despues.longitud: 831.3274`, `despues.numero_curvas: 2`; anota `despues.estilo` (el previsto,
+    de la configuración del dibujo; en la 1.8.0 fue `Proposed`). Después la misma llamada **sin** `simular` y con
+    `"pedido":"crea el eje Eje 1176 con radio 80"`. Esperado: `simulado: false`, `despues.longitud: 831.3274`,
+    `despues.numero_curvas: 2`, **`despues.estilo` igual al de la simulación** (ahora releído de verdad) y **ningún**
+    aviso que contenga `No se pudo releer el estilo` (si sale, cópialo entero: dice qué falló). Si responde
+    `El estilo releído del alineamiento 'Eje 1176' es ...`, copia el error entero: el eje quedó con otro estilo.
+
+14. **Perfil de terreno y vista** (no decide). Simulación y luego real: `crear_perfil_terreno_y_vista` con
+    `args={"alineamiento":"Eje 1176","superficie":"Terreno","simular":true,"pedido":"simula el perfil de terreno del Eje 1176"}`;
+    anota `despues.perfil.estilo` y `despues.vista.estilo`. Después sin `simular` y con
+    `"pedido":"crea el perfil de terreno y la vista del Eje 1176"`. Esperado: `simulado: false`, `despues.perfil.estilo`
+    y `despues.vista.estilo` iguales a los de la simulación y **ningún** aviso con `No se pudo releer el estilo`.
+    Anota si alguno sale (dice si `ProfileView` se puede releer así).
+
+15. **Rasante con estilo pedido (decisivo).** `crear_rasante` con
+    `args={"alineamiento":"Eje 1176","nombre":"Rasante 1176","estilo":"Design Profile","pvis":"[{\"progresiva\":0,\"cota\":100},{\"progresiva\":400,\"cota\":110,\"longitud_curva\":120},{\"progresiva\":831.33,\"cota\":105}]","pedido":"crea la rasante Rasante 1176 con el estilo Design Profile"}`.
+    Esperado: `simulado: false`, `despues.tipo: "FG"`, `despues.numero_pvis: 3`, `despues.numero_curvas: 1`,
+    **`despues.estilo: "Design Profile"`** y **ningún** aviso con `No se pudo releer el estilo`. Si el dibujo no tiene
+    `Design Profile`, el error lista los estilos de perfil: elige otro de la lista, repite y anota cuál (debe salir ese
+    en `despues.estilo`). `calcular_volumenes` no se prueba aquí (necesita un corredor): lo cubre la próxima validación
+    del flujo completo.
+
+### F. `ejecutar_receta` con `solo_lectura`
+
+16. **Una receta que escribe, con `solo_lectura` (decisivo).** Necesita `MEMORIA_FIRMA_DIR` y la receta
+    `crear_capa_con_color` de `VALIDACION_117.md` (en PowerShell: `Test-Path "$env:MEMORIA_FIRMA_DIR\recetas\crear_capa_con_color.cs"`
+    → `True`; si no está, anótalo y salta al paso 17). Anota `veces_usada` de su `.yaml`, el menú Deshacer y `backups\`.
+    `ejecutar_receta` con
+    `{"nombre":"crear_capa_con_color","parametros":{"nombre_capa":"MCP Receta 1176","color":3},"solo_lectura":true,"pedido":"crea la capa con la receta, en solo lectura"}`.
+    Esperado: `ok: false`, el error contiene `[bloqueado: solo lectura]` (la receta crea una capa: escribe),
+    `receta.sumada: false`, `receta.nota: "La ejecución falló: veces_usada no cambia."`; `veces_usada` igual que antes,
+    el menú Deshacer igual y ningún archivo nuevo en `backups\`. (Con una receta que solo lea, la respuesta traería
+    `solo_lectura: true` y `veces_usada` subiría 1; no hay ninguna guardada todavía.)
+
+### G. `Database.AddDBObject` bloqueado también sin `solo_lectura`
+
+17. **`AddDBObject` no compila (decisivo).** `ejecutar_codigo` (sin `solo_lectura`, simulación por defecto) con
+    `args={"codigo_csharp":"var id = F.Db.AddDBObject(new Line());\nreturn id;","pedido":"intenta añadir un objeto fuera de la transacción"}`.
+    Esperado: `ok: false`, el error empieza por `ejecutar_codigo: el código no se puede ejecutar (1 uso no permitido).
+    No se ejecutó nada: sin copia de seguridad, sin contexto de comando y sin entrada en Deshacer.` y contiene
+    `[bloqueado: transacción]` y `AddDBObject: usa F.Tr o una transacción anidada`. El menú Deshacer igual y ningún
+    archivo nuevo en `backups\`.
+
+18. **Cierre** (no decide). `leer_historial` con `args={"ultimas_n":30}`: anota las líneas de `ejecutar_codigo` (las de
     solo lectura dicen `compilado con solo_lectura` y `solo lectura terminada, sin cambios`) y las de
     `crear_superficie_tin`. **No guardes el dibujo.** Deja la variable `ARBA_MCP_CODIGO` como la encontraste en el
     paso 1: si estaba vacía y la pusiste tú, cierra Civil 3D y quítala con
@@ -229,6 +293,9 @@ Reglas:
 - **El menú Deshacer antes y después de cada paso, con el texto literal de cada entrada**, y los archivos de
   `backups\` (número y el más reciente) antes del paso 3 y después de los pasos 3, 5, 6, 7, 8, 9 y 11.
 - `datos.deshacer` y `datos.compilacion` **enteros** de los pasos 5, 7 y 11.
+- El `despues.estilo` de la simulación y de la creación real de los pasos 13, 14 (perfil y vista) y 15, y los `avisos`
+  enteros de esos pasos.
+- Las respuestas literales de los pasos 16 y 17 (y si el 16 se saltó, por qué).
 - **El texto literal de AutoCAD del paso 9** (lo que va entre paréntesis después de `se impidió`).
 - Si Jose miró el dibujo en pantalla, en qué paso (debe ser después del 10).
 - Una lista final de los miembros de la sección 1.17.6 de `miembros_por_verificar_civil3d.md` que pasan a

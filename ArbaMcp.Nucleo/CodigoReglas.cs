@@ -260,6 +260,14 @@ namespace ArbaMcp.Nucleo
             // AddNewlyCreatedDBObject; al abortar (simulación) quedaría en el dibujo. Para añadir: F.Agregar, o
             // BlockTableRecord.AppendEntity / DBDictionary.SetAt más F.Tr.AddNewlyCreatedDBObject
             new ReglaMiembro("Database", "AddDBObject", Transaccion),
+            // 1.17.6 (catálogo, consulta de la orquestadora del 17/11/2026): métodos de Database que meten, clonan o
+            // borran objetos fuera del flujo normal de la transacción, o trabajan con otros dibujos o referencias externas
+            new ReglaMiembro("Database", "DeepCloneObjects", Transaccion),
+            new ReglaMiembro("Database", "WblockCloneObjects", Transaccion),
+            new ReglaMiembro("Database", "EraseEmptyObjects", Transaccion),
+            new ReglaMiembro("Database", "ReclaimMemoryFromErasedObjects", Transaccion),
+            new ReglaMiembro("Database", "Wblock", Documentos),
+            new ReglaMiembro("Database", "BindXrefs", Documentos),
             new ReglaMiembro("HostApplicationServices", "WorkingDatabase", Documentos, soloEscritura: true),
             new ReglaMiembro("HostApplicationServices", "GetRemoteFile", Red),
             new ReglaMiembro("HostApplicationServices", "PutRemoteFile", Red),

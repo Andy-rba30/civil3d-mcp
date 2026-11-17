@@ -257,6 +257,23 @@ return v;");
         }
 
         [Fact]
+        public void Transaccion_YDocumentos_OtrosMetodosDeDatabaseFueraDeLaTransaccion()
+        {
+            // 1.17.6: clonar, borrar vacíos o liberar borrados van fuera del flujo de la transacción
+            Scripts.Bloqueado("Database db = null; db.DeepCloneObjects(new ObjectIdCollection(), default, null, false); return null;", CodigoReglas.Transaccion);
+            Scripts.Bloqueado("Database db = null; db.WblockCloneObjects(new ObjectIdCollection(), default, null, 0, false); return null;", CodigoReglas.Transaccion);
+            Scripts.Bloqueado("Database db = null; db.EraseEmptyObjects(0); return null;", CodigoReglas.Transaccion);
+            Scripts.Bloqueado("Database db = null; db.ReclaimMemoryFromErasedObjects(new ObjectIdCollection()); return null;", CodigoReglas.Transaccion);
+            // Otros dibujos y referencias externas
+            Scripts.Bloqueado("Database db = null; var otro = db.Wblock(); return null;", CodigoReglas.Documentos);
+            Scripts.Bloqueado("Database db = null; db.BindXrefs(new ObjectIdCollection(), true); return null;", CodigoReglas.Documentos);
+            // AttachXref ya estaba bloqueado por su parámetro de archivo ('fileName')
+            Scripts.Bloqueado("Database db = null; return db.AttachXref(\"x.dwg\", \"X\");", CodigoReglas.Documentos);
+            // Purge solo quita de la lista lo que no se puede purgar: no cambia el dibujo y sigue permitido
+            Scripts.CompilarBien("Database db = null; var ids = new ObjectIdCollection(); db.Purge(ids); return ids.Count;");
+        }
+
+        [Fact]
         public void Eventos_SuscribirseNoCompila()
         {
             Scripts.Bloqueado("AcApp.Idle += (s, e) => { };\nreturn null;", CodigoReglas.Eventos);
