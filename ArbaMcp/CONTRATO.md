@@ -920,8 +920,9 @@ T302.11B: 210 m, «superior» → 215) y `verificacion.resumen` sin «No cumple�
 
 El puente amplía `aplicar_peralte` del plugin igual que `crear_alineamiento_desde_polilinea` (1.19.0): con
 `velocidad_diseno` o cualquiera de los datos del proyecto de *verificar_norma* (`clasificacion`, `orografia`,
-`ubicacion`, `peralte_maximo`, `pavimentada`) y los del peralte que pida la base, **dentro de `args`** y **sin
-`curvas`**, el puente calcula el peralte con la DG-2018; sin ninguno, reenvía la llamada al plugin. La ampliación exige
+`ubicacion`, `peralte_maximo`, `pavimentada`) y los del peralte (`tipo_superficie` y `precipitacion` para el bombeo de
+la T304.03, o `bombeo` en %; `ancho_carril`, la distancia del borde al eje de giro, la B de la F20), **dentro de `args`**
+y **sin `curvas`**, el puente calcula el peralte con la DG-2018; sin ninguno, reenvía la llamada al plugin. La ampliación exige
 que el plugin publique `alineamiento`, `curvas` y `simular` y ninguno de los campos del puente; con ella `curvas` deja de
 ser obligatorio en el esquema MCP. `curvas` y `velocidad_diseno` a la vez: error «Pasa 'curvas' ... o 'velocidad_diseno'
 ..., no los dos» sin llamar a Civil 3D. Código: `PuenteMcp/norma_peralte.py` (funciones puras) y
@@ -935,9 +936,15 @@ herramienta → (módulo, manejador); la 1.19.0 no cambia.
    F302.03, 8 %; rural en terreno accidentado o escarpado → F302.04, 12 %; con peligro de hielo → F302.05, 6 %); en
    terreno accidentado, de la que elige el usuario con `peralte_maximo` (Decisión 5). La velocidad tiene que ser una de
    las curvas de esa figura: si no, `faltan` con `velocidad_diseno` y las velocidades de la figura (no se interpola
-   entre velocidades). Si falta algo: `{"ok": false, "error": "Faltan datos del proyecto para calcular el peralte con la
-   DG-2018: ... No se llamó a Civil 3D ...", "faltan": [...]}`. Si la base no tiene la tabla `peralte_figura` (tarea
-   6.10): «La base de la norma no tiene la tabla peralte_figura ...», sin llamar a Civil 3D.
+   entre velocidades). **Bombeo** (T304.03): por `tipo_superficie` y `precipitacion` (el texto de la tabla o los mm/año;
+   con 500 justos se pregunta); si la tabla da un rango (`2.5-3.0`), `faltan` con `bombeo` y el rango (R304.05-2: se
+   pregunta, nunca se elige); `bombeo` dado manda, con aviso si sale del de la tabla. `ancho_carril` es obligatorio
+   (giro sobre el eje, R304.06.02-5). **T304.04** por velocidad; sin fila (30, 50, 70, 90 km/h), la de la velocidad
+   siguiente, la más exigente, con aviso (A CONFIRMAR). Si falta algo: `{"ok": false, "error": "Faltan datos del
+   proyecto para calcular el peralte con la DG-2018: ... No se llamó a Civil 3D ...", "faltan": [...]}`. Si la base no
+   tiene `peralte_figura` (tarea 6.10) o las tablas de la sesión 6.4 (`bombeo`, `radio_sin_peralte`, `peralte_minimo`,
+   `proporcion_peralte_tangente`, `transicion_peralte`, `transicion_peralte_tercera_clase`; `dg2018.sqlite` 1.2), el
+   error lo dice, sin llamar a Civil 3D.
 2. `leer_variable` con `INSUNITS`: si no es `6`, error sin escribir (como en 1.19.0).
 3. `listar_pis` del eje: las curvas circulares (las espirales y otros tipos, `avisos`, sin peralte). Un eje sin curvas
    circulares: error sin escribir.
@@ -950,19 +957,29 @@ herramienta → (módulo, manejador); la 1.19.0 no cambia.
    4. Si no, interpolación lineal en log10(R) entre los dos nodos consecutivos de la misma curva que lo rodean.
       Se entrega con **1 decimal** (la mitad hacia arriba: 7,55 → 7,6; `peralte_calculado_pct` lleva el valor sin
       redondear), con la etiqueta **«lectura gráfica»** y su `error_pct` (el mayor de los dos nodos).
-   5. Si aplica la T304.06, el peralte es el mayor entre la lectura y el 2 %.
+   5. Si la curva cae en un rango de la T304.06 (velocidad y radio), el peralte es el mayor entre la lectura y el 2 %.
    6. R más allá del extremo inferior de la curva (sin que la T304.04 diga que no lleva peralte): «Sin valor en la
       norma», `a_confirmar: true`.
    Siempre un aviso de que el valor sale **de una figura digitalizada** (o leída a mano, o de una tabla tipo AASHTO,
-   según la columna `metodo`), no de una tabla de la DG-2018, y otro si queda por debajo del bombeo. Después, de la
-   base, bombeo `b`, longitud de transición del peralte `Lp` (de 0 a e) y del bombeo `Lb` (de −b a 0), y proporción `p`
-   de `Lp` en la tangente, cada valor con su tabla, sección y página. *(La T304.04, la T304.06, el bombeo y la
-   transición son tablas de la sesión 6.4 de memoria-firma: hasta que estén, esas reglas salen en `pendientes` y la
-   respuesta es «La base de la norma todavía no tiene las tablas de bombeo y de longitud de transición del peralte
-   (sesión 6.4) ...» con el peralte de cada curva en `propuesta_norma`, sin escribir.)* Progresivas críticas, con giro alrededor del eje: entrada, fin del bombeo normal (BN − Lb), bombeo
-   nivelado (BN = PC − p·Lp; el carril exterior en 0 %), bombeo invertido (BN + Lp·b/e, el exterior en +b; solo si
-   e > b) e inicio del peralte total (BN + Lp, ±e); salida, simétrica respecto al PT (fin del peralte total, bombeo
-   invertido, bombeo nivelado, inicio del bombeo normal). Pendientes en %, del eje hacia el borde (negativa = baja): en
+   según la columna `metodo`), no de una tabla de la DG-2018, y otro si queda por debajo del bombeo.
+
+   **Transición** (Figura 302.15, sin espiral, giro sobre el eje), cada valor con su referencia en `valores`:
+   - ipmáx = 1,8 − 0,01·V (F19); Lb = b / ipmáx · B y Lp = p / ipmáx · B (F20; B = `ancho_carril`).
+   - Tercera Clase (R302.08-2): también la T302.13 (fila de bombeo para Lb; para Lp, la fila de p o, si no la hay, la
+     del peralte siguiente, con aviso). Las demás clases: la Tabla 302.14 a 302.18 con fila exacta (velocidad, calzada
+     2B, eje de giro a B, de b a −p) para la longitud total. Se usa **el mayor** de la fórmula y la tabla (así cumple
+     las dos) y se avisa si difieren (caso 7a: 24 m de F20 frente a 23 de la T302.16).
+   - Aviso si Lb pasa de 20 m (R302.08-4, calzada única).
+   - Proporción k de Lp en la tangente: **0,7** siempre (P2, opción recomendada b: R302.08-12 y Figura 302.15; **A
+     CONFIRMAR**), con la de la T304.07 por rangos informada y aviso si es otra.
+   - Tramo con el peralte completo: al menos V/3,6 m (F33) y, si la curva circular mide menos de 30 m, 30 m
+     (R302.08-11) (P3, opción a; **A CONFIRMAR**). Si no llega, se centra en la curva y las transiciones se corren
+     hacia afuera (caso 7b), con aviso; otro aviso si mide menos de 30 m.
+
+   Progresivas críticas (puntos A, B, C y D de la Figura 302.15): entrada, fin del bombeo normal (A = B − Lb), bombeo
+   nivelado (B = D − Lp; sin correr, PC − k·Lp; el carril exterior en 0 %), bombeo invertido (C = B + Lb, el exterior
+   en +b; solo si e > b) e inicio del peralte total (D = PC + (1 − k)·Lp, ±e); salida, simétrica respecto al PT (fin
+   del peralte total, bombeo invertido, bombeo nivelado, inicio del bombeo normal). Pendientes en %, del eje hacia el borde (negativa = baja): en
    una curva a la derecha el carril exterior es el izquierdo (+e) y el interior el derecho (−e). **Convención por
    verificar** en Civil 3D (`VALIDACION_120`, paso 9).
 5. Cabida y norma: error sin escribir si una curva tiene «No cumple» o «Sin valor en la norma» en el paso 4, si no
@@ -985,9 +1002,9 @@ herramienta → (módulo, manejador); la 1.19.0 no cambia.
 `progresiva_pt`, `peralte_pct`; `peralte`: `figura`, `figura_nombre`, `referencia`, `velocidad_kmh`, `radio_m`,
 `radio_minimo_m` y su referencia, `regla` (3, 4, 6 o 7 de la Decisión 6), `resultado` («Lectura gráfica», «Peralte
 máximo de la figura», «Sin peralte (bombeo normal)», «No cumple» o «Sin valor en la norma»), `peralte_calculado_pct`,
-`peralte_pct`, `error_pct`, `etiqueta`, `nodos` usados, `avisos`, `pendientes` y `a_confirmar`; y, con las tablas de
-la 6.4, `bombeo_pct`, `longitud_peralte_m`, `longitud_bombeo_m`, `proporcion_tangente`, `valores` con la referencia
-de cada uno y `estaciones[]`: `concepto`, `nombre`, `region`, `progresiva`, `progresiva_texto` y `pendientes` por
+`peralte_pct`, `error_pct`, `etiqueta`, `nodos` usados, `avisos`, `pendientes` y `a_confirmar`; `bombeo_pct`,
+`longitud_peralte_m`, `longitud_bombeo_m`, `proporcion_tangente`, `longitud_peralte_completo_m`,
+`transiciones_corridas`, `valores` con la referencia de cada uno, `a_confirmar` (`P2`, `P3`...) y `estaciones[]`: `concepto`, `nombre`, `region`, `progresiva`, `progresiva_texto` y `pendientes` por
 carril; vacía si la curva no lleva peralte). Si ninguna curva lleva peralte: error «Ninguna curva del eje ... lleva
 peralte según la norma ...», sin escribir.
 

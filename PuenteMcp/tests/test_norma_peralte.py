@@ -29,10 +29,8 @@ PARAMETROS = [
 ]
 TERCERA_60 = {"velocidad_diseno": 60, "clasificacion": TERCERA, "orografia": "Ondulado", "ubicacion": "rural",
               "pavimentada": False, "peralte_maximo": 8}
-# «ejemplo»: valores inventados para probar la lógica, no son de la DG-2018
-VALORES_EJEMPLO = {"peralte_pct": 6.0, "bombeo_pct": 2.0, "longitud_peralte_m": 40.0, "longitud_bombeo_m": 40.0 / 3,
-                   "proporcion_tangente": 0.7,
-                   "valores": [{"valor": "peralte", "referencia": "ejemplo"}], "avisos": []}
+# Datos del peralte del proyecto: afirmado con menos de 500 mm/año (la T304.03 da 3.0-3.5 %: el bombeo se pregunta)
+PERALTE_PROYECTO = {"tipo_superficie": "Afirmado", "precipitacion": "<500 mm/año", "bombeo": 3.0, "ancho_carril": 3.0}
 # «ejemplo»: nombres inventados; los reales los da listar_peralte → enumerados
 CORRESPONDENCIA_EJEMPLO = {
     "tipo": {npe.FBN: "TipoEjemploFBN", npe.BN: "TipoEjemploBN", npe.BI: "TipoEjemploBI", npe.IPT: "TipoEjemploIPT",
@@ -60,6 +58,52 @@ NODOS_EJEMPLO = [
 ]
 
 
+# Tablas de la sesión 6.4 con filas de la DG-2018 (norma pública del MTC; esquema de dg2018.sqlite 1.2)
+TABLAS_6_4 = """
+CREATE TABLE bombeo (ref TEXT, pagina_pdf INTEGER, orden INTEGER, tipo_superficie TEXT, precipitacion TEXT,
+    precipitacion_operador TEXT, precipitacion_mm_anio REAL, bombeo_texto_pdf TEXT, bombeo_min_pct REAL, bombeo_max_pct REAL);
+CREATE TABLE radio_sin_peralte (ref TEXT, pagina_pdf INTEGER, orden INTEGER, velocidad_texto TEXT, velocidad_kmh INTEGER,
+    radio_m REAL);
+CREATE TABLE peralte_minimo (ref TEXT, pagina_pdf INTEGER, orden INTEGER, velocidad_texto TEXT, v_min_kmh INTEGER,
+    v_max_kmh INTEGER, radio_texto TEXT, r_min_m REAL, r_max_m REAL, peralte_min_pct REAL);
+CREATE TABLE proporcion_peralte_tangente (ref TEXT, pagina_pdf INTEGER, orden INTEGER, rango_peralte TEXT, proporcion REAL);
+CREATE TABLE transicion_peralte (ref TEXT, pagina_pdf INTEGER, orden INTEGER, velocidad_kmh INTEGER, ancho_calzada_m REAL,
+    eje_giro_m REAL, peralte_inicial_pct REAL, peralte_final_pct REAL, longitud_m REAL);
+CREATE TABLE transicion_peralte_tercera_clase (ref TEXT, pagina_pdf INTEGER, orden INTEGER, velocidad_kmh INTEGER,
+    tipo TEXT, peralte_pct REAL, longitud_m REAL);
+"""
+FILAS_6_4 = {   # DG-2018
+    "bombeo": [("T304.03", 196, 1, "Pavimento asfáltico y/o concreto Portland", "<500 mm/año", "<", 500.0, "2.0", 2.0, 2.0),
+               ("T304.03", 196, 2, "Pavimento asfáltico y/o concreto Portland", ">500 mm/año", ">", 500.0, "2.5", 2.5, 2.5),
+               ("T304.03", 196, 3, "Tratamiento superficial", "<500 mm/año", "<", 500.0, "2.5", 2.5, 2.5),
+               ("T304.03", 196, 4, "Tratamiento superficial", ">500 mm/año", ">", 500.0, "2.5-3.0", 2.5, 3.0),
+               ("T304.03", 196, 5, "Afirmado", "<500 mm/año", "<", 500.0, "3.0-3.5", 3.0, 3.5),
+               ("T304.03", 196, 6, "Afirmado", ">500 mm/año", ">", 500.0, "3.0-4.0", 3.0, 4.0)],
+    "radio_sin_peralte": [("T304.04", 197, 1, "40", 40, 3500.0), ("T304.04", 197, 2, "60", 60, 3500.0),
+                          ("T304.04", 197, 3, "80", 80, 3500.0), ("T304.04", 197, 4, "≥100", 100, 7500.0)],
+    "peralte_minimo": [("T304.06", 198, 1, "V≥100", 100, None, "5,000 ≤ R < 7,500", 5000.0, 7500.0, 2.0),
+                       ("T304.06", 198, 2, "40 ≤ V < 100", 40, 100, "2,500 ≤ R < 3,500", 2500.0, 3500.0, 2.0)],
+    "proporcion_peralte_tangente": [("T304.07", 198, 1, "p < 4.5%", 0.5), ("T304.07", 198, 2, "4.5% < p < 7%", 0.7),
+                                    ("T304.07", 198, 3, "p >7%", 0.8)],
+    "transicion_peralte": [("T302.16", 155, k, 60, 7.2, 3.6, 2.0, -float(pf), lon)
+                           for k, (pf, lon) in enumerate(((2, 12.0), (4, 18.0), (6, 23.0), (8, 29.0)), start=1)],
+    "transicion_peralte_tercera_clase": [("T302.13", 153, 29 + k, 60, "peralte", float(pp), lon)
+                                         for k, (pp, lon) in enumerate(((2, 12.0), (4, 24.0), (6, 36.0), (8, 48.0),
+                                                                        (10, 60.0), (12, 72.0)))]
+                                        + [("T302.13", 153, 35, 60, "bombeo", None, 12.0)],
+}
+
+
+def agregar_tablas_6_4(ruta_base: str):
+    con = sqlite3.connect(ruta_base)
+    con.executescript(TABLAS_6_4)
+    for tabla, filas in FILAS_6_4.items():
+        con.executemany(f"INSERT INTO {tabla} VALUES ({','.join('?' * len(filas[0]))})", filas)
+    con.commit()
+    con.close()
+    return ruta_base
+
+
 def agregar_figuras(ruta_base: str, metodo: str = "vectorial"):
     """Añade a la base de ejemplo la tabla peralte_figura (esquema de la tarea 6.10) con NODOS_EJEMPLO."""
     con = sqlite3.connect(ruta_base)
@@ -74,7 +118,7 @@ def agregar_figuras(ruta_base: str, metodo: str = "vectorial"):
 
 @pytest.fixture
 def base_figura(tmp_path):
-    ruta = agregar_figuras(crear_base(str(tmp_path / "memoria-firma")))
+    ruta = agregar_tablas_6_4(agregar_figuras(crear_base(str(tmp_path / "memoria-firma"))))
     with n.BaseNorma(ruta) as base:
         yield base
 
@@ -289,24 +333,113 @@ def ctx_de(base, **datos):
     return ctx
 
 
-def test_la_figura_sale_de_la_t30405_y_en_accidentado_de_la_respuesta(tmp_path):
-    ruta = agregar_figuras(crear_base(str(tmp_path / "m")))
-    with n.BaseNorma(ruta) as base:
-        assert npe.figura_de_condicion("Atravesamiento de zonas urbanas") == "F302.02"
-        assert npe.figura_de_condicion("Zona rural con peligro de hielo") == "F302.05"
-        datos, faltan = npe.preparar_peralte(base, ctx_de(base), {})
-        assert faltan == [] and datos["figura"] == "F302.03" and datos["radio_minimo"]["exigido"]
-        for pmax, figura in ((12, "F302.04"), (8, "F302.03")):
-            ctx = ctx_de(base, orografia="Accidentado", velocidad_diseno=30, peralte_maximo=pmax)
-            assert npe.preparar_peralte(base, ctx, {})[0]["figura"] == figura
+def test_la_figura_sale_de_la_t30405_y_en_accidentado_de_la_respuesta(base_figura):
+    base = base_figura
+    assert npe.figura_de_condicion("Atravesamiento de zonas urbanas") == "F302.02"
+    assert npe.figura_de_condicion("Zona rural con peligro de hielo") == "F302.05"
+    datos, faltan = npe.preparar_peralte(base, ctx_de(base), PERALTE_PROYECTO)
+    assert faltan == [] and datos["figura"] == "F302.03" and datos["radio_minimo"]["exigido"]
+    assert datos["bombeo"]["valor_pct"] == 3.0 and datos["ancho_carril"] == 3.0 and datos["t30404"]["radio_m"] == 3500
+    for pmax, figura in ((12, "F302.04"), (8, "F302.03")):
+        ctx = ctx_de(base, orografia="Accidentado", velocidad_diseno=30, peralte_maximo=pmax)
+        assert npe.preparar_peralte(base, ctx, PERALTE_PROYECTO)[0]["figura"] == figura
 
 
-def test_velocidad_que_no_es_una_curva_de_la_figura(tmp_path):
-    ruta = agregar_figuras(crear_base(str(tmp_path / "m")))
-    with n.BaseNorma(ruta) as base:
-        datos, faltan = npe.preparar_peralte(base, ctx_de(base, velocidad_diseno=70), {})
+def test_velocidad_que_no_es_una_curva_de_la_figura(base_figura):
+    datos, faltan = npe.preparar_peralte(base_figura, ctx_de(base_figura, velocidad_diseno=70), PERALTE_PROYECTO)
     assert datos is None and faltan[0]["dato"] == "velocidad_diseno"
     assert faltan[0]["valores_validos"] == [30, 50, 60] and "no se interpola entre velocidades" in faltan[0]["motivo"]
+
+
+# ---------------------------------------------------------------------------------------------- datos del peralte (6.4)
+def test_sin_las_tablas_de_la_6_4(tmp_path):
+    ruta = agregar_figuras(crear_base(str(tmp_path / "m")))
+    with n.BaseNorma(ruta) as base:
+        with pytest.raises(n.ErrorNorma, match="sesión 6.4 .* Faltan: bombeo, radio_sin_peralte"):
+            npe.preparar_peralte(base, None, {})
+
+
+@pytest.mark.parametrize("proyecto, esperado", [
+    ({"tipo_superficie": "pavimento asfaltico y/o concreto portland", "precipitacion": "<500 mm/año"}, 2.0),
+    ({"tipo_superficie": "Tratamiento superficial", "precipitacion": "300"}, 2.5),
+    ({"tipo_superficie": "Pavimento asfáltico y/o concreto Portland", "precipitacion": "> 500 mm/año"}, 2.5),
+    ({"bombeo": 2.2}, 2.2),
+])
+def test_bombeo_de_la_t30403(base_figura, proyecto, esperado):
+    bombeo, faltan, avisos = npe.bombeo_del_proyecto(base_figura, proyecto)
+    assert faltan == [] and bombeo["valor_pct"] == esperado and avisos == []
+
+
+def test_bombeo_con_rango_se_pregunta_y_el_dado_manda(base_figura):
+    bombeo, faltan, _ = npe.bombeo_del_proyecto(base_figura, {"tipo_superficie": "Afirmado", "precipitacion": ">500 mm/año"})
+    assert bombeo is None and faltan[0]["dato"] == "bombeo" and faltan[0]["valores_validos"] == [3, 4]
+    assert "R304.05-2" in faltan[0]["motivo"] and "no se elige solo" in faltan[0]["motivo"]
+    bombeo, faltan, avisos = npe.bombeo_del_proyecto(base_figura, {"tipo_superficie": "Afirmado",
+                                                                   "precipitacion": ">500 mm/año", "bombeo": 5})
+    assert bombeo["valor_pct"] == 5 and faltan == [] and "fuera del de la T304.03" in avisos[0]
+    _, faltan, _ = npe.bombeo_del_proyecto(base_figura, {"precipitacion": "500"})
+    assert [f["dato"] for f in faltan] == ["tipo_superficie", "precipitacion"]
+
+
+def test_falta_el_ancho_girado(base_figura):
+    datos, faltan = npe.preparar_peralte(base_figura, ctx_de(base_figura), {**PERALTE_PROYECTO, "ancho_carril": None})
+    assert datos is None and [f["dato"] for f in faltan] == ["ancho_carril"]
+
+
+def test_t30404_y_t30406(base_figura):
+    assert npe.t30404_del_proyecto(base_figura, 60)[0]["radio_m"] == 3500
+    assert npe.t30404_del_proyecto(base_figura, 120) == ({"radio_m": 7500, "velocidad_texto": "≥100",
+                                                          "referencia": npe.t30404_del_proyecto(base_figura, 120)[0]["referencia"]}, [])
+    t, avisos = npe.t30404_del_proyecto(base_figura, 90)
+    assert t["radio_m"] == 7500 and "no tiene fila para 90 km/h" in avisos[0]
+    assert npe.t30406_para(base_figura, 60, 3000)["aplica"] is True
+    assert npe.t30406_para(base_figura, 60, 3500)["aplica"] is False
+    assert npe.t30406_para(base_figura, 120, 6000)["minimo_pct"] == 2.0
+
+
+def test_proporcion_de_la_t30407(base_figura):
+    assert npe._proporcion_t30407(base_figura, 3.0)[0] == 0.5
+    assert npe._proporcion_t30407(base_figura, 6.0)[0] == 0.7
+    assert npe._proporcion_t30407(base_figura, 7.0)[0] == 0.7    # el límite, que la tabla deja fuera: la fila del medio
+    assert npe._proporcion_t30407(base_figura, 7.6)[0] == 0.8
+
+
+DATOS_7 = {"bombeo": {"valor_pct": 2.0, "origen": "T304.03", "referencia": "T304.03"}, "ancho_carril": 3.6}
+
+
+def test_caso_de_control_7a_sin_espiral(base_figura):
+    """Caso 7a de memoria-firma (Segunda Clase, 60 km/h, b 2 %, p 6 %, B 3,60): A 981,40, B 987,40, C 993,40, D 1005,40;
+    24 m de F20 frente a 23 de la T302.16 (se usa el mayor, con aviso)."""
+    curva = {"pi": 1, "radio": 400.0, "giro": "derecha", "progresiva_pc": 1000.0, "progresiva_pt": 1200.0}
+    v = npe.transicion_de_curva(base_figura, {"velocidad": 60, "tercera_clase": False}, DATOS_7, curva, 6.0)
+    assert (v["longitud_bombeo_m"], v["longitud_peralte_m"], v["proporcion_tangente"]) == (pytest.approx(6), pytest.approx(18), 0.7)
+    assert v["peralte_completo_min_m"] == pytest.approx(60 / 3.6)
+    assert any("T302.16 da 23 m" in a and "F20 da 24 m" in a for a in v["avisos"])
+    est = por_concepto(npe.progresivas_criticas(curva, 6.0, 2.0, v["longitud_peralte_m"], v["longitud_bombeo_m"],
+                                                v["proporcion_tangente"], v["peralte_completo_min_m"]))
+    entrada = [est[(c, npe.ENTRADA)]["progresiva"] for c in (npe.FBN, npe.BN, npe.BI, npe.IPT)]
+    salida = [est[(c, npe.SALIDA)]["progresiva"] for c in (npe.FPT, npe.BI, npe.BN, npe.IBN)]
+    assert entrada == [981.4, 987.4, 993.4, 1005.4] and salida == [1194.6, 1206.6, 1212.6, 1218.6]
+
+
+def test_caso_de_control_7b_curva_corta_30_m_de_peralte_completo(base_figura):
+    curva = {"pi": 1, "radio": 150.0, "giro": "derecha", "progresiva_pc": 1000.0, "progresiva_pt": 1025.0}
+    v = npe.transicion_de_curva(base_figura, {"velocidad": 60, "tercera_clase": False}, DATOS_7, curva, 6.0)
+    assert v["peralte_completo_min_m"] == 30
+    est = por_concepto(npe.progresivas_criticas(curva, 6.0, 2.0, v["longitud_peralte_m"], v["longitud_bombeo_m"],
+                                                v["proporcion_tangente"], v["peralte_completo_min_m"]))
+    entrada = [est[(c, npe.ENTRADA)]["progresiva"] for c in (npe.FBN, npe.BN, npe.BI, npe.IPT)]
+    salida = [est[(c, npe.SALIDA)]["progresiva"] for c in (npe.FPT, npe.BI, npe.BN, npe.IBN)]
+    assert entrada == [973.5, 979.5, 985.5, 997.5] and salida == [1027.5, 1039.5, 1045.5, 1051.5]
+
+
+def test_tercera_clase_usa_la_t30213(base_figura):
+    curva = {"pi": 1, "radio": 150.0, "giro": "derecha", "progresiva_pc": 100.0, "progresiva_pt": 180.0}
+    datos = {"bombeo": {"valor_pct": 3.0, "origen": "usuario", "referencia": "T304.03"}, "ancho_carril": 3.0}
+    v = npe.transicion_de_curva(base_figura, {"velocidad": 60, "tercera_clase": True}, datos, curva, 7.6)
+    assert v["longitud_bombeo_m"] == 12 and v["longitud_peralte_m"] == 48   # filas de bombeo y de 8 % (la siguiente)
+    assert any("no tiene fila para p = 7.6 %" in a for a in v["avisos"]) and "P2" in v["a_confirmar"]
+    assert any("T304.07 da 0.8p" in a and "0.7p" in a for a in v["avisos"])
 
 
 # ---------------------------------------------------------------------------------------------- envoltorio de main.py
@@ -345,20 +478,14 @@ class PluginFalso:
 @pytest.fixture
 def memoria(tmp_path, monkeypatch):
     carpeta = tmp_path / "memoria-firma"
-    agregar_figuras(crear_base(str(carpeta)))
+    agregar_tablas_6_4(agregar_figuras(crear_base(str(carpeta))))
     monkeypatch.setenv("MEMORIA_FIRMA_DIR", str(carpeta))
     return carpeta
 
 
 @pytest.fixture
 def norma_ejemplo(monkeypatch):
-    """Sustituye las tablas de bombeo y transición (sesión 6.4, aún sin esquema) y la correspondencia por las de
-    ejemplo. El peralte sale de la figura de ejemplo (agregar_figuras)."""
-    def transicion(base, ctx, datos, curva, peralte_pct):
-        v = dict(VALORES_EJEMPLO)
-        v["longitud_bombeo_m"] = v["longitud_peralte_m"] * v["bombeo_pct"] / peralte_pct
-        return v
-    monkeypatch.setattr(npe, "transicion_de_curva", transicion)
+    """La correspondencia con nombres de ejemplo (la real se rellena con VALIDACION_120, paso 2)."""
     monkeypatch.setattr(npe, "CORRESPONDENCIA", CORRESPONDENCIA_EJEMPLO)
 
 
@@ -403,7 +530,7 @@ def test_la_ampliacion_del_eje_sigue_igual(servidor, puente, plugin):
 
 
 def test_curvas_y_norma_a_la_vez(servidor, puente, plugin):
-    r = aplicar(puente, alineamiento="Eje 1", curvas="[]x", **TERCERA_60)
+    r = aplicar(puente, alineamiento="Eje 1", curvas="[]x", **TERCERA_60, **PERALTE_PROYECTO)
     assert r["ok"] is False and "no los dos" in r["error"] and servidor.llamadas == []
 
 
@@ -415,34 +542,47 @@ def test_faltan_datos_no_llama_al_plugin(servidor, puente, plugin, norma_ejemplo
 
 def test_sin_la_figura_no_llama_a_civil_3d(servidor, puente, plugin, memoria):
     crear_base(str(memoria))   # la base sin peralte_figura
-    r = aplicar(puente, alineamiento="Eje 1", simular=True, **TERCERA_60)
+    r = aplicar(puente, alineamiento="Eje 1", simular=True, **TERCERA_60, **PERALTE_PROYECTO)
     assert r["ok"] is False and "no tiene la tabla peralte_figura" in r["error"] and servidor.llamadas == []
 
 
-def test_sin_tablas_de_transicion_devuelve_el_peralte_sin_escribir(servidor, puente, plugin):
-    r = aplicar(puente, alineamiento="Eje 1", simular=True, **TERCERA_60)
+def test_sin_las_tablas_de_la_6_4_no_llama_a_civil_3d(servidor, puente, plugin, memoria):
+    agregar_figuras(crear_base(str(memoria)))   # la base sin las tablas de la 6.4
+    r = aplicar(puente, alineamiento="Eje 1", simular=True, **TERCERA_60, **PERALTE_PROYECTO)
+    assert r["ok"] is False and "sesión 6.4" in r["error"] and servidor.llamadas == []
+
+
+def test_falta_un_dato_del_peralte_no_llama_al_plugin(servidor, puente, plugin, norma_ejemplo):
+    r = aplicar(puente, alineamiento="Eje 1", simular=True, **TERCERA_60, tipo_superficie="Afirmado",
+                precipitacion="<500 mm/año", ancho_carril=3.0)
+    assert r["ok"] is False and r["faltan"][0]["dato"] == "bombeo" and servidor.llamadas == []
+
+
+def test_sin_correspondencia_el_peralte_y_las_progresivas_van_en_la_propuesta(servidor, puente, plugin):
+    r = aplicar(puente, alineamiento="Eje 1", simular=True, **TERCERA_60, **PERALTE_PROYECTO)
     assert herramientas_llamadas(servidor) == ["leer_variable", "listar_pis"]
-    assert r["ok"] is False and "bombeo y de longitud de transición" in r["error"]
+    assert r["ok"] is False and "Falta la correspondencia" in r["error"]
     curvas = r["propuesta_norma"]["curvas"]
     assert [c["peralte_pct"] for c in curvas] == [7.6, 6.0]   # R 150 y R 200 a 60 km/h en la F302.03 de ejemplo
     assert curvas[0]["peralte"]["figura"] == "F302.03" and curvas[0]["peralte"]["etiqueta"] == "lectura gráfica"
-    assert curvas[0]["estaciones"] == []
+    assert curvas[0]["longitud_peralte_m"] == 48 and curvas[0]["longitud_bombeo_m"] == 12   # T302.13 (Tercera Clase)
+    assert len(curvas[0]["estaciones"]) == 8 and curvas[0]["a_confirmar"]
 
 
 def test_curva_por_debajo_del_radio_minimo_no_escribe(servidor, puente, plugin, norma_ejemplo):
     plugin.tabla = tabla_pis({**CURVA_DERECHA, "radio": 100.0})
-    r = aplicar(puente, alineamiento="Eje 1", simular=True, **TERCERA_60)
+    r = aplicar(puente, alineamiento="Eje 1", simular=True, **TERCERA_60, **PERALTE_PROYECTO)
     assert r["ok"] is False and "no cumple o no cabe" in r["error"] and "PI 1: No cumple" in r["error"]
     assert herramientas_llamadas(servidor) == ["leer_variable", "listar_pis"]
 
 
 def test_velocidad_sin_curva_en_la_figura_pregunta(servidor, puente, plugin, norma_ejemplo):
-    r = aplicar(puente, alineamiento="Eje 1", simular=True, **{**TERCERA_60, "velocidad_diseno": 70})
+    r = aplicar(puente, alineamiento="Eje 1", simular=True, **{**TERCERA_60, **PERALTE_PROYECTO, "velocidad_diseno": 70})
     assert r["ok"] is False and r["faltan"][0]["dato"] == "velocidad_diseno" and servidor.llamadas == []
 
 
 def test_simulacion_con_la_norma(servidor, puente, plugin, norma_ejemplo):
-    r = aplicar(puente, alineamiento="Eje 1", simular=True, pedido="pon el peralte", **TERCERA_60)
+    r = aplicar(puente, alineamiento="Eje 1", simular=True, pedido="pon el peralte", **TERCERA_60, **PERALTE_PROYECTO)
     assert herramientas_llamadas(servidor) == ["leer_variable", "listar_pis", HERRAMIENTA]
     final = servidor.llamadas[2]["args"]
     assert final["simular"] is True and final["pedido"] == "pon el peralte" and final["alineamiento"] == "Eje 1"
@@ -457,40 +597,31 @@ def test_simulacion_con_la_norma(servidor, puente, plugin, norma_ejemplo):
 
 
 def test_escritura_real_verifica_con_listar_peralte(servidor, puente, plugin, norma_ejemplo):
-    r = aplicar(puente, alineamiento="Eje 1", **TERCERA_60)
+    r = aplicar(puente, alineamiento="Eje 1", **TERCERA_60, **PERALTE_PROYECTO)
     assert herramientas_llamadas(servidor) == ["leer_variable", "listar_pis", HERRAMIENTA, "listar_peralte"]
     assert r["simulado"] is False
     assert r["verificacion"]["verificado"] is True and r["verificacion"]["id_log"] == "id-listar-peralte"
     assert len(r["verificacion"]["filas"]) == 4
 
 
-def test_sin_correspondencia_devuelve_la_propuesta_sin_escribir(servidor, puente, plugin, norma_ejemplo, monkeypatch):
-    monkeypatch.setattr(npe, "CORRESPONDENCIA", {"tipo": {c: None for c in npe.TIPOS},
-                                                 "region": {c: None for c in npe.REGIONES},
-                                                 "segmento": {c: None for c in npe.SEGMENTOS}})
-    r = aplicar(puente, alineamiento="Eje 1", simular=True, **TERCERA_60)
-    assert herramientas_llamadas(servidor) == ["leer_variable", "listar_pis"]
-    assert r["ok"] is False and "Falta la correspondencia" in r["error"] and r["propuesta_norma"]["curvas"]
-
-
 def test_no_cabe_no_escribe(servidor, puente, plugin, norma_ejemplo):
     plugin.tabla = tabla_pis(CURVA_DERECHA, {"pi": 2, "radio": 200.0, "giro": "izquierda", "progresiva_pc": 230.0,
                                              "progresiva_pt": 300.0})
-    r = aplicar(puente, alineamiento="Eje 1", simular=True, **TERCERA_60)
+    r = aplicar(puente, alineamiento="Eje 1", simular=True, **TERCERA_60, **PERALTE_PROYECTO)
     assert herramientas_llamadas(servidor) == ["leer_variable", "listar_pis"]
     assert r["ok"] is False and "no cabe" in r["error"] and "se cruzan" in r["error"]
 
 
 def test_eje_sin_curvas(servidor, puente, plugin, norma_ejemplo):
     plugin.tabla = tabla_pis(extra=[{"numero": 1, "tipo": "sin_curva", "tiene_curva": False}])
-    r = aplicar(puente, alineamiento="Eje 1", simular=True, **TERCERA_60)
+    r = aplicar(puente, alineamiento="Eje 1", simular=True, **TERCERA_60, **PERALTE_PROYECTO)
     assert r["ok"] is False and "no tiene curvas circulares" in r["error"]
     assert herramientas_llamadas(servidor) == ["leer_variable", "listar_pis"]
 
 
 def test_dibujo_que_no_esta_en_metros(servidor, puente, plugin, norma_ejemplo):
     plugin.insunits = "2"
-    r = aplicar(puente, alineamiento="Eje 1", simular=True, **TERCERA_60)
+    r = aplicar(puente, alineamiento="Eje 1", simular=True, **TERCERA_60, **PERALTE_PROYECTO)
     assert r["ok"] is False and "INSUNITS = 2, pies" in r["error"] and "aplicar_peralte" in r["error"]
     assert herramientas_llamadas(servidor) == ["leer_variable"]
 
@@ -498,7 +629,7 @@ def test_dibujo_que_no_esta_en_metros(servidor, puente, plugin, norma_ejemplo):
 def test_error_de_listar_pis(servidor, puente, plugin, norma_ejemplo):
     servidor.respuestas["listar_pis"] = {"ok": False, "error": "No existe el alineamiento 'X'. Usa listar_alineamientos.",
                                          "id_log": "id-no"}
-    r = aplicar(puente, alineamiento="X", simular=True, **TERCERA_60)
+    r = aplicar(puente, alineamiento="X", simular=True, **TERCERA_60, **PERALTE_PROYECTO)
     assert r["ok"] is False and "No existe el alineamiento 'X'" in r["error"] and r["id_log"] == "id-no"
 
 

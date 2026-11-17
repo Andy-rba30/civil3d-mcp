@@ -243,29 +243,42 @@ Reglas:
        → 2 curvas de radio 150. Cuenta las líneas de `mcp_log.jsonl` (N10).
     b. `aplicar_peralte` con `args={"alineamiento":"Eje Norma 120","simular":true,"velocidad_diseno":60}` → `ok: false`,
        `error` que empieza por «Faltan datos del proyecto para calcular el peralte con la DG-2018:» y `faltan` con
-       `clasificacion`, `orografia` y los demás que falten, con sus valores válidos. **N10** líneas (no llamó a Civil 3D).
+       `clasificacion`, `orografia` y los demás que falten (también `tipo_superficie`, `precipitacion` y `ancho_carril`),
+       con sus valores válidos. **N10** líneas (no llamó a Civil 3D).
     c. `aplicar_peralte` con `curvas` (cualquier texto) **y** `velocidad_diseno` → «Pasa 'curvas' ... o
        'velocidad_diseno' ..., no los dos.», sin llamar a Civil 3D.
-    d. `aplicar_peralte` con
-       `args={"alineamiento":"Eje Norma 120","simular":true,"velocidad_diseno":60,"clasificacion":"Carretera de tercera clase","orografia":"Ondulado","ubicacion":"rural","pavimentada":false,"peralte_maximo":8,"pedido":"simula el peralte de la norma"}`.
-       En esta ronda lo esperado es **una** de estas respuestas, sin escribir nada:
-       - «La base de la norma no tiene la tabla peralte_figura ...»: `memoria-firma` aún no trae la tarea 6.10. Anótalo
-         y salta al paso 11. Sin llamadas nuevas en `mcp_log.jsonl`.
-       - `ok: false` con «La base de la norma todavía no tiene las tablas de bombeo y de longitud de transición del
-         peralte (sesión 6.4) ...» y `propuesta_norma`. Pega `propuesta_norma.curvas` completo. En las dos curvas,
-         `peralte`: `figura: "F302.03"`, `velocidad_kmh: 60`, `radio_m: 150`, `regla: 7`,
-         `resultado: "Lectura gráfica"`, **`peralte_calculado_pct` ≈ 7,55** (±0,05; valor de control de la tarea 6.10),
-         **`peralte_pct: 7.6`**, `etiqueta: "lectura gráfica"`, un `error_pct`, los dos `nodos` usados, el aviso «El
-         peralte sale de la figura digitalizada ... no es una tabla de la norma» y `pendientes` con la T304.04, la
-         T304.06 y el bombeo. `estaciones: []`. En `mcp_log.jsonl`, **N10 + 2** líneas: `leer_variable` y
-         `listar_pis`, ninguna de `aplicar_peralte`.
-       - (Si las tablas de la 6.4 ya están) «Falta la correspondencia entre la DG-2018 y los nombres de Civil 3D para
-         ...» con `propuesta_norma`: pega `curvas` completo (también bombeo, longitudes y las 8 `estaciones` de cada
-         curva). La correspondencia se rellena con tu tabla del paso 3.
-    e. **Valores de control de la figura** (no decisivo; solo si 10d dio `propuesta_norma`). Repite 10d cambiando lo
-       que dice cada fila y anota `peralte.figura` y `peralte.peralte_calculado_pct` de las dos curvas (radio 150):
+    d. En los pasos siguientes, `DATOS_PERALTE` son estos pares **de prueba** (no son de una obra), que se añaden dentro
+       de `args`: `"tipo_superficie":"Afirmado","precipitacion":"<500 mm/año","ancho_carril":3.0`. Primero **sin
+       `bombeo`**: `aplicar_peralte` con
+       `args={"alineamiento":"Eje Norma 120","simular":true,"velocidad_diseno":60,"clasificacion":"Carretera de tercera clase","orografia":"Ondulado","ubicacion":"rural","pavimentada":false,"peralte_maximo":8, DATOS_PERALTE}`
+       → `faltan` con `bombeo`, el motivo «La T304.03 da 3.0-3.5 % para 'Afirmado' con <500 mm/año: elige el valor dentro
+       del rango (R304.05-2); no se elige solo.» y `valores_validos: [3, 3.5]`; sin llamar a Civil 3D. Después la misma
+       llamada con `"bombeo":3.0` y `"pedido":"simula el peralte de la norma"`. En esta ronda lo esperado es **una** de
+       estas respuestas, sin escribir nada:
+       - «La base de la norma no tiene la tabla peralte_figura ...» (o la de las tablas de la sesión 6.4):
+         `memoria-firma` aún no trae la tarea 6.10 (o no está en `dg2018.sqlite` 1.2). Anótalo y salta al paso 11. Sin
+         llamadas nuevas en `mcp_log.jsonl`.
+       - `ok: false` con «Falta la correspondencia entre la DG-2018 y los nombres de Civil 3D para ...» y
+         `propuesta_norma`. Pega `propuesta_norma.curvas` y `propuesta_norma.avisos` completos. En las dos curvas:
+         - `peralte`: `figura: "F302.03"`, `velocidad_kmh: 60`, `radio_m: 150`, `regla: 7`,
+           `resultado: "Lectura gráfica"`, **`peralte_calculado_pct` ≈ 7,55** (±0,2; valor de control de la tarea
+           6.10), **`peralte_pct: 7.6`**, `etiqueta: "lectura gráfica"`, un `error_pct`, los dos `nodos` usados, el
+           aviso «El peralte sale de la figura digitalizada ... no es una tabla de la norma» y `pendientes: []`.
+         - Transición (Tercera Clase, R302.08-2): `bombeo_pct: 3`, **`longitud_bombeo_m: 12`** (fila de bombeo de la
+           T302.13 a 60 km/h; F20 daría 7,5), **`longitud_peralte_m: 48`** (fila de 8 % de la T302.13, la siguiente a
+           7,6 %, con aviso; F20 daría 19), `proporcion_tangente: 0.7` (con el aviso de que la T304.07 da 0,8p para
+           7,6 %) y `a_confirmar` con `P2` y `P3`.
+         - Las 8 `estaciones`, con PC la `progresiva_pc` de la curva: fin del bombeo normal en PC − 45,6, bombeo
+           nivelado en PC − 33,6, bombeo invertido en PC − 21,6 e inicio del peralte total en PC + 14,4; a la salida,
+           simétricas respecto al PT. En la curva del PI 1 (gira a la izquierda), el carril derecho sube a +7,6 y el
+           izquierdo baja a −7,6.
+         En `mcp_log.jsonl`, **N10 + 2** líneas: `leer_variable` y `listar_pis`, ninguna de `aplicar_peralte`. La
+         correspondencia se rellena con tu tabla del paso 3.
+    e. **Valores de control de la figura** (no decisivo; solo si 10d dio `propuesta_norma`). Repite la segunda llamada
+       de 10d (con `DATOS_PERALTE` y `"bombeo":3.0`) cambiando lo que dice cada fila y anota `peralte.figura` y
+       `peralte.peralte_calculado_pct` de las dos curvas (radio 150):
 
-       | Cambios sobre 10d | Figura esperada | `peralte_calculado_pct` esperado (±0,05) |
+       | Cambios sobre 10d | Figura esperada | `peralte_calculado_pct` esperado (±0,2) |
        |---|---|---|
        | `"velocidad_diseno":50` | F302.03 | 6,55 |
        | `"velocidad_diseno":40` | F302.03 | 5,49 |
