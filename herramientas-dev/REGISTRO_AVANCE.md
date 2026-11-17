@@ -54,7 +54,29 @@ haya que probar. Usa Opus con esfuerzo extra alto en las sesiones hijas. Actuali
   (plantilla métrica + ensamblaje, sin nada más; anotado en `ESTADO_PC.md`). Una copia reutilizada arrastra líneas de
   muestreo y falla la tarea 7.
 
-## Estado actual (16/11/2026, Etapa 3 cerrada)
+## Estado actual (17/11/2026, ronda C en marcha)
+
+**4.1 cerrada en `memoria-firma` el 17/11** (commit `0f8ca14`): verificación independiente de `dg2018.sqlite` contra el
+PDF por cuatro agentes, 1679 valores, **0 errores** (`normas/tablas/VERIFICACION_INDEPENDIENTE_20261117.md`). Decisión de
+Jose sobre la Tabla 303.02: **manda la tabla**, con un aviso cuando la fórmula del texto pediría más. El PDF se lee del
+repositorio público `Andy-rba30/normas` (`normas/fuentes/FUENTE.md`, con su SHA-256).
+
+**Plan de la ronda C aprobado por el dueño (17/11)** en la sesión orquestadora `session_01GF7ZdyGvbtPBDHk9EKj2jX`
+(rama `claude/charming-cori-611983`):
+1. Agente de investigación (solo lectura): revisar los 5 casos de `casos_dg2018.md` contra el PDF (los hizo una sesión
+   de Claude, no Jose), mapa de comprobaciones de `verificar_norma` con lo que leen `listar_pis` y `listar_pvis`, y
+   cómo elegir el radio mínimo por PI para la 4.3.
+2. En paralelo: **hija A**, 4.2 `verificar_norma` en el puente (Python), 1.18.0, `tarea/4.2-verificar-norma`; **hija
+   B**, corrección 1.17.6 del plugin (aviso de `Entity.StyleId` en `crear_superficie_tin` y `ejecutar_codigo` de solo
+   lectura sin entrada de Deshacer ni copia), `tarea/3.6-correcciones-1176` (`session_01GF7ZdydzsaLV7WfrxKwhVU`).
+3. Después de A: **hija C**, 4.3 (`velocidad_diseno` en `crear_alineamiento_desde_polilinea`), 1.19.0, partiendo de A.
+4. Una sola rama para la PC, con su `VALIDACION`, L.1 y P; en la misma prueba, repetir **sin zoom** el `_.UNDO 1` de
+   la TIN, las superficies de corredor, el perfil de terreno y el eje.
+5. Auditoría final independiente (un agente con Fable) antes de avisar al dueño para probar.
+6. Si da OK: sesión de hallazgos, fusión de los PR y registro al día.
+Fuera de la ronda: el deshacer propio de superficies (choca con la regla 4; se decide tras repetir la prueba sin zoom).
+
+## Estado anterior (16/11/2026, Etapa 3 cerrada)
 
 **En `main`: versión 1.17.5, 55 herramientas del plugin, validada en Civil 3D 2027.** El dueño fusionó el 16/11 el
 **#43** (ronda B, 1.17.4), el **#45** (hallazgos de la ronda B) y el **#46** (`tarea/3.4-codigo-objetos-deshacer`,
