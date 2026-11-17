@@ -54,7 +54,53 @@ haya que probar. Usa Opus con esfuerzo extra alto en las sesiones hijas. Actuali
   (plantilla métrica + ensamblaje, sin nada más; anotado en `ESTADO_PC.md`). Una copia reutilizada arrastra líneas de
   muestreo y falla la tarea 7.
 
-## Estado actual (17/11/2026, ronda C cerrada: hoja de ruta programada completa)
+## Estado actual (17/11/2026, ronda D en marcha)
+
+Sesión orquestadora: `session_01CdHU39Fo1j8s6nx1s6ZJWQ` (rama `claude/lucid-keller-ldugr4`, solo registro). En `main`
+sigue la 1.19.1. El dueño pidió hacer todas las «Propuestas pendientes» y añadir **peralte** y **bordes de calzada con
+sobreancho** (hoy los hace a mano con un XML de criterios de Civil 3D). Sesiones hijas (Opus, esfuerzo extra alto, cada
+una presenta su plan y la orquestadora lo aprueba por `send_message`):
+
+| Tarea | Sesión | Rama / repo | Versión | Estado |
+|---|---|---|---|---|
+| 6.1 `ejecutar_codigo` protegido sin `solo_lectura` | `session_01CdHU3589GnkBnGhy7K9ugg` | `tarea/6.1-codigo-escritura-segura` | 1.19.2 | plan pendiente |
+| 6.2 Documentos pendientes | `session_01CdHU39JEMaAg6NgzUWPSRn` | `tarea/6.2-documentos-pendientes` | — | **terminada**, PR #50 (borrador) |
+| 6.3 `crear_secciones`: grupos y superficie | `session_01CdHU36NsaMFpqqxZwcY9Qd` | `tarea/6.3-secciones-grupos` | 1.19.3 | plan pendiente |
+| 6.4 Tablas DG-2018 de peralte y sobreancho | `session_01CdHU35F8CtvPhdpJWdzCMn` | `memoria-firma` (main) | — | plan aprobado, trabajando |
+| 6.5 Peralte (`listar_peralte`, `aplicar_peralte`) | `session_01CdHU35tiuKgqTBqsCUGeTE` | `tarea/6.5-peralte` | 1.20.0 | plan aprobado, trabajando |
+| 6.6 Bordes de calzada (`crear_bordes_calzada`, `listar_bordes_calzada`) | `session_01CdHU37Cy3fgHeSz8Jv7MJf` | `tarea/6.6-bordes-sobreancho` | 1.21.0 | plan aprobado, trabajando |
+| 6.7 Evaluación honesta (comprobaciones manuales) | `session_01CdHU38kGV8ado1NVu2nujn` | `memoria-firma` (main) | — | plan pendiente |
+
+Hechos de la ronda en la nube:
+- Catálogo de Civil 3D 2027 (consultado por la orquestadora): la API permite escribir el peralte
+  (`SuperelevationCurveCollection.AddUserDefinedCurve` → `SuperelevationCurve.CriticalStations.Add` + `SetSlope`) y crear
+  bordes con ensanchamiento (`Alignment.CreateOffsetAlignment` + `OffsetAlignmentInfo.AddWidening`). **No hay método para
+  quitar una curva de peralte**: `aplicar_peralte` rechaza un eje que ya tiene peralte. Los valores de los enumerados de
+  peralte no están en el catálogo: se leen en Civil 3D con `Enum.GetNames` (paso 1 de VALIDACION_120).
+- **La DG-2018 no trae tabla peralte–radio**: solo las Figuras 302.02 a 302.05 (gráficas). Lo confirmaron por separado
+  la 6.4 y un verificador independiente (Opus; Fable sin cupo hasta el 24/11/2026 11:00 UTC). Las dos extracciones
+  coinciden (L del B2 = 10,55 m, VL = 4,30 m, articulados sin L, T302.20 400 → 0,07 y 450 → 0,08, 30 m frente a V/3,6).
+- XML de criterios del dueño (no se sube a ningún repositorio). Versión original: sobreancho por tabla AASHTO con
+  vehículos de EE. UU. y solo de 50 a 100 km/h (por eso no funciona a 30 km/h), fórmula «simple» con 0,05·V/√R (la
+  DG-2018 dice 0,1·V/√R), radios que no decrecen en varias filas y tablas que no llegan al radio mínimo. Versión
+  «Corregido_2»: corrige radios, extremos, nombres y la fórmula, pero sigue sin sobreancho por tabla a 30-40 km/h, sin
+  fila NC a 30-50 km/h (R ≥ 3500 m da RC en vez de sin peralte), con el método SU-12 mal escrito (`Vehicle` en vez de
+  `VehicleType`), longitudes de transición de la T302.13 (Tercera Clase) para todas las clases y ×1,5 para 4 carriles
+  (no es DG-2018), y peraltes de tipo AASHTO (cerca de las figuras: 60 km/h, R 150 m, 8 % → 7,6 % frente a ≈ 7,5 %).
+
+**Decisiones del dueño (17/11/2026)**: de acuerdo con las recomendaciones del verificador en los criterios pendientes
+(a: curva sin espiral bajo la T302.11 = «No cumple», sin «pendiente de confirmar», más aviso por 302.05.06; b: PI sin
+curva a más de 80 km/h = «No cumple» y, si Δ < 59′, pedir quitar el PI; c: 500/400 m como aviso, 0°59′ = «No cumple» con
+curva y aviso sin curva; d: −1 % y luego +1 %; e: lomo quebrado como aviso, pendiente media con ventanas ≥ 2000 m,
+descansos solo si suman ≥ 500 m; f: no escribir un radio bajo el mínimo sin confirmación y decir qué velocidad admite;
+g: 215 m mientras solo haya arcos, ofreciendo 125 m con clotoide). **Peralte por radio: digitalizar las Figuras 302.02 a
+302.05** de la DG-2018. Se añaden la **6.8** (XML DG-2018 corregido, generado desde la base) y la **6.9** (corrección de
+`verificar_norma` y la propuesta de radios con esas decisiones).
+
+**Siguiente**: aprobar los planes de 6.1, 6.3 y 6.7; pasar el esquema de la 6.4 a 6.5 y 6.6; lanzar 6.9 y la
+digitalización (6.10, en `memoria-firma`); después 6.8; juntar las ramas en una para la ronda D en la PC.
+
+## Estado anterior (17/11/2026, ronda C cerrada: hoja de ruta programada completa)
 
 **En `main`: versión 1.19.1, 59 herramientas (55 del plugin + 4 del puente), validada en Civil 3D 2027.** El dueño
 escribió «Verificación OK» y el PR #48 (`tarea/ronda-c`) se fusionó el 17/11 (commit `dba04e3`; L.1 con `main` OK en la
