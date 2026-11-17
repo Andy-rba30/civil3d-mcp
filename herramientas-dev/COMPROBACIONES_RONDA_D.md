@@ -15,7 +15,7 @@ decide la ronda**: si una falla, se anota el resultado literal y se sigue. La se
 - **Qué abrir**: Civil 3D 2027 con el plugin y el puente de la ronda D (1.19.1 o posterior) y el agente con el MCP
   `civil3d` conectado, sobre el dibujo de la prueba de la ronda D o sobre una copia nueva de
   `C:\Proyectos\dibujos_prueba\PRUEBA_EVALUACION_BASE.dwg` guardada como
-  `C:\Proyectos\dibujos_prueba\PRUEBA_RONDA_D.dwg`. Nunca el archivo base ni un dibujo real. Para C2a, además,
+  `C:\Proyectos\dibujos_prueba\PRUEBA_RONDA_D.dwg`. Nunca el archivo base ni un dibujo real. Para C2a (opcional), además,
   PowerShell en la raíz del repositorio en la rama de la ronda.
 - `ARBA_MCP_CODIGO=1` para C2 y C3, que usan `ejecutar_codigo` (sin ella responde «ejecutar_codigo está desactivada»).
 - Las herramientas del plugin llevan los argumentos dentro de `args`.
@@ -77,62 +77,66 @@ de `ejecutar_codigo` bloquea entero el espacio de nombres `Autodesk.AutoCAD.Grap
 diálogos»). Si un script lee una propiedad escrita solo en `Drawable` (que `DBObject` y `Entity` no vuelven a
 declarar), el plugin la rechazaría al compilar aunque solo sea una lectura. Es el hallazgo H4 de la revisión del
 15/11/2026. En la nube no se puede ver: los sustitutos de `CompilarSinCivil` y las pruebas no tienen esa herencia.
-Las propiedades que sí se vuelven a declarar en `DBObject` o `Entity` no deberían dar problema. C2a dice cuáles son
-de cada tipo. C2b prueba tres propiedades muy usadas y separa «bloqueado» de «no existe», porque desde la nube no se
-pudo confirmar en el catálogo dónde está declarada cada una. C2c prueba las que dé C2a.
+
+Según el catálogo de la API de Civil 3D 2027 (`memoria-firma`, consulta de la orquestadora del 17/11/2026):
+- `Drawable` está en `acdbmgd.dll`, como `DBObject` y `Entity`.
+- `Id` (`ObjectId`) e `IsPersistent` (`bool`) están declaradas en `Drawable` y `DBObject` las vuelve a declarar: **no**
+  son candidatas a H4. Sirven de **control**: deben compilar.
+- `Bounds` (`Nullable<Extents3d>`) y `DrawableType` (de tipo `GraphicsInterface.DrawableType`) solo las declara
+  `Drawable`: ni `DBObject` ni `Entity` las vuelven a declarar. Son la **prueba de H4**. `Bounds` es la importante,
+  porque un script la usaría para medir la extensión de una entidad.
 
 **Paso listo para pegar:**
 
 C2. **Propiedades heredadas de `Drawable` en `ejecutar_codigo`** (no decide; necesita `ARBA_MCP_CODIGO=1`).
-   a. **Qué propiedades se heredan sin volver a declararse** (PowerShell, desde la raíz del repo; Civil 3D puede estar
-      abierto o cerrado):
+   a. **Opcional, confirmación del catálogo** (PowerShell, desde la raíz del repo; Civil 3D puede estar abierto o
+      cerrado):
       `dotnet run --project herramientas-dev\InspectC3D -- Autodesk.AutoCAD.GraphicsInterface.Drawable Autodesk.AutoCAD.DatabaseServices.DBObject Autodesk.AutoCAD.DatabaseServices.Entity`.
-      - Esperado: un bloque `Tipo: ... (Base: ...)` por tipo. El de `DBObject` con
-        `Base: Autodesk.AutoCAD.GraphicsInterface.Drawable` (si es otra base, anótala: H4 no aplicaría).
-      - Si sale `[TIPO NO ENCONTRADO: Autodesk.AutoCAD.GraphicsInterface.Drawable]`, usa en su lugar `buscar_api`
-        con `consulta: "GraphicsInterface Drawable"`.
-      - Anota tres cosas: (1) la base de `DBObject`; (2) las propiedades de instancia, sin parámetros, que declara
-        `Drawable`; (3) cuáles de ellas aparecen **también** en el bloque de `DBObject` o en el de `Entity` (esas
-        se vuelven a declarar).
+      - Esperado: el bloque de `DBObject` con `Base: Autodesk.AutoCAD.GraphicsInterface.Drawable`.
+      - `Bounds`, `DrawableType`, `Id` e `IsPersistent` entre las propiedades de `Drawable`.
+      - `Id` e `IsPersistent` también en `DBObject`, y `Bounds` y `DrawableType` ni en `DBObject` ni en `Entity`.
+      - Anota solo «coincide» o qué no coincide.
       - **La salida de InspectC3D no se pega en el informe ni se guarda en el repositorio** (regla 7 de
-        `CLAUDE.md`: ningún volcado de las DLL de Autodesk). En el informe van solo los nombres de las propiedades
-        que se prueban en b y c, y si `DBObject` o `Entity` las vuelven a declarar.
-   b. **Tres propiedades de uso común** con `ejecutar_codigo` y
-      `args={"codigo_csharp":"foreach (var id in F.EspacioModelo())\n{\n    var e = F.Abrir<Entity>(id);\n    var a = e.Id;\n    var b = e.IsPersistent;\n    var c = e.Bounds;\n    return new { tipo = e.GetType().Name, id_igual = a == id, persistente = b, limites = \"\" + c };\n}\nreturn \"sin entidades\";","solo_lectura":true,"pedido":"lee Id, IsPersistent y Bounds de la primera entidad sin tocar el dibujo"}`.
-      `Id` está en la línea 4 del script, `IsPersistent` en la 5 y `Bounds` en la 6. Esperado si H4 **no** les
-      afecta:
+        `CLAUDE.md`: ningún volcado de las DLL de Autodesk).
+   b. **Control: `Id` e `IsPersistent`** con `ejecutar_codigo` y
+      `args={"codigo_csharp":"foreach (var id in F.EspacioModelo())\n{\n    var e = F.Abrir<Entity>(id);\n    var a = e.Id;\n    var b = e.IsPersistent;\n    return new { tipo = e.GetType().Name, id_igual = a == id, persistente = b };\n}\nreturn \"sin entidades\";","solo_lectura":true,"pedido":"lee Id e IsPersistent de la primera entidad sin tocar el dibujo"}`.
+      Esperado:
       - `ok: true`, `copia: null`, `datos.deshacer.comando: ""` y `datos.compilacion.solo_lectura: true`, sin entrada
         nueva en el menú Deshacer.
-      - `resultado` con `tipo` (el de la primera entidad, por ejemplo `Polyline`), `id_igual: true`,
-        `persistente: true` y `limites` con las dos esquinas de la entidad. Anota el texto de `limites` tal cual: su
-        formato no importa.
+      - `resultado` con `tipo` (el de la primera entidad, por ejemplo `Polyline`), `id_igual: true` y
+        `persistente: true`.
       - Si `resultado` es `"sin entidades"`: `ejecutar_comando` con
         `args={"comando":"_.PLINE 1000,2000 1300,2000 1300,2300 1600,2300  ","timeout_s":20}` (dos espacios al
         final) y repite el b.
-      - Si H4 **sí** afecta a alguna: `ok: false` con `No permitido:`. Por cada propiedad bloqueada sale una línea
-        `Línea 4|5|6, columna N: [bloqueado: ventanas y diálogos] Autodesk.AutoCAD.GraphicsInterface.Drawable: ejecutar_codigo no admite ventanas, diálogos ni entrada interactiva...`,
-        sin copia y sin entrada en Deshacer. Anota qué líneas salen.
-      - Si en una línea sale `CS1061` («no contiene una definición»), esa propiedad no existe en Civil 3D 2027: no es
-        H4. Anótala, quita esa línea y su campo del `return` y repite.
       - Si el error nombra `GetType`, quita `tipo = e.GetType().Name, ` y repite.
-   c. **Las propiedades que diga el a.** Por cada propiedad de `Drawable` que **no** aparezca otra vez en `DBObject` ni
-      en `Entity` (y que no sea ya `Id`, `IsPersistent` o `Bounds`), `ejecutar_codigo` con
-      `args={"codigo_csharp":"foreach (var id in F.EspacioModelo())\n{\n    var e = F.Abrir<Entity>(id);\n    var a = e.<Propiedad>;\n    return new { tipo = e.GetType().Name, valor = \"\" + a };\n}\nreturn \"sin entidades\";","solo_lectura":true,"pedido":"lee <Propiedad> de la primera entidad sin tocar el dibujo"}`,
-      cambiando `<Propiedad>` por su nombre en los dos sitios. Anota por cada una si compila (`ok: true` y `valor`) o
-      el error literal (línea 4). Si el a no da ninguna, escribe «ninguna» y no hagas el c.
+   c. **Prueba de H4: `Bounds`** con `ejecutar_codigo` y
+      `args={"codigo_csharp":"foreach (var id in F.EspacioModelo())\n{\n    var e = F.Abrir<Entity>(id);\n    var c = e.Bounds;\n    return new { tipo = e.GetType().Name, limites = \"\" + c };\n}\nreturn \"sin entidades\";","solo_lectura":true,"pedido":"lee Bounds de la primera entidad sin tocar el dibujo"}`.
+      `Bounds` está en la línea 4.
+      - Lo previsto, por cómo está escrita la lista blanca: `ok: false` con `No permitido:` y
+        `Línea 4, columna N: [bloqueado: ventanas y diálogos] Autodesk.AutoCAD.GraphicsInterface.Drawable: ejecutar_codigo no admite ventanas, diálogos ni entrada interactiva...`,
+        sin copia y sin entrada en Deshacer (**H4 confirmado**).
+      - Si en cambio sale `ok: true` con `limites` (las dos esquinas de la entidad), H4 no pasa con `Bounds`. Anota el
+        texto de `limites` tal cual.
+   d. **Prueba de H4: `DrawableType`** con `ejecutar_codigo` y
+      `args={"codigo_csharp":"foreach (var id in F.EspacioModelo())\n{\n    var e = F.Abrir<Entity>(id);\n    var d = e.DrawableType;\n    return new { tipo = e.GetType().Name, tipo_dibujable = \"\" + d };\n}\nreturn \"sin entidades\";","solo_lectura":true,"pedido":"lee DrawableType de la primera entidad sin tocar el dibujo"}`.
+      `DrawableType` está en la línea 4.
+      - Lo previsto: `ok: false` con `[bloqueado: ventanas y diálogos]` en la línea 4, que nombra
+        `Autodesk.AutoCAD.GraphicsInterface.Drawable`, el tipo del valor
+        (`Autodesk.AutoCAD.GraphicsInterface.DrawableType`) o los dos. Anota qué nombra.
+      - Si sale `ok: true`, anota `tipo_dibujable`.
 
-**Qué debería ver**: en C2a, `DBObject` con base `Drawable`. En C2b y C2c, ni una entrada nueva en el menú Deshacer ni
-una copia nueva en `backups\` (todas van con `solo_lectura`).
+**Qué debería ver**: el b compila (`ok: true`). El c y el d, previsiblemente, no compilan, con el bloqueo en la línea
+4. Ninguno deja entrada nueva en el menú Deshacer ni copia nueva en `backups\`: todos van con `solo_lectura`.
 
 **Cómo leer el resultado:**
 
-| Lo que sale en b o c | Qué significa | Qué se hace después |
+| Lo que sale | Qué significa | Qué se hace después |
 |---|---|---|
-| `ok: true` | La lectura compila: H4 no afecta a esa propiedad | Nada |
-| `[bloqueado: ventanas y diálogos]` que nombra `GraphicsInterface.Drawable` | **H4 confirmado** para esa propiedad: una lectura legítima se rechaza | Propuesta para otra sesión: permitir leer las propiedades de `Drawable` sobre objetos del dibujo |
-| `[bloqueado: ventanas y diálogos]` que nombra otro tipo de `GraphicsInterface` (el tipo del valor, no `Drawable`) | No es H4: el valor es de la parte gráfica, que se bloquea a propósito | Se anota aparte |
-| `CS1061` | La propiedad no existe en 2027 | Se anota; no es H4 |
-| C2a no da ninguna propiedad sin volver a declarar y b da `ok: true` | H4 no puede pasar con propiedades | Se cierra el punto |
+| b `ok: true` y c `ok: false` que nombra `GraphicsInterface.Drawable` | **H4 confirmado**: las propiedades que `DBObject` vuelve a declarar pasan, pero `Bounds`, que solo declara `Drawable`, se rechaza aunque sea una lectura | Propuesta para otra sesión: permitir leer las propiedades de `Drawable` sobre objetos del dibujo, al menos `Bounds` |
+| b y c `ok: true` | H4 no pasa: el plugin no ve `Drawable` como declarante de `Bounds` | Se cierra el punto |
+| b `ok: false` que nombra `GraphicsInterface.Drawable` | H4 es más amplio de lo previsto: también bloquea `Id` e `IsPersistent`, que `DBObject` vuelve a declarar | Propuesta para otra sesión, con más prioridad (`Id` es de uso común) |
+| d `ok: false` que solo nombra `GraphicsInterface.DrawableType` | El bloqueo viene del tipo del valor, que es de la parte gráfica y se bloquea a propósito: no es H4 | Se anota aparte |
+| `CS1061` («no contiene una definición») en cualquiera | La propiedad no existe en esta instalación, en contra del catálogo | Se anota como hallazgo |
 
 ---
 
@@ -188,8 +192,8 @@ En el informe de la ronda D, una sección **«Comprobaciones de la ronda D (C1, 
 
 - **C1**: las respuestas de los pasos 1 a 3 (y 5 si se hizo), la línea literal de `mcp_log.jsonl` del paso 4 y el
   número de espacios.
-- **C2**: la base de `DBObject` y los nombres de las propiedades probadas, con si `DBObject` o `Entity` las vuelven a
-  declarar (sin la salida de InspectC3D), y la respuesta literal de b y de cada c.
+- **C2**: si se hizo el a, «coincide» o qué no coincide (sin la salida de InspectC3D), y la respuesta literal de b, c y
+  d.
 - **C3**: N0, el `resultado` y el bloque `transaccion_script` del paso 2 y el conteo del paso 3.
 - Para cada una, la fila de su tabla «Cómo leer el resultado» que corresponde.
 
