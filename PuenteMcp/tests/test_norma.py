@@ -163,7 +163,8 @@ def test_tercera_clase_pregunta_pavimentada_y_peralte(base):
     datos = {f["dato"]: f for f in faltan}
     assert set(datos) == {"pavimentada", "peralte_maximo"}
     assert datos["pavimentada"]["valores_validos"] == [True, False]
-    assert datos["peralte_maximo"]["valores_validos"] == [6, 8, 12] and "pavimentada" in datos["peralte_maximo"]["motivo"]
+    # M2 (auditoría ronda C): en ondulado rural la T304.05 admite hasta 8 %, así que no se ofrece 12
+    assert datos["peralte_maximo"]["valores_validos"] == [6, 8] and "pavimentada" in datos["peralte_maximo"]["motivo"]
 
 
 def test_alineamiento_pregunta_la_ubicacion_y_rasante_no_si_coincide(base):
@@ -237,7 +238,11 @@ def test_pi_sin_curva_y_deflexion_minima(base):
     assert n.comprobar_deflexion_minima(base, ctx, 1.0) is None
     autopista = contexto(base, velocidad_diseno=100, clasificacion="Autopista de primera clase", orografia="Plano",
                          ubicacion="rural")
-    assert n.comprobar_pi_sin_curva(base, autopista, 0.5)["resultado"] == n.SIN_VALOR
+    # I2 (auditoría ronda C): por encima de 80 km/h no hay permiso para omitir la curva
+    fuera = n.comprobar_pi_sin_curva(base, autopista, 0.5)
+    assert fuera["resultado"] == n.NO_CUMPLE and fuera["valor_exigido"] == 0
+    assert "solo permite omitir la curva" in fuera["detalle"]["nota"] and "de 30 a 80 km/h" in fuera["detalle"]["nota"]
+    assert n.comprobar_pi_sin_curva(base, autopista, 0.0)["resultado"] == n.CUMPLE, "vértices alineados"
 
 
 def test_tangentes_en_s_y_del_mismo_sentido(base):
@@ -335,10 +340,20 @@ def test_reglas_de_tercera_clase_en_el_perfil(base):
 
 
 def test_lomo_quebrado(base):
+    """M5 (auditoría ronda C): solo dos curvas verticales seguidas del mismo sentido con tangente corta (menor que la
+    L mín.o de la T302.01, 167 m a 60 km/h, por analogía con la planta)."""
     ctx = contexto(base, "rasante", velocidad_diseno=60, clasificacion=SEGUNDA, orografia="Ondulado")
-    pvis = [pvi(1, 0, 100, None, 4), pvi(2, 200, 108, 4, 1), pvi(3, 300, 109, 1, -2), pvi(4, 500, 105, -2, None)]
-    filas = n.comprobar_lomo_quebrado(base, ctx, pvis)
+    convexas = [pvi(1, 0, 100, None, 4), pvi(2, 200, 108, 4, 1, 60), pvi(3, 300, 109, 1, -2, 60), pvi(4, 500, 105, -2, None)]
+    filas = n.comprobar_lomo_quebrado(base, ctx, convexas)
     assert len(filas) == 1 and filas[0]["resultado"] == n.AVISO and filas[0]["referencia"]["seccion"] == "303.02"
+    assert filas[0]["valor_diseno"] == 40 and filas[0]["valor_exigido"] == 167, "de 230 (PVI 2 + 30) a 270 (PVI 3 − 30)"
+    assert filas[0]["detalle"]["criterio_corta"].startswith("T302.01") and "analogía" in filas[0]["detalle"]["nota"]
+    sin_curvas = [pvi(1, 0, 100, None, 4), pvi(2, 200, 108, 4, 1), pvi(3, 300, 109, 1, -2), pvi(4, 500, 105, -2, None)]
+    assert n.comprobar_lomo_quebrado(base, ctx, sin_curvas) == [], "PVI sin curva vertical: no hay lomo"
+    lejos = [pvi(1, 0, 100, None, 4), pvi(2, 200, 108, 4, 1, 60), pvi(3, 600, 112, 1, -2, 60), pvi(4, 800, 108, -2, None)]
+    assert n.comprobar_lomo_quebrado(base, ctx, lejos) == [], "tangente de 340 m: no es corta"
+    distinto = [pvi(1, 0, 100, None, 4), pvi(2, 200, 108, 4, 1, 60), pvi(3, 300, 109, 1, 3, 60), pvi(4, 500, 115, 3, None)]
+    assert n.comprobar_lomo_quebrado(base, ctx, distinto) == [], "una convexa y una cóncava"
 
 
 # ---------------------------------------------------------------------------------------------- utilidades
@@ -591,3 +606,62 @@ def test_tolerancia_de_los_casos():
     with pytest.raises(ValueError):
         casos_norma_reales.evaluar("__import__('os')", {})
     assert math.isclose(casos_norma_reales.evaluar("abs(S1 - S2)", {"S1": 4, "S2": -3}), 7)
+
+
+# ---------------------------------------------------------------------------------------------- auditoría de la ronda C
+def test_peraltes_distintos_en_tercera_clase_aviso_claro(base):
+    """M2: la T302.02 supone e = 8 % en esa ubicación; con el peralte del proyecto (6 %) la T302.04 pide más."""
+    ctx = contexto(base, velocidad_diseno=60, **{**TERCERA_ONDULADO, "peralte_maximo": 6})
+    ex = n.radio_minimo_exigido(base, ctx)
+    assert ex["exigido"] == 135 and ex["referencia"]["id"] == "T302.04"
+    assert "supone un peralte máximo de 8 %" in ex["aviso"] and "No es una contradicción" in ex["aviso"]
+    assert "se exige el más exigente (135 m)" in ex["aviso"]
+    _, faltan = n.resolver_proyecto(base, "alineamiento", {**TERCERA_ONDULADO, "velocidad_diseno": 60, "peralte_maximo": 12})
+    assert faltan[0]["dato"] == "peralte_maximo" and faltan[0]["valores_validos"] == [6, 8]
+    acc = {"clasificacion": TERCERA, "orografia": "Accidentado", "ubicacion": "rural", "pavimentada": False,
+           "velocidad_diseno": 60}
+    _, faltan = n.resolver_proyecto(base, "alineamiento", acc)
+    assert faltan[0]["dato"] == "peralte_maximo" and faltan[0]["valores_validos"] == [8, 12]
+
+
+@pytest.mark.parametrize("valor", [float("nan"), float("inf"), "NaN", "-inf"])
+def test_numeros_no_finitos_son_un_error_claro(base, valor):
+    """M4: velocidad_diseno o peralte NaN o infinito → ErrorNorma, no ValueError ni OverflowError."""
+    with pytest.raises(n.ErrorNorma, match="no es un número finito"):
+        n.resolver_proyecto(base, "alineamiento", {**TERCERA_ONDULADO, "velocidad_diseno": valor})
+    with pytest.raises(n.ErrorNorma, match="'peralte_maximo' no es un número finito"):
+        n.resolver_proyecto(base, "alineamiento", {**TERCERA_ONDULADO, "velocidad_diseno": 60, "peralte_maximo": valor})
+
+
+def test_numero_no_finito_por_la_herramienta(servidor, puente, memoria):
+    r = llamar(puente, norma="DG-2018", tipo_elemento="alineamiento", nombre="Eje 1", velocidad_diseno=float("inf"),
+               **TERCERA_ONDULADO)
+    assert r["ok"] is False and "no es un número finito" in r["error"] and servidor.llamadas == []
+
+
+def test_datos_que_faltan_en_el_dibujo_son_no_verificables(base):
+    """M4: una curva sin radio ni longitud o un PI sin curva sin deflexión no rompen la verificación."""
+    ctx = contexto(base, velocidad_diseno=40, **TERCERA_ONDULADO)
+    tabla = tabla_pis()
+    tabla["pis"][0]["radio"] = None
+    tabla["pis"][0]["longitud_curva"] = None
+    tabla["pis"][2]["deflexion_grados"] = None
+    filas, _ = n.verificar_alineamiento(base, ctx, tabla)
+    por = {(f["elemento"], f["comprobacion"]): f for f in filas}
+    assert por[("Curva PI 1", "Radio de la curva")]["resultado"] == n.NO_VERIFICABLE
+    assert por[("Curva PI 1", "Longitud de la curva")]["resultado"] == n.NO_VERIFICABLE
+    assert por[("PI 3 (sin curva)", "Deflexión máxima sin curva")]["resultado"] == n.NO_VERIFICABLE
+    assert por[("PI 1 y PI 2", "Relación entre radios consecutivos")]["resultado"] == n.NO_VERIFICABLE
+    assert por[("Curva PI 2", "Radio mínimo")]["resultado"] == n.CUMPLE
+
+
+def test_recta_entre_curvas_con_un_pi_sin_curva_en_medio(base):
+    """I1: la recta de PT de la curva PI 2 a PC de la curva PI 4 salta el PI 3 sin curva."""
+    ctx = contexto(base, velocidad_diseno=40, **TERCERA_ONDULADO)
+    filas, _ = n.verificar_alineamiento(base, ctx, tabla_pis())
+    salto = [f for f in filas if f["elemento"] == "Tangente PI 2–PI 4"]
+    assert [f["comprobacion"] for f in salto] == ["Tangente mínima entre curvas de sentido contrario (L mín.s)"]
+    assert salto[0]["valor_diseno"] == 410.659 and salto[0]["resultado"] == n.CUMPLE
+    assert "Hay un PI sin curva en medio (PI 3)" in salto[0]["detalle"]["nota"]
+    elementos = [f["elemento"] for f in filas]
+    assert elementos.index("Tangente PI 3–PI 4") < elementos.index("Tangente PI 2–PI 4") < elementos.index("Curva PI 4")

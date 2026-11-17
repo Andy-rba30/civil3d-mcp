@@ -644,7 +644,7 @@ en el dibujo.
 | `clasificacion` | `Autopista de primera clase`, `Autopista de segunda clase`, `Carretera de primera clase`, `Carretera de segunda clase`, `Carretera de tercera clase` (sin distinguir mayúsculas ni tildes) | Siempre |
 | `orografia` | `Plano`, `Ondulado`, `Accidentado`, `Escarpado` (o su tipo, `1` a `4`) | Siempre |
 | `ubicacion` | `rural`, `urbana`, `rural con peligro de hielo` (decide la fila de la T302.02 y de la T304.05) | En `alineamiento`; en `rasante` solo si las filas de esa clasificación y orografía no coinciden entre ubicaciones |
-| `peralte_maximo` | % (los valores válidos los da la respuesta `faltan`) | En `alineamiento` de Tercera Clase no pavimentada (decide la fila de la T302.04) y en terreno accidentado rural (8 % o 12 %, T304.05) |
+| `peralte_maximo` | % (los valores válidos los da la respuesta `faltan`: en Tercera Clase, los de la T302.04 que no pasan del máximo absoluto de la T304.05 para esa fila; en terreno plano u ondulado rural no se ofrecen 10 ni 12 %) | En `alineamiento` de Tercera Clase no pavimentada (decide la fila de la T302.04) y en terreno accidentado rural (8 % o 12 %, T304.05) |
 | `pavimentada` | boolean | En Tercera Clase. Con `true` se verifica con las reglas de Segunda Clase (artículo 101.05). En las demás clases la norma ya exige pavimento |
 | `altitud_msnm` o `cotas_msnm` | msnm, o `true` si las cotas del perfil ya están en msnm | En `rasante` accidentada o escarpada: por encima de 3000 msnm (3000 justos no) la pendiente máxima baja 1 % |
 | `pedido` | Las palabras del usuario | Nunca (va al log de las lecturas) |
@@ -657,11 +657,12 @@ el dibujo** → lee el dibujo → comprueba → responde. Lo que falta sale así
 {"ok": false, "verificado": false,
  "error": "Faltan datos del proyecto: pavimentada, peralte_maximo. Pregúntalos al usuario con los valores válidos; no los supongas. No se leyó el dibujo.",
  "faltan": [{"dato": "pavimentada", "motivo": "Tercera Clase: si está pavimentada se verifica con las reglas de Segunda Clase (101.05); ...", "valores_validos": [true, false]},
-            {"dato": "peralte_maximo", "motivo": "Peralte máximo del proyecto en %: en Tercera Clase decide la fila de la T302.04 (solo si la vía no está pavimentada).", "valores_validos": [4, 6, 8, 10, 12]}],
+            {"dato": "peralte_maximo", "motivo": "Peralte máximo del proyecto en %: en Tercera Clase decide la fila de la T302.04 (solo si la vía no está pavimentada).", "valores_validos": [4, 6, 8]}],
  "ms_puente": 12}
 ```
 
-**Errores** (`{"ok": false, "error": ..., "ms_puente": ...}`, sin llamar al plugin): `Falta la variable de entorno
+**Errores** (`{"ok": false, "error": ..., "ms_puente": ...}`, sin llamar al plugin): `'velocidad_diseno' no es un número
+finito (...)` (también `peralte_maximo` y `altitud_msnm`: NaN o infinito), `Falta la variable de entorno
 MEMORIA_FIRMA_DIR: ...`, `La carpeta de MEMORIA_FIRMA_DIR no existe: ...`, `Falta la base de la norma
 <carpeta>\normas\tablas\dg2018.sqlite. Actualiza memoria-firma (git pull) ... No se verificó nada.`, `La base de la norma
 ... no tiene las tablas: ...`, `Para una rasante falta 'alineamiento': ...`, `tipo_elemento '...' no vale: ...`. Los
@@ -703,21 +704,28 @@ en «el más exigente», el orden del −1 % por altitud y el +1 % excepcional, 
 cumple», y si la falta de curva de transición es «No cumple» (hoy lo es).
 
 **Comprobaciones del eje** (`listar_pis`; las tangentes se miden entre inicio → PC y PT de cada curva, o PI sin curva →
-fin; mismo sentido si las dos curvas tienen el mismo `giro`):
+fin; mismo sentido si las dos curvas tienen el mismo `giro`). **Recta entre dos curvas con PI sin curva en medio**
+(corrección de la auditoría de la ronda C, 17/11/2026): además de los tramos de PI a PI, la recta entre dos curvas
+consecutivas se mide **saltando los PI sin curva**, del PT de una al PC de la siguiente (`elemento` `Tangente PI 1–PI 3`,
+después de los tramos y antes de la curva siguiente), y en ella se comprueban la tangente mínima (con los avisos de
+500 y 400 m si son del mismo sentido), la relación de radios si no pasa de 200 m y, en autopistas, el radio tras una
+recta larga; cada fila lleva la nota «Hay un PI sin curva en medio (PI 2): la recta se mide del PT de la curva PI 1 al PC
+de la curva PI 3.». Un tipo no soportado (espiral) corta la cuenta. Si `listar_pis` no da un dato (radio, longitud o
+deflexión), la fila de ese dato sale `No verificable` en vez de un error:
 
 | Comprobación | Contra | Resultado |
 |---|---|---|
 | Velocidad de diseño | T204.01 (204.02, PDF 98) | Siempre `Cumple` (si no es una celda, antes se pregunta) |
-| Radio mínimo | T302.02 por ubicación (PDF 130) y, en Tercera Clase, T302.04 por peralte (PDF 133); fórmulas F08/F09 | La más exigente de las dos |
+| Radio mínimo | T302.02 por ubicación (PDF 130) y, en Tercera Clase, T302.04 por peralte (PDF 133); fórmulas F08/F09 | La más exigente de las dos. Si el peralte del proyecto no es el que la T302.02 supone en esa ubicación, el aviso lo dice así («no es una contradicción de la norma sino dos peraltes distintos») |
 | Longitud de curva con Δ ≤ 5° | R302.02-1: L > 30 (10 − Δ) (F37, PDF 126) | `No cumple` si L ≤ 30 (10 − Δ) |
 | Longitud mínima de curva | C302.02-LMIN: 3V (carreteras) o 6V (autopistas) | Solo `Aviso` |
 | Curva de más de 800 m | R302.02-7 | `Aviso` |
-| PI sin curva | C302.02-DEFLEX (PDF 127), de 30 a 80 km/h | Fuera de ese rango, `Sin valor en la norma` |
+| PI sin curva | C302.02-DEFLEX (PDF 127), de 30 a 80 km/h; R302.02-4 es un **permiso** | Fuera de ese rango no hay permiso: con deflexión (más de 0,001°), `No cumple` («la norma solo permite omitir la curva con el cuadro C302.02-DEFLEX, que cubre de 30 a 80 km/h»); alineados, `Cumple`. Decisión de la orquestadora (17/11/2026), pendiente de que el dueño la confirme |
 | Deflexión menor de 0°59′ | R302.02-2 | `Aviso` (pendiente del dueño) |
 | Tangente mínima entre curvas | T302.01 L mín.s (en S) o L mín.o y T304.08 (mismo sentido), F34/F35 | La más exigente; además `Aviso` de R302.02-8 (< 500 m) y R302.06.03-1 (< 400 m) |
 | Tangente máxima | T302.01 L máx (F36), también las tangentes de los extremos | Solo `Aviso` |
 | Relación de radios (tangente ≤ 200 m), en los dos sentidos | T302.07 (grupo 1) o T302.08 (grupo 2), R302.04.05-1 | Fuera de rango, `Sin valor en la norma` |
-| Radio tras una recta de más de 400 m (autopistas) | R302.04.05-3: ≥ 700 m | |
+| Radio tras una recta de más de 400 m (autopistas) | R302.04.05-3: ≥ 700 m | Solo en una recta **entre dos curvas** y solo para la curva de **salida** (la siguiente en el sentido de la marcha): una fila por curva; nada en la recta inicial ni en la final |
 | Curva de transición | T302.11A (general, «igual o mayor») o T302.11B (Tercera Clase, «mayor») | `No cumple` si hace falta: el plugin solo crea arcos |
 | Curva compuesta (tangente 0, mismo sentido) | R302.06.02-1: R mayor ≤ 1,5 R menor | `Cumple con aviso` o `No cumple` |
 | Espirales y otros tipos | — | `No verificable` |
@@ -735,7 +743,7 @@ fin; mismo sentido si las dos curvas tienen el mismo `giro`):
 | Pendiente media (Tercera Clase) | R303.03.03-4: ≤ 6 % en la peor ventana de 2000 m | |
 | Descansos (Tercera Clase) | R303.03.03-2 | `Aviso` |
 | Pendiente en curvas de R < 50 m (Tercera Clase) | R303.03.03-5: 8 % | `Aviso` |
-| Lomo quebrado | Sección 303.02 (PDF 170), sin umbral | `Aviso` |
+| Lomo quebrado | Sección 303.02 (PDF 170), sin umbral en la norma | `Aviso` solo con **dos curvas verticales seguidas del mismo sentido** y una tangente entre ellas (del PVI + L/2 de una al PVI − L/2 de la otra) menor que la L mín.o de la T302.01 para la velocidad (por analogía con la planta; criterio documentado, no de la norma) |
 
 **No se comprueba** (va en `no_comprobado`): el peralte de diseño y la transición de peralte (`listar_pis` no los lee),
 el contraperalte, la visibilidad disponible, el sobreancho, la velocidad específica, la coordinación entre planta y
@@ -822,13 +830,16 @@ Las lecturas (`leer_variable`, la simulación de ensayo y `listar_pis`) dejan su
   «superior»: igual no basta), porque el plugin solo crea arcos, y (c) con Δ ≤ 5°, L > 30 (10 − Δ) (F37, R302.02-1:
   R > 30 (10 − Δ) / Δ en radianes). Redondeado **hacia arriba a un múltiplo de 5 m**, como las tablas de la norma; en
   una desigualdad estricta, si el redondeo cae en la igualdad, 5 m más (T302.11B a 60 km/h: 210 → 215).
-- **Sin curva** (0): vértices alineados, vuelta de 180° (con aviso) o deflexión que no pasa de la del cuadro de
-  deflexión sin curva (C302.02-DEFLEX, de 30 a 80 km/h; R302.02-4).
+- **Sin curva** (0): vértices alineados (0,001° o menos), vuelta de 180° (con aviso) o deflexión que no pasa de la del
+  cuadro de deflexión sin curva (C302.02-DEFLEX, de 30 a 80 km/h; R302.02-4). Fuera de 30 a 80 km/h siempre se propone
+  curva y, si el usuario la quita con `radios_por_pi`, el aviso y la verificación dicen «No cumple».
 - **Solo nota**: la longitud mínima 3V/6V (C302.02-LMIN, `nota_3v`). No se imponen la relación de radios
   (T302.07/T302.08) ni los 700 m tras una recta larga en autopista: los muestra la verificación.
 - **Cabida**, en el orden de los PI (la primera curva tiene prioridad, como en el plugin): entre dos curvas se deja la
   tangente mínima (T302.01 L mín.s si son de sentido contrario; el mayor de T302.01 L mín.o y T304.08 si son del mismo
-  sentido; sin fila, F34 o F35); junto al inicio, al fin o a un PI sin curva no hay mínimo. Radio máximo que cabe =
+  sentido; sin fila, F34 o F35), **también si en medio hay PI sin curva**: se busca la curva anterior real y la
+  siguiente que pide curva, y la recta entre ellas (de PT a PC) debe dejar esa tangente (`tangente_minima_antes` y
+  `_despues` dicen `entre` y `pi_sin_curva_en_medio`); junto al inicio o al fin no hay mínimo. Radio máximo que cabe =
   mín(libre antes, libre después) / tan(Δ/2), con 1 mm de margen.
 - **Si el mínimo no cabe**: aviso «La polilínea no permite cumplir la norma en el PI n (mínimo X m; cabe hasta Y m
   dejando la tangente mínima): mueve los vértices o baja la velocidad. ...», y se pide el mayor radio que cabe dejando la

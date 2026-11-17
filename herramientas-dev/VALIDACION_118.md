@@ -140,7 +140,9 @@ Reglas:
       "clasificacion": "Carretera de tercera clase", "orografia": "Ondulado", "ubicacion": "rural"}`. Esperado:
       `ok: false`, `verificado: false`, `error` que empieza por «Faltan datos del proyecto: pavimentada, peralte_maximo»
       y termina con «No se leyó el dibujo.», y `faltan` con `pavimentada` (`valores_validos: [true, false]`) y
-      `peralte_maximo` (`valores_validos: [4, 6, 8, 10, 12]` o los que tenga la base).
+      `peralte_maximo` (`valores_validos` con los peraltes de la T302.04 hasta 8 %, el máximo de la T304.05 en zona rural
+      plana u ondulada: `[4, 6, 8]` si la base tiene esos; desde la corrección de la auditoría de la ronda C ya no salen
+      10 ni 12).
    b. Lo mismo con todos los datos del paso 3c pero `"velocidad_diseno": 65`. Esperado: `faltan` solo con
       `velocidad_diseno`, el motivo dice que la norma no permite interpolar y `valores_validos` es la lista de la
       T204.01 para Tercera Clase en terreno ondulado (con 60, sin 65).

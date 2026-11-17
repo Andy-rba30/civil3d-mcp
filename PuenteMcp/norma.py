@@ -400,6 +400,11 @@ class BaseNorma:
     def deflexion_sin_curva(self, v: int) -> dict | None:
         return self.fila("SELECT * FROM deflexion_sin_curva WHERE velocidad_kmh = ? ORDER BY orden", v)
 
+    def rango_deflexion_sin_curva(self) -> tuple:
+        """Velocidades mínima y máxima del cuadro de deflexión sin curva (de 30 a 80 km/h en la DG-2018)."""
+        r = self.fila("SELECT MIN(velocidad_kmh) AS minima, MAX(velocidad_kmh) AS maxima FROM deflexion_sin_curva")
+        return (r["minima"], r["maxima"]) if r else (None, None)
+
     def longitud_minima_curva(self, autopista: bool) -> dict | None:
         for r in self.filas("SELECT * FROM longitud_minima_curva ORDER BY orden"):
             if normalizar(r["tipo_carretera"]).startswith("autopista") == autopista:
@@ -517,17 +522,43 @@ def _es_tercera(clase) -> bool:
 
 
 def _numero(valor):
+    """Número finito o None (None, booleanos, textos que no son números, NaN e infinitos)."""
     if valor is None or isinstance(valor, bool):
         return None
     try:
-        return float(valor)
-    except (TypeError, ValueError):
+        numero = float(valor)
+    except (TypeError, ValueError, OverflowError):
         return None
+    return numero if math.isfinite(numero) else None
+
+
+def _finito(valor) -> bool:
+    """True si es un número finito (para los datos leídos del dibujo, que pueden venir vacíos)."""
+    return _numero(valor) is not None
+
+
+DATOS_NUMERICOS = ("velocidad_diseno", "peralte_maximo", "altitud_msnm")
+
+
+def _comprobar_numeros(datos: dict):
+    """Un dato numérico del usuario que es NaN o infinito es un error claro, no un dato que falta."""
+    for campo in DATOS_NUMERICOS:
+        valor = datos.get(campo)
+        if valor is None or isinstance(valor, bool):
+            continue
+        try:
+            numero = float(valor)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if not math.isfinite(numero):
+            raise ErrorNorma(f"'{campo}' no es un número finito ({valor!r}): pasa un número en sus unidades "
+                             "(velocidad_diseno en km/h, peralte_maximo en %, altitud_msnm en msnm). No se verificó nada.")
 
 
 def resolver_proyecto(base: BaseNorma, tipo_elemento: str, datos: dict):
     """Comprueba los datos del proyecto contra la base, sin leer el dibujo. Devuelve (contexto, faltan): si `faltan`
     no está vacío, el contexto es None y hay que preguntar esos datos al usuario (con sus valores válidos)."""
+    _comprobar_numeros(datos)
     faltan = []
     alineamiento = tipo_elemento == "alineamiento"
 
@@ -623,12 +654,18 @@ def resolver_proyecto(base: BaseNorma, tipo_elemento: str, datos: dict):
 
 
 def _peraltes_validos(base: BaseNorma, eq: dict, usa_t30204: bool, pide_peralte: bool) -> list:
+    """Peraltes que se pueden elegir. En terreno accidentado, los dos de la T304.05 de la fila; en Tercera Clase no
+    pavimentada, los de la T302.04 que no pasan del máximo absoluto de la T304.05 para esa fila (en terreno plano u
+    ondulado rural no se ofrecen 10 ni 12 %)."""
+    condiciones = [base.peralte_de_condicion(eq["condicion_peralte"]), base.peralte_de_condicion(eq["condicion_peralte_otra"])]
+    condiciones = [p for p in condiciones if p is not None]
     validos = None
     if pide_peralte:
-        validos = [p for p in (base.peralte_de_condicion(eq["condicion_peralte"]),
-                               base.peralte_de_condicion(eq["condicion_peralte_otra"])) if p is not None]
+        validos = condiciones
     if usa_t30204:
         t30204 = base.peraltes_t30204()
+        if condiciones:
+            t30204 = [p for p in t30204 if p <= max(condiciones) + TOLERANCIA]
         validos = t30204 if validos is None else [p for p in validos if any(abs(p - q) <= TOLERANCIA for q in t30204)]
     return [_limpio(p) for p in sorted(set(validos or []))]
 
@@ -740,9 +777,18 @@ def radio_minimo_exigido(base: BaseNorma, ctx: dict) -> dict:
         o = otras[0]
         salida["otra_tabla"] = {"referencia": texto_referencia(base.referencia(o["ref"])), "valor": _limpio(o["valor"])}
         if abs(o["valor"] - elegida["valor"]) > TOLERANCIA:
-            salida["aviso"] = (f"{texto_referencia(base.referencia('T302.02'))} y {texto_referencia(base.referencia('T302.04'))} "
-                               f"dan valores distintos ({_limpio(next(c['valor'] for c in candidatas if c['ref'] == 'T302.02'))} m y "
-                               f"{_limpio(next(c['valor'] for c in candidatas if c['ref'] == 'T302.04'))} m): se aplica el más exigente.")
+            t2 = next(c for c in candidatas if c["ref"] == "T302.02")
+            t4 = next(c for c in candidatas if c["ref"] == "T302.04")
+            ref2, ref4 = texto_referencia(base.referencia("T302.02")), texto_referencia(base.referencia("T302.04"))
+            if abs(t2["fila"]["peralte_max_pct"] - t4["fila"]["peralte_max_pct"]) > TOLERANCIA:
+                salida["aviso"] = (f"{ref2} supone un peralte máximo de {_limpio(t2['fila']['peralte_max_pct'])} % en la "
+                                   f"ubicación '{ctx['ubicacion_radios']}' y da {_limpio(t2['valor'])} m; {ref4}, con el "
+                                   f"peralte del proyecto ({_limpio(t4['fila']['peralte_max_pct'])} %), da {_limpio(t4['valor'])} m. "
+                                   f"No es una contradicción de la norma sino dos peraltes distintos: se exige el más "
+                                   f"exigente ({_limpio(elegida['valor'])} m).")
+            else:
+                salida["aviso"] = (f"{ref2} y {ref4} dan valores distintos con el mismo peralte "
+                                   f"({_limpio(t2['valor'])} m y {_limpio(t4['valor'])} m): se aplica el más exigente.")
     return salida
 
 
@@ -794,11 +840,22 @@ def comprobar_longitud_curva(base: BaseNorma, ctx: dict, deflexion_grados: float
 # ---------------------------------------------------------------------------------------------- E3: PI sin curva
 def comprobar_pi_sin_curva(base: BaseNorma, ctx: dict, deflexion_grados: float, elemento: str = "PI",
                            progresiva=None) -> dict:
+    """R302.02-4 es un permiso: se puede omitir la curva si la deflexión no pasa de la del cuadro C302.02-DEFLEX. El
+    cuadro solo tiene filas de 30 a 80 km/h; fuera de ese rango no hay permiso, así que un PI sin curva con deflexión
+    (por encima de la tolerancia) es «No cumple» (decisión de la orquestadora del 17/11/2026, pendiente de que el
+    dueño la confirme). Así dicen lo mismo la verificación y la propuesta de crear_alineamiento_desde_polilinea."""
     r = base.deflexion_sin_curva(ctx["velocidad"])
     ref = base.referencia("C302.02-DEFLEX")
     if not r:
-        return fila(elemento, "Deflexión máxima sin curva", deflexion_grados, None, "°", MAXIMO, SIN_VALOR, ref, progresiva,
-                    nota=f"El cuadro solo cubre ciertas velocidades (de 30 a 80 km/h); no tiene fila para {ctx['velocidad']} km/h.")
+        minima, maxima = base.rango_deflexion_sin_curva()
+        rango = f"de {minima} a {maxima} km/h" if minima is not None else "ninguna velocidad (cuadro vacío)"
+        if deflexion_grados <= TOLERANCIA:
+            return fila(elemento, "Deflexión máxima sin curva", deflexion_grados, 0, "°", MAXIMO, CUMPLE, ref, progresiva,
+                        nota="Vértices alineados: no hace falta curva.")
+        return fila(elemento, "Deflexión máxima sin curva", deflexion_grados, 0, "°", MAXIMO, NO_CUMPLE, ref, progresiva,
+                    regla=_regla(base, "R302.02-4"),
+                    nota=f"La norma solo permite omitir la curva con el cuadro C302.02-DEFLEX, que cubre {rango}: a "
+                         f"{ctx['velocidad']} km/h el PI necesita curva circular.")
     maximo = r["deflexion_max_grados"]
     resultado = CUMPLE if cumple(deflexion_grados, maximo, MAXIMO) else NO_CUMPLE
     return fila(elemento, "Deflexión máxima sin curva", deflexion_grados, maximo, "°", MAXIMO, resultado, ref, progresiva,
@@ -1206,24 +1263,44 @@ def comprobar_pendiente_en_curvas_cerradas(base: BaseNorma, ctx: dict, tramos: l
     return filas
 
 
+def tangente_corta_lomo(base: BaseNorma, ctx: dict) -> tuple[float, str]:
+    """Criterio de «tangente corta» del lomo quebrado (la norma no da longitud en perfil): por analogía con la planta,
+    la tangente mínima entre curvas del mismo sentido de la T302.01 (L mín.o) para la velocidad de diseño; sin fila,
+    la fórmula F35 (2,78 V). Devuelve (longitud, de dónde sale)."""
+    t = base.longitud_tangente(ctx["velocidad"])
+    if t and _finito(t["l_min_o_m"]):
+        return float(t["l_min_o_m"]), texto_referencia(base.referencia("T302.01")) + ", L mín.o"
+    return tangente_minima_o(ctx["velocidad"]), texto_referencia(base.referencia("F35"))
+
+
 def comprobar_lomo_quebrado(base: BaseNorma, ctx: dict, pvis: list) -> list[dict]:
-    """303.02: evitar dos curvas verticales del mismo sentido unidas por una tangente corta. La norma no da longitud:
-    aviso para cada par de PVI seguidos del mismo sentido."""
+    """303.02: evitar dos curvas verticales del mismo sentido unidas por una tangente corta. Solo PVI seguidos que
+    tienen curva vertical y son del mismo sentido (las dos convexas o las dos cóncavas). La tangente entre ellas va del
+    final de la primera (PVI + L/2) al principio de la segunda (PVI − L/2), con curvas simétricas. La norma no da
+    longitud: «corta» es menor que la tangente mínima entre curvas del mismo sentido en planta (T302.01, L mín.o), por
+    analogía (criterio documentado, no de la norma). Solo aviso."""
     ref = referencia_seccion(**SECCION_LOMO_QUEBRADO)
-    interiores = [p for p in pvis if p.get("pe_pct") is not None and p.get("ps_pct") is not None
-                  and abs(float(p["ps_pct"]) - float(p["pe_pct"])) > TOLERANCIA]
+    con_curva = [p for p in pvis if p.get("tiene_curva") and _finito(p.get("pe_pct")) and _finito(p.get("ps_pct"))
+                 and _finito(p.get("longitud_curva")) and abs(float(p["ps_pct"]) - float(p["pe_pct"])) > TOLERANCIA]
+    corta, origen = tangente_corta_lomo(base, ctx)
     filas = []
-    for a, b in zip(interiores, interiores[1:]):
+    for a, b in zip(con_curva, con_curva[1:]):
         if b["n"] != a["n"] + 1:
             continue
         convexa_a, convexa_b = float(a["pe_pct"]) > float(a["ps_pct"]), float(b["pe_pct"]) > float(b["ps_pct"])
-        if convexa_a == convexa_b:
-            tangente = float(b["progresiva"]) - float(a["progresiva"])
-            filas.append(fila(f"PVI {a['n']} y PVI {b['n']}", "Lomo quebrado (dos curvas del mismo sentido seguidas)",
-                              tangente, None, "m", CONDICION, AVISO, ref,
-                              f"{progresiva_texto(float(a['progresiva']))} a {progresiva_texto(float(b['progresiva']))}",
-                              sentido="convexas" if convexa_a else "cóncavas",
-                              nota="La norma no da longitud mínima: revisa si la tangente entre las dos curvas es corta."))
+        if convexa_a != convexa_b:
+            continue
+        fin_a = float(a["progresiva"]) + float(a["longitud_curva"]) / 2.0
+        inicio_b = float(b["progresiva"]) - float(b["longitud_curva"]) / 2.0
+        tangente = max(0.0, inicio_b - fin_a)
+        if tangente >= corta - TOLERANCIA:
+            continue
+        filas.append(fila(f"PVI {a['n']} y PVI {b['n']}", "Lomo quebrado (dos curvas del mismo sentido con tangente corta)",
+                          tangente, corta, "m", MINIMO, AVISO, ref,
+                          f"{progresiva_texto(fin_a)} a {progresiva_texto(inicio_b)}",
+                          sentido="convexas" if convexa_a else "cóncavas", criterio_corta=origen,
+                          nota=f"La norma no da longitud: se avisa si la tangente entre las dos curvas es menor que "
+                               f"{_limpio(corta)} m ({origen}, por analogía con la planta). Solo aviso."))
     return filas
 
 
@@ -1241,6 +1318,74 @@ def unidades_no_validas(tabla_pis: dict) -> str | None:
 
 def _etiqueta(pi: dict) -> str:
     return f"PI {pi.get('numero')}"
+
+
+def _mismo_sentido(a: dict, b: dict) -> bool:
+    return a.get("giro") == b.get("giro") and a.get("giro") in ("izquierda", "derecha")
+
+
+def _filas_entre_curvas(base: BaseNorma, ctx: dict, antes: dict, despues: dict, longitud: float, elemento: str,
+                        progresiva, nota: str | None = None) -> list[dict]:
+    """Lo que se comprueba en la recta entre dos curvas consecutivas (también si en medio hay PI sin curva): curva
+    compuesta o tangente mínima (con los avisos de 400 y 500 m del mismo sentido), relación de radios si la recta no
+    pasa de 200 m y, en autopistas, el radio de la curva de SALIDA tras una recta de más de 400 m (R302.04.05-3)."""
+    filas = []
+    mismo = _mismo_sentido(antes, despues)
+    radios_ok = _finito(antes.get("radio")) and _finito(despues.get("radio"))
+    pareja = f"Curvas {_etiqueta(antes)} y {_etiqueta(despues)}"
+    if longitud <= TOLERANCIA and mismo:
+        if radios_ok:
+            filas.append(comprobar_curva_compuesta(base, ctx, float(antes["radio"]), float(despues["radio"]), pareja,
+                                                   progresiva))
+        else:
+            filas.append(fila(pareja, "Curva compuesta: R mayor ≤ 1,5 R menor", None, None, "veces", MAXIMO,
+                              NO_VERIFICABLE, base.referencia("R302.06.02-1"), progresiva,
+                              nota="listar_pis no dio el radio de alguna de las dos curvas."))
+    else:
+        filas.extend(comprobar_tangente_minima(base, ctx, longitud, mismo, elemento, progresiva))
+    if longitud <= UMBRALES_REGLAS["R302.04.05-1"] + TOLERANCIA:
+        if radios_ok:
+            filas.append(comprobar_relacion_radios(base, ctx, float(antes["radio"]), float(despues["radio"]),
+                                                   f"{_etiqueta(antes)} → {_etiqueta(despues)}", progresiva))
+            filas.append(comprobar_relacion_radios(base, ctx, float(despues["radio"]), float(antes["radio"]),
+                                                   f"{_etiqueta(despues)} → {_etiqueta(antes)}", progresiva))
+        else:
+            filas.append(fila(f"{_etiqueta(antes)} y {_etiqueta(despues)}", "Relación entre radios consecutivos", None,
+                              None, "m", RANGO, NO_VERIFICABLE, None, progresiva,
+                              nota="listar_pis no dio el radio de alguna de las dos curvas."))
+    if _finito(despues.get("radio")):
+        r = comprobar_radio_tras_recta_larga(base, ctx, longitud, float(despues["radio"]), f"Curva {_etiqueta(despues)}",
+                                             progresiva)
+        if r:
+            filas.append(r)
+    if nota:
+        for f in filas:
+            f["detalle"]["nota"] = nota + (" " + f["detalle"]["nota"] if f["detalle"].get("nota") else "")
+    return filas
+
+
+def _filas_de_curva(base: BaseNorma, ctx: dict, pi: dict, elemento: str, prog) -> list[dict]:
+    """Radio mínimo, longitudes, transición y deflexión mínima de una curva; «No verificable» si falta un dato."""
+    filas = []
+    radio, longitud, deflexion = pi.get("radio"), pi.get("longitud_curva"), pi.get("deflexion_grados")
+    if _finito(radio):
+        filas.append(comprobar_radio_minimo(base, ctx, float(radio), elemento, prog))
+    else:
+        filas.append(fila(elemento, "Radio de la curva", None, None, "m", CONDICION, NO_VERIFICABLE, None, prog,
+                          nota="listar_pis no dio el radio de esta curva: no se verifican el radio mínimo ni la transición."))
+    if _finito(longitud):
+        filas.extend(comprobar_longitud_curva(base, ctx, float(deflexion) if _finito(deflexion) else None, float(longitud),
+                                              elemento, prog))
+    else:
+        filas.append(fila(elemento, "Longitud de la curva", None, None, "m", CONDICION, NO_VERIFICABLE, None, prog,
+                          nota="listar_pis no dio la longitud de esta curva: no se verifican las longitudes mínimas."))
+    if _finito(radio):
+        filas.append(comprobar_transicion(base, ctx, float(radio), elemento, prog))
+    if _finito(deflexion):
+        aviso = comprobar_deflexion_minima(base, ctx, float(deflexion), elemento, prog)
+        if aviso:
+            filas.append(aviso)
+    return filas
 
 
 def verificar_alineamiento(base: BaseNorma, ctx: dict, tabla_pis: dict) -> tuple[list, list]:
@@ -1266,27 +1411,24 @@ def verificar_alineamiento(base: BaseNorma, ctx: dict, tabla_pis: dict) -> tuple
     tangentes.append({"desde": previo[0], "hasta": "fin", "inicio": previo[1],
                       "fin": (tabla_pis.get("fin") or {}).get("progresiva"), "pi_antes": previo[2], "pi_despues": None})
 
-    pares = []   # (orden en el eje, fila): la tangente i va antes del PI i
+    pares = []   # (orden en el eje, fila): la tangente i va antes del PI i; la recta que salta PI sin curva, justo antes del PI
     for i, pi in enumerate(pis):
         filas = []
         tipo = pi.get("tipo")
-        prog = pi.get("progresiva_texto") or progresiva_texto(pi.get("progresiva"))
+        prog = pi.get("progresiva_texto") or (progresiva_texto(pi.get("progresiva")) if _finito(pi.get("progresiva")) else None)
         deflexion = pi.get("deflexion_grados")
         if tipo == "curva":
-            elemento = f"Curva {_etiqueta(pi)}"
-            radio, longitud = pi.get("radio"), pi.get("longitud_curva")
-            filas.append(comprobar_radio_minimo(base, ctx, radio, elemento, prog))
-            filas.extend(comprobar_longitud_curva(base, ctx, deflexion, longitud, elemento, prog))
-            filas.append(comprobar_transicion(base, ctx, radio, elemento, prog))
-            aviso = comprobar_deflexion_minima(base, ctx, deflexion, elemento, prog)
-            if aviso:
-                filas.append(aviso)
+            filas.extend(_filas_de_curva(base, ctx, pi, f"Curva {_etiqueta(pi)}", prog))
         elif tipo == "sin_curva":
             elemento = f"{_etiqueta(pi)} (sin curva)"
-            filas.append(comprobar_pi_sin_curva(base, ctx, deflexion, elemento, prog))
-            aviso = comprobar_deflexion_minima(base, ctx, deflexion, elemento, prog)
-            if aviso:
-                filas.append(aviso)
+            if not _finito(deflexion):
+                filas.append(fila(elemento, "Deflexión máxima sin curva", None, None, "°", MAXIMO, NO_VERIFICABLE,
+                                  base.referencia("C302.02-DEFLEX"), prog, nota="listar_pis no dio la deflexión de este PI."))
+            else:
+                filas.append(comprobar_pi_sin_curva(base, ctx, float(deflexion), elemento, prog))
+                aviso = comprobar_deflexion_minima(base, ctx, float(deflexion), elemento, prog)
+                if aviso:
+                    filas.append(aviso)
         else:
             elemento = f"{_etiqueta(pi)} ({tipo})"
             filas.append(fila(elemento, "Tipo de entidad", None, None, None, CONDICION, NO_VERIFICABLE, None, prog,
@@ -1297,9 +1439,9 @@ def verificar_alineamiento(base: BaseNorma, ctx: dict, tabla_pis: dict) -> tuple
     for i, t in enumerate(tangentes):
         filas = []
         elemento = f"Tangente {t['desde']}–{t['hasta']}"
-        if t["inicio"] is None or t["fin"] is None:
+        if not _finito(t["inicio"]) or not _finito(t["fin"]):
             filas.append(fila(elemento, "Tangente", None, None, "m", CONDICION, NO_VERIFICABLE, None, None,
-                              nota="Junto a un tipo no soportado: no se conoce su longitud."))
+                              nota="Junto a un tipo no soportado o sin progresivas: no se conoce su longitud."))
             pares.extend((2 * i, f) for f in filas)
             continue
         longitud = float(t["fin"]) - float(t["inicio"])
@@ -1311,29 +1453,40 @@ def verificar_alineamiento(base: BaseNorma, ctx: dict, tabla_pis: dict) -> tuple
             continue
         longitud = max(longitud, 0.0)
         antes, despues = t["pi_antes"], t["pi_despues"]
-        entre_curvas = (antes is not None and despues is not None and antes.get("tipo") == "curva"
-                        and despues.get("tipo") == "curva")
         if longitud > TOLERANCIA:
             filas.append(comprobar_tangente_maxima(base, ctx, longitud, elemento, prog))
-        if entre_curvas:
-            giros = (antes.get("giro"), despues.get("giro"))
-            mismo_sentido = giros[0] == giros[1] and giros[0] in ("izquierda", "derecha")
-            pareja = f"Curvas {_etiqueta(antes)} y {_etiqueta(despues)}"
-            if longitud <= TOLERANCIA and mismo_sentido:
-                filas.append(comprobar_curva_compuesta(base, ctx, antes["radio"], despues["radio"], pareja, prog))
-            else:
-                filas.extend(comprobar_tangente_minima(base, ctx, longitud, mismo_sentido, elemento, prog))
-            if longitud <= UMBRALES_REGLAS["R302.04.05-1"] + TOLERANCIA:
-                filas.append(comprobar_relacion_radios(base, ctx, antes["radio"], despues["radio"],
-                                                       f"{_etiqueta(antes)} → {_etiqueta(despues)}", prog))
-                filas.append(comprobar_relacion_radios(base, ctx, despues["radio"], antes["radio"],
-                                                       f"{_etiqueta(despues)} → {_etiqueta(antes)}", prog))
-        for pi in (antes, despues):
-            if pi is not None and pi.get("tipo") == "curva":
-                r = comprobar_radio_tras_recta_larga(base, ctx, longitud, pi["radio"], f"Curva {_etiqueta(pi)}", prog)
-                if r:
-                    filas.append(r)
+        if (antes is not None and despues is not None and antes.get("tipo") == "curva"
+                and despues.get("tipo") == "curva"):
+            filas.extend(_filas_entre_curvas(base, ctx, antes, despues, longitud, elemento, prog))
         pares.extend((2 * i, f) for f in filas)
+
+    # Rectas entre dos curvas con PI sin curva en medio: del PT de una al PC de la siguiente (un tipo no soportado
+    # corta la cuenta). Se comprueban igual que las rectas entre curvas seguidas.
+    ultima, en_medio = None, []
+    for i, pi in enumerate(pis):
+        tipo = pi.get("tipo")
+        if tipo == "sin_curva":
+            if ultima is not None:
+                en_medio.append(pi)
+            continue
+        if tipo != "curva":
+            ultima, en_medio = None, []
+            continue
+        if ultima is not None and en_medio and _finito(ultima.get("progresiva_pt")) and _finito(pi.get("progresiva_pc")):
+            inicio, fin = float(ultima["progresiva_pt"]), float(pi["progresiva_pc"])
+            elemento = f"Tangente {_etiqueta(ultima)}–{_etiqueta(pi)}"
+            prog = f"{progresiva_texto(inicio)} a {progresiva_texto(fin)}"
+            sin_curva = ", ".join(_etiqueta(p) for p in en_medio)
+            if fin - inicio < -TOLERANCIA:
+                filas = [fila(elemento, "Tangente", fin - inicio, None, "m", CONDICION, NO_VERIFICABLE, None, prog,
+                              nota="Longitud negativa: las curvas se solapan.")]
+            else:
+                filas = _filas_entre_curvas(
+                    base, ctx, ultima, pi, max(fin - inicio, 0.0), elemento, prog,
+                    nota=f"Hay un PI sin curva en medio ({sin_curva}): la recta se mide del PT de la curva "
+                         f"{_etiqueta(ultima)} al PC de la curva {_etiqueta(pi)}.")
+            pares.extend((2 * i + 0.5, f) for f in filas)
+        ultima, en_medio = pi, []
     pares.sort(key=lambda par: par[0])
     return [comprobar_velocidad(base, ctx)] + [f for _, f in pares], no_comprobado
 

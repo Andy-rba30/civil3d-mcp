@@ -46,6 +46,26 @@ CAPAS = {
 }
 
 
+def _por_rumbos(tramos, giros_izquierda):
+    """Vértices desde (0, 0) hacia el este con esos tramos y giros a la izquierda (grados) en cada PI."""
+    vertices, rumbo = [(0.0, 0.0)], 0.0
+    for i, largo in enumerate(tramos):
+        vertices.append(_direccion(rumbo, largo, vertices[-1]))
+        if i < len(giros_izquierda):
+            rumbo += giros_izquierda[i]
+    return vertices
+
+
+# Auditoría de la ronda C. I1: giros de 40°, 1° y 40° a la izquierda con tramos 600, 160, 160 y 600.
+CAPAS["SALTO"] = _por_rumbos([600, 160, 160, 600], [40, 1, 40])
+# I2: un PI de 20° (autopista a 100 km/h). M1: dos curvas con 2000 m de recta entre ellas, y una sola curva.
+CAPAS["AUTOPISTA_1"] = _por_rumbos([1000, 2500], [20])
+CAPAS["AUTOPISTA_2"] = _por_rumbos([1000, 2000, 3000], [20, 20])
+SEGUNDA_60 = {"velocidad_diseno": 60, "clasificacion": SEGUNDA, "orografia": "Ondulado", "ubicacion": "rural"}
+AUTOPISTA_100 = {"velocidad_diseno": 100, "clasificacion": "Autopista de primera clase", "orografia": "Plano",
+                 "ubicacion": "rural"}
+
+
 # ---------------------------------------------------------------------------------------------- plugin falso
 def planificar(vertices, radios):
     """Alineamiento.Planificar (Alineamiento.cs) en Python, con los mismos redondeos de salida (4 decimales)."""
@@ -436,3 +456,52 @@ def test_tangente_minima_mismo_sentido_aplica_la_mas_exigente(memoria):
         assert sin_fila["valor"] == round(1.39 * 70, 3) and "fórmula" in sin_fila["nota"]
     finally:
         base.cerrar()
+
+
+# ---------------------------------------------------------------------------------------------- auditoría de la ronda C
+def test_tangente_minima_con_un_pi_sin_curva_en_medio(servidor, puente, plugin):
+    """I1: la propuesta busca la curva anterior real (PI 1) saltando el PI 2 sin curva y deja la tangente mínima del
+    mismo sentido (167 m, T302.01 L mín.o) en la recta de PT 1 a PC 3."""
+    r = crear(puente, nombre="Eje Salto", capa="SALTO", simular=True, **SEGUNDA_60)
+    p1, p2, p3 = pi(r, 1), pi(r, 2), pi(r, 3)
+    assert p2["radio_pedido"] == 0 and p2["origen"] == "sin_curva"
+    assert p1["radio_pedido"] == 250 and p1["tangente_minima_despues"]["valor"] == 167
+    assert p1["tangente_minima_despues"]["pi_sin_curva_en_medio"] == [2]
+    assert p3["radio_pedido"] == 170 and p3["cumple_minimo"] is False and p3["radio_maximo_que_cabe"] == 170.364
+    assert "La polilínea no permite cumplir la norma en el PI 3" in p3["aviso"]
+    assert p3["tangente_minima_antes"]["entre"] == "PI 1 y PI 3" and "Hay PI sin curva en medio (PI 2)" in p3["tangente_minima_antes"]["nota"]
+    minima = r["propuesta_norma"]["tangentes_minimas"]
+    assert minima[0]["tramo"] == "PI 1–PI 3" and minima[0]["sentido"] == "mismo sentido" and minima[0]["valor"] == 167
+    salto = filas(r["verificacion"], "Tangente PI 1–PI 3", "Tangente mínima entre curvas del mismo sentido")[0]
+    assert salto["resultado"] != "No cumple" and salto["valor_diseno"] >= 167
+    # con los radios de antes (250, 0, 250) la recta es de unos 138 m y la verificación ya lo marca
+    r = crear(puente, nombre="Eje Salto", capa="SALTO", simular=True, radios_por_pi="[250, 0, 250]", **SEGUNDA_60)
+    assert "no deja la tangente mínima" in pi(r, 3)["aviso"]
+    salto = filas(r["verificacion"], "Tangente PI 1–PI 3", "Tangente mínima entre curvas del mismo sentido")[0]
+    assert salto["resultado"] == "No cumple" and round(salto["valor_diseno"]) == 138 and salto["valor_exigido"] == 167
+    assert "Hay un PI sin curva en medio (PI 2)" in salto["detalle"]["nota"]
+    otras = [f["comprobacion"] for f in r["verificacion"]["filas"] if f["elemento"] == "Tangente PI 1–PI 3"]
+    assert any("500 m" in c for c in otras) and any("400 m" in c for c in otras), "avisos de 500 y 400 m"
+    relaciones = [f["elemento"] for f in r["verificacion"]["filas"] if f["comprobacion"] == "Relación entre radios consecutivos"]
+    assert relaciones == ["PI 1 → PI 3", "PI 3 → PI 1"], "recta de 138 m (≤ 200): relación de radios"
+
+
+def test_pi_sin_curva_por_encima_de_80_kmh(servidor, puente, plugin):
+    """I2: a 100 km/h el cuadro de deflexión sin curva no tiene fila: la propuesta pone curva y, si el usuario la
+    quita, la verificación dice «No cumple» (lo mismo que avisa la propuesta)."""
+    r = crear(puente, nombre="Eje Autopista", capa="AUTOPISTA_1", simular=True, **AUTOPISTA_100)
+    assert pi(r, 1)["radio_pedido"] == 900 and pi(r, 1)["origen"] == "norma"
+    r = crear(puente, nombre="Eje Autopista", capa="AUTOPISTA_1", simular=True, radios_por_pi="[0]", **AUTOPISTA_100)
+    assert "pediste el PI sin curva y la norma pide curva" in pi(r, 1)["aviso"]
+    fila = filas(r["verificacion"], "PI 1 (sin curva)", "Deflexión máxima sin curva")[0]
+    assert fila["resultado"] == "No cumple" and "solo permite omitir la curva" in fila["detalle"]["nota"]
+
+
+def test_radio_tras_recta_larga_solo_en_la_curva_de_salida(servidor, puente, plugin):
+    """M1: R302.04.05-3 solo entre dos curvas y solo para la curva de salida; nada en las rectas inicial y final."""
+    regla = "Radio tras una recta de más de 400 m (autopista)"
+    r = crear(puente, nombre="Eje A2", capa="AUTOPISTA_2", simular=True, radios_por_pi="[900, 600]", **AUTOPISTA_100)
+    salida = [f for f in r["verificacion"]["filas"] if f["comprobacion"] == regla]
+    assert [(f["elemento"], f["resultado"]) for f in salida] == [("Curva PI 2", "No cumple")]
+    r = crear(puente, nombre="Eje A1", capa="AUTOPISTA_1", simular=True, radios_por_pi="[600]", **AUTOPISTA_100)
+    assert [f for f in r["verificacion"]["filas"] if f["comprobacion"] == regla] == [], "recta final de 2000 m: nada"

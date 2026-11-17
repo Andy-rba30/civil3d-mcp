@@ -25,7 +25,10 @@ Criterios (plan 4.3, aprobados el 17/11/2026):
 - 3V/6V solo es una nota; la relación de radios y el radio tras una recta larga de autopista no se imponen (los
   muestra la verificación).
 - Cabida en el orden de los PI (como el plugin: la primera curva tiene prioridad), dejando entre dos curvas la
-  tangente mínima (T302.01 y, del mismo sentido, también T304.08: la más exigente). Si el mínimo no cabe: aviso y se
+  tangente mínima (T302.01 y, del mismo sentido, también T304.08: la más exigente), también si en medio hay PI sin
+  curva (se busca la curva anterior real; corrección de la auditoría de la ronda C).
+- Por encima de 80 km/h el cuadro de deflexión sin curva no da permiso: siempre se propone curva (igual que dice
+  verificar_norma). Si el mínimo no cabe: aviso y se
   pide el mayor radio que cabe con la tangente mínima, hacia abajo a 5 m; si no llega a 5 m, el mayor que admite el
   plugin (sin la tangente mínima); si tampoco, 0. Siempre anunciado.
 - Los radios del usuario ('radio' para los PI que 'radios_por_pi' no nombra, 'radios_por_pi' para los que nombra)
@@ -70,7 +73,7 @@ RADIO_MINIMO_PEDIBLE_M = 5.0    # por debajo de esto no se pide curva cuando el 
 MARGEN_CABIDA_M = 0.001         # margen al comprobar que una tangente cabe (el plugin redondea a 4 decimales)
 MARGEN_ESTRICTO_M = 0.01        # margen en L > 30 (10 − Δ), por el redondeo de la deflexión
 RADIO_PROVISIONAL = 1.0         # radio de la simulación de ensayo: el plugin lo exige > 0 y aquí no se usa
-DEFLEXION_NULA_GRADOS = 1e-4    # vértices alineados
+DEFLEXION_NULA_GRADOS = n.TOLERANCIA   # vértices alineados (la misma tolerancia que verificar_norma)
 INSUNITS_METROS = "6"
 INSUNITS_NOMBRES = {"0": "sin unidades", "1": "pulgadas", "2": "pies", "3": "millas", "4": "milímetros",
                     "5": "centímetros", "6": "metros", "7": "kilómetros", "10": "yardas"}
@@ -81,7 +84,7 @@ CRITERIO = (
     "deflexión de 5° o menos. Redondeado hacia arriba a un múltiplo de 5 m (como las tablas de la norma). Sin curva si "
     "la deflexión cabe en el cuadro de deflexión sin curva. La longitud 3V/6V solo es una nota. Cabida en el orden de "
     "los PI (la primera curva tiene prioridad, como en el plugin), dejando entre dos curvas la tangente mínima (T302.01 "
-    "y, del mismo sentido, T304.08: la más exigente) y 1 mm de margen. Si el mínimo no cabe: el mayor radio que cabe "
+    "y, del mismo sentido, T304.08: la más exigente), también si en medio hay PI sin curva, y 1 mm de margen. Si el mínimo no cabe: el mayor radio que cabe "
     "con la tangente mínima, hacia abajo a 5 m; si no llega a 5 m, el mayor que cabe sin ella; si tampoco, sin curva. "
     "Los radios del usuario mandan."
 )
@@ -339,6 +342,18 @@ def _mismo_sentido(a: dict, b: dict) -> bool:
     return a.get("giro") == b.get("giro") and a.get("giro") in ("izquierda", "derecha")
 
 
+def _con_en_medio(tmin: dict, filas: list, desde: int, hasta: int) -> dict:
+    """La tangente mínima entre las curvas de los PI desde y hasta, con la curva vecina y los PI sin curva de en medio."""
+    tmin = dict(tmin)
+    tmin["entre"] = f"PI {filas[desde]['pi']['numero']} y PI {filas[hasta]['pi']['numero']}"
+    en_medio = [filas[x]["pi"]["numero"] for x in range(desde + 1, hasta)]
+    if en_medio:
+        tmin["pi_sin_curva_en_medio"] = en_medio
+        tmin["nota"] = ("Hay PI sin curva en medio (" + ", ".join(f"PI {x}" for x in en_medio) + "): la tangente mínima "
+                        "se deja en la recta entre las dos curvas.")
+    return tmin
+
+
 def _necesidad(base: n.BaseNorma, ctx: dict, pi: dict, comunes: list) -> dict:
     """Primera pasada: si el PI necesita curva según la norma y su mínimo."""
     delta = pi["deflexion_grados"]
@@ -402,17 +417,25 @@ def proponer(base: n.BaseNorma, ctx: dict, geo: dict, fijos: dict) -> dict:
         pi, nec = f["pi"], f["nec"]
         delta = pi["deflexion_grados"]
         tan_mitad = _tan_mitad(delta) if nec["necesita_curva"] or f["objetivo"] > 0 else 0.0
-        anterior = filas[i - 1] if i > 0 else None
-        siguiente = filas[i + 1] if i + 1 < len(filas) else None
         con_curva = f["objetivo"] > 0
-        curva_antes = con_curva and anterior is not None and radios[i - 1] > 0 and tangentes[i - 1] > 0
-        curva_despues = con_curva and siguiente is not None and siguiente["objetivo"] > 0
-        tmin_antes = tangente_minima(base, ctx, _mismo_sentido(anterior["pi"], pi)) if curva_antes else None
-        tmin_despues = tangente_minima(base, ctx, _mismo_sentido(pi, siguiente["pi"])) if curva_despues else None
+        # Curva anterior real (la última con curva, saltando los PI sin curva) y siguiente que pide curva: la tangente
+        # mínima se deja en la recta entre las dos curvas, aunque en medio haya PI sin curva.
+        j = next((x for x in range(i - 1, -1, -1) if radios[x] > 0 and tangentes[x] > 0), None) if con_curva else None
+        k = next((x for x in range(i + 1, len(filas)) if filas[x]["objetivo"] > 0), None) if con_curva else None
+        anterior = filas[j] if j is not None else None
+        siguiente = filas[k] if k is not None else None
+        tmin_antes = _con_en_medio(tangente_minima(base, ctx, _mismo_sentido(anterior["pi"], pi)), filas, j, i) \
+            if anterior else None
+        tmin_despues = _con_en_medio(tangente_minima(base, ctx, _mismo_sentido(pi, siguiente["pi"])), filas, i, k) \
+            if siguiente else None
         libre_antes_geo = tramos[i] - (tangentes[i - 1] if i > 0 else 0.0)
         libre_despues_geo = tramos[i + 1]
-        libre_antes = libre_antes_geo - (tmin_antes["valor"] if tmin_antes else 0.0)
-        libre_despues = libre_despues_geo - (tmin_despues["valor"] if tmin_despues else 0.0)
+        libre_antes, libre_despues = libre_antes_geo, libre_despues_geo
+        if tmin_antes:
+            recta = sum(tramos[j + 1:i + 1]) - tangentes[j]   # del PT de la curva anterior al PI
+            libre_antes = min(libre_antes_geo, recta - tmin_antes["valor"])
+        if tmin_despues:
+            libre_despues = min(libre_despues_geo, sum(tramos[i + 1:k + 1]) - tmin_despues["valor"])
         cabe_hasta = min(libre_antes, libre_despues)
         radio_max = max(0.0, cabe_hasta / tan_mitad) if tan_mitad > 0 else None
         radio_max_geo = max(0.0, min(libre_antes_geo, libre_despues_geo) / tan_mitad) if tan_mitad > 0 else None
@@ -508,7 +531,7 @@ def proponer(base: n.BaseNorma, ctx: dict, geo: dict, fijos: dict) -> dict:
         if tmin_antes:
             tangentes_minimas.append({"tramo": f"PI {anterior['pi']['numero']}–PI {pi['numero']}",
                                       "sentido": "mismo sentido" if _mismo_sentido(anterior["pi"], pi) else "sentido contrario",
-                                      **tmin_antes})
+                                      **{c: v for c, v in tmin_antes.items() if c != "entre"}})
 
     return {
         "pis": [f["salida"] for f in filas],
