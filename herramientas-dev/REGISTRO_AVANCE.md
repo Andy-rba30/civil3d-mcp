@@ -72,7 +72,7 @@ una presenta su plan y la orquestadora lo aprueba por `send_message`):
 | 6.7 Evaluación honesta (comprobaciones manuales) | `session_01CdHU38kGV8ado1NVu2nujn` | `memoria-firma` (main) | — | plan aprobado (banco versión 2; tareas 1, 2, 3, 5, 8, 9 y 10 con comprobaciones del MCP), trabajando |
 | 6.9 `verificar_norma` y propuesta de radios con las decisiones del dueño | `session_01CdHU36FFBPjbfjEgijDCci` | `tarea/6.9-norma-decisiones` | 1.21.1 | plan pendiente |
 | 6.10 Digitalizar las Figuras 302.02 a 302.05 (peralte) | `session_01CdHU34ytgX6VkmhiAmnegy` | `memoria-firma` (main) | — | plan pendiente; no toca la base hasta que acabe la 6.4 |
-| 6.8 XML DG-2018 corregido desde la base | — | — | — | después de 6.4 y 6.10 |
+| 6.8 XML DG-2018 corregido desde la base | — | `memoria-firma` | — | después de 6.4 y 6.10; base: los XML del dueño en `memoria-firma/normas/civil3d/` (commit `12a56d3`, con su permiso) |
 
 Los informes del verificador independiente están en `memoria-firma/normas/tablas/VERIFICACION_PERALTE_SOBREANCHO_20261117_A.md`
 y `VERIFICACION_CRITERIOS_PENDIENTES_20261117_B.md` (commit `b2dc3e4`).
