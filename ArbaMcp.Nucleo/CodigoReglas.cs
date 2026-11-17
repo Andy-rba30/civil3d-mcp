@@ -269,6 +269,14 @@ namespace ArbaMcp.Nucleo
             new ReglaMiembro("Database", "Insert", Transaccion),   // las 3 sobrecargas: añade objetos de otra base al dibujo
             new ReglaMiembro("Database", "Wblock", Documentos),
             new ReglaMiembro("Database", "BindXrefs", Documentos),
+            // Auditoría de la ronda C (I6): los gemelos de BindXrefs y el apagado del registro de Deshacer
+            new ReglaMiembro("Database", "XBindXrefs", Documentos),
+            new ReglaMiembro("Database", "DetachXref", Documentos),
+            new ReglaMiembro("Database", "ReloadXrefs", Documentos),
+            new ReglaMiembro("Database", "UnloadXrefs", Documentos),
+            new ReglaMiembro("Database", "ResolveXrefs", Documentos),
+            new ReglaMiembro("Database", "DisableUndoRecording", Transaccion),
+            new ReglaMiembro("DBObject", "DisableUndoRecording", Transaccion),
             new ReglaMiembro("HostApplicationServices", "WorkingDatabase", Documentos, soloEscritura: true),
             new ReglaMiembro("HostApplicationServices", "GetRemoteFile", Red),
             new ReglaMiembro("HostApplicationServices", "PutRemoteFile", Red),
@@ -419,12 +427,17 @@ namespace ArbaMcp.Nucleo
         /// <summary>
         /// Métodos que escriben o se saltan el bloqueo de lectura, en cualquier tipo de Autodesk (por nombre exacto):
         /// abrir para escritura un objeto ya abierto, borrar, añadir al dibujo, intercambiar o clonar objetos, auditar
-        /// (corrige errores) y bloquear el documento (LockDocument pide bloqueo de escritura).
+        /// (corrige errores) y bloquear el documento (LockDocument pide bloqueo de escritura). Desde la auditoría de la
+        /// ronda C (I3): clonar un objeto (DeepClone, WblockClone), las referencias externas (XBindXrefs, DetachXref,
+        /// ReloadXrefs, UnloadXrefs, ResolveXrefs), apagar el registro de Deshacer y cerrar, cancelar o rebajar una
+        /// apertura (Close, Cancel, DowngradeOpen: abrir y cerrar sin transacción).
         /// </summary>
         public static readonly HashSet<string> MetodosQueEscriben = new HashSet<string>(StringComparer.Ordinal)
         {
             "UpgradeOpen", "UpgradeFromNotify", "Erase", "AppendEntity", "AddNewlyCreatedDBObject", "SwapIdWith", "HandOverTo",
-            "DeepCloneObjects", "WblockCloneObjects", "Wblock", "Audit", "LockDocument"
+            "DeepCloneObjects", "WblockCloneObjects", "Wblock", "Audit", "LockDocument",
+            "DeepClone", "WblockClone", "XBindXrefs", "DetachXref", "ReloadXrefs", "UnloadXrefs", "ResolveXrefs",
+            "DisableUndoRecording", "Close", "Cancel", "DowngradeOpen"
         };
 
         /// <summary>
@@ -436,10 +449,18 @@ namespace ArbaMcp.Nucleo
         public static readonly string[] PrefijosQueEscriben =
         {
             "Add", "Append", "Create", "Remove", "Delete", "Set", "Rebuild", "Paste", "Import", "Update", "Rename", "Insert",
-            "Extract", "Clear", "Reverse", "Join", "Transform"
+            "Extract", "Clear", "Reverse", "Join", "Transform",
+            // Auditoría de la ronda C (I3): LayerStateManager.SaveLayerState/RestoreLayerState, LayoutManager.CloneLayout/CopyLayout, DBObject.CopyFrom
+            "Save", "Restore", "Clone", "Copy"
         };
 
-        /// <summary>Tipos de AutoCAD (nombre completo) en los que, con sus derivados, cuentan los prefijos y las asignaciones.</summary>
+        /// <summary>
+        /// Tipos de AutoCAD (nombre completo) en los que, con sus derivados, cuentan los prefijos y las asignaciones. Desde
+        /// la auditoría de la ronda C (I3), también los gestores que heredan de RXObject y no de DBObject pero cambian el
+        /// dibujo: presentaciones (LayoutManager: CreateLayout, DeleteLayout, CurrentLayout = ...), estados de capa
+        /// (LayerStateManager), contextos de escala (ObjectContextManager, ObjectContextCollection) y vínculos de datos
+        /// (DataLinkManager).
+        /// </summary>
         public static readonly HashSet<string> TiposDelDibujo = new HashSet<string>(StringComparer.Ordinal)
         {
             "Autodesk.AutoCAD.DatabaseServices.DBObject",
@@ -447,6 +468,11 @@ namespace ArbaMcp.Nucleo
             "Autodesk.AutoCAD.DatabaseServices.Transaction",
             "Autodesk.AutoCAD.DatabaseServices.TransactionManager",
             "Autodesk.AutoCAD.EditorInput.Editor",
+            "Autodesk.AutoCAD.DatabaseServices.LayoutManager",
+            "Autodesk.AutoCAD.DatabaseServices.LayerStateManager",
+            "Autodesk.AutoCAD.DatabaseServices.ObjectContextManager",
+            "Autodesk.AutoCAD.DatabaseServices.ObjectContextCollection",
+            "Autodesk.AutoCAD.DatabaseServices.DataLinkManager",
         };
 
         /// <summary>
