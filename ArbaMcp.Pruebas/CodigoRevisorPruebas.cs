@@ -247,6 +247,15 @@ return v;");
         }
 
         [Fact]
+        public void AsignacionPorDesestructuracion_CuentaComoAsignacion()
+        {
+            // Auditoría de la ronda C (I5): sin solo_lectura, (F.Db.Clayer, _) = (id, 0) compilaba aunque F.Db.Clayer = id no
+            Scripts.Bloqueado("Database db = null; ObjectId id = default(ObjectId);\n(db.Clayer, _) = (id, 0);\nreturn null;", CodigoReglas.Sistema);
+            Scripts.Bloqueado("(AcApp.DocumentManager.MdiActiveDocument, _) = (null, 0);\nreturn null;", CodigoReglas.Documentos);
+            Scripts.CompilarBien("Database db = null;\nvar (capa, x) = (db.Clayer, 0);\nreturn capa;");
+        }
+
+        [Fact]
         public void Transaccion_DatabaseAddDBObjectTambienSinSoloLectura()
         {
             // 1.17.6: hace residente un objeto fuera de la transacción (al abortar la simulación quedaría en el dibujo)
@@ -275,6 +284,14 @@ return v;");
             Scripts.Bloqueado("Database db = null; db.Insert(\"Bloque\", null, false); return null;", CodigoReglas.Transaccion);
             Scripts.Bloqueado("Database db = null; db.Insert(Matrix3d.Identity, null, false); return null;", CodigoReglas.Transaccion);
             Scripts.Bloqueado("Database db = null; db.Insert(\"Origen\", \"Destino\", null, false); return null;", CodigoReglas.Transaccion);
+            // Auditoría de la ronda C (I6): los gemelos de BindXrefs y DisableUndoRecording, también sin solo_lectura
+            Scripts.Bloqueado("Database db = null; db.XBindXrefs(new ObjectIdCollection(), true); db.DetachXref(default(ObjectId)); return null;", CodigoReglas.Documentos);
+            Scripts.Bloqueado("Database db = null; db.DetachXref(default(ObjectId)); return null;", CodigoReglas.Documentos);
+            Scripts.Bloqueado("Database db = null; db.ReloadXrefs(new ObjectIdCollection()); return null;", CodigoReglas.Documentos);
+            Scripts.Bloqueado("Database db = null; db.UnloadXrefs(new ObjectIdCollection()); return null;", CodigoReglas.Documentos);
+            Scripts.Bloqueado("Database db = null; db.ResolveXrefs(false, false); return null;", CodigoReglas.Documentos);
+            Scripts.Bloqueado("Database db = null; db.DisableUndoRecording(true); return null;", CodigoReglas.Transaccion);
+            Scripts.Bloqueado("Line l = null; l.DisableUndoRecording(true); return null;", CodigoReglas.Transaccion);
             // Purge solo quita de la lista lo que no se puede purgar: no cambia el dibujo y sigue permitido
             Scripts.CompilarBien("Database db = null; var ids = new ObjectIdCollection(); db.Purge(ids); return ids.Count;");
         }

@@ -92,6 +92,30 @@ namespace Autodesk.AutoCAD.DatabaseServices
         public ObjectId ObjectId => default(ObjectId);
         public void Erase() { }
         public void UpgradeOpen() { }
+        // Auditoría de la ronda C (I3, I6)
+        public DBObject DeepClone(DBObject owner, object idMap, bool isPrimary) => null;
+        public DBObject WblockClone(object owner, object idMap, bool isPrimary) => null;
+        public void Close() { }
+        public void Cancel() { }
+        public void DowngradeOpen() { }
+        public void DisableUndoRecording(bool disable) { }
+        public void CopyFrom(object otro) { }
+    }
+    // Auditoría de la ronda C (I3): gestores que heredan de RXObject, no de DBObject, y cambian el dibujo
+    public class LayoutManager : Autodesk.AutoCAD.Runtime.RXObject
+    {
+        public static LayoutManager Current => null;
+        public string CurrentLayout { get; set; }
+        public ObjectId CreateLayout(string newLayoutName) => default(ObjectId);
+        public void DeleteLayout(string layoutName) { }
+        public ObjectId GetLayoutId(string layoutName) => default(ObjectId);
+        public int LayoutCount => 0;
+    }
+    public class LayerStateManager : Autodesk.AutoCAD.Runtime.RXObject
+    {
+        public void SaveLayerState(string sName, int mask, ObjectId idVp) { }
+        public void DeleteLayerState(string sName) { }
+        public bool HasLayerState(string sName) => false;
     }
     public class ObjectIdCollection
     {
@@ -146,6 +170,13 @@ namespace Autodesk.AutoCAD.DatabaseServices
         public void Insert(Autodesk.AutoCAD.Geometry.Matrix3d transform, Database dataBase, bool preserveSourceDatabase) { }
         public void Insert(string sourceBlockName, string destinationBlockName, Database dataBase, bool preserveSourceDatabase) { }
         public ObjectId AddDBObject(DBObject o) => default(ObjectId);
+        public LayerStateManager LayerStateManager => null;
+        public void XBindXrefs(ObjectIdCollection xrefBlocks, bool insertBind) { }
+        public void DetachXref(ObjectId xrefId) { }
+        public void ReloadXrefs(ObjectIdCollection xrefIds) { }
+        public void UnloadXrefs(ObjectIdCollection xrefIds) { }
+        public void ResolveXrefs(bool useThreadEngine, bool doNewOnly) { }
+        public void DisableUndoRecording(bool disable) { }
         public void DeepCloneObjects(ObjectIdCollection ids, ObjectId owner, object mapping, bool deferTranslation) { }
         public void WblockCloneObjects(ObjectIdCollection ids, ObjectId owner, object mapping, int cloning, bool deferTranslation) { }
         public void EraseEmptyObjects(int flags) { }

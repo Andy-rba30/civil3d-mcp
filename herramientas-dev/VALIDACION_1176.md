@@ -20,6 +20,10 @@ Copia este texto tal cual en el agente que tiene conectado el MCP de Civil 3D. R
   4. `ejecutar_receta` (del puente) acepta `solo_lectura`, con el mismo significado que en `ejecutar_codigo`.
   5. `ejecutar_codigo` no compila `Database.AddDBObject` (ni con `solo_lectura` ni sin ella): hace residente un objeto
      fuera de la transacción y, al abortar una simulación, quedaría en el dibujo.
+  6. Huecos que encontró la auditoría de la ronda C en las reglas de `ejecutar_codigo`, cerrados: con `solo_lectura`, los
+     gestores que cambian el dibujo sin ser `DBObject` (presentaciones, estados de capa) y el `OpenMode` escondido en
+     tipos, genéricos o delegados; en todo modo, las asignaciones por desestructuración (`(a.b, _) = ...`) y los
+     gemelos de `BindXrefs` (`XBindXrefs`, `DetachXref`...) y `DisableUndoRecording`.
 - **Dibujo**: una **copia nueva** de `C:\Proyectos\dibujos_prueba\PRUEBA_EVALUACION_BASE.dwg` (plantilla métrica y un
   ensamblaje, nada más) guardada como `C:\Proyectos\dibujos_prueba\PRUEBA_1176.dwg`. Tiene que estar **guardada en
   disco** (así la copia de seguridad es `copia_de_disco`). En esa carpeta aparecerán `mcp_log.jsonl` y `backups\`.
@@ -173,7 +177,7 @@ Reglas:
 
 ### C. Un script de solo lectura que intenta escribir
 
-8. **Rechazos al compilar (decisivo).** Tres llamadas a `ejecutar_codigo`, las tres con `"solo_lectura":true`:
+8. **Rechazos al compilar (decisivo).** Cinco llamadas a `ejecutar_codigo`, todas con `"solo_lectura":true`:
    - **8a**: `args={"codigo_csharp":"var l = new Line(new Point3d(0, 0, 0), new Point3d(10, 0, 0));\nF.Agregar(l);\nreturn 1;","solo_lectura":true,"pedido":"intenta dibujar una línea con solo lectura"}`.
      Esperado: `ok: false`, el error empieza por `ejecutar_codigo: el código no se puede ejecutar (1 uso no
      permitido). No se ejecutó nada: sin copia de seguridad, sin contexto de comando y sin entrada en Deshacer.` y
@@ -182,16 +186,27 @@ Reglas:
      Esperado: `ok: false`, contiene `[bloqueado: solo lectura] OpenMode distinto de OpenMode.ForRead (OpenMode.ForWrite)`.
    - **8c**: `args={"codigo_csharp":"foreach (var id in F.EspacioModelo())\n    F.Abrir<Entity>(id, true);\nreturn 0;","solo_lectura":true,"pedido":"intenta abrir con escribir=true con solo lectura"}`.
      Esperado: `ok: false`, contiene `[bloqueado: solo lectura] F.Abrir con 'escribir' distinto de false (true)`.
-   Después de las tres: menú Deshacer **igual** que al final del paso 6, **ningún archivo nuevo** en `backups\`, y
+   - **8d** (auditoría, una presentación no es un `DBObject`): `args={"codigo_csharp":"LayoutManager.Current.DeleteLayout(\"Presentación1\");\nreturn 1;","solo_lectura":true,"pedido":"intenta borrar una presentación con solo lectura"}`.
+     Esperado: `ok: false`, contiene `[bloqueado: solo lectura] Autodesk.AutoCAD.DatabaseServices.LayoutManager.DeleteLayout`.
+     (Con la 1.17.6 de antes de la auditoría compilaba y **borraba la presentación**: si sale `ok: true`, es un FALLO
+     grave; anótalo y comprueba en Civil 3D que la pestaña `Presentación1` sigue.)
+   - **8e** (auditoría, `OpenMode` escondido): `args={"codigo_csharp":"foreach (var id in F.EspacioModelo())\n{\n    var o = new[] { id }.Zip(Enum.GetValues<OpenMode>().Skip(1), F.Tr.GetObject).First();\n}\nreturn 0;","solo_lectura":true,"pedido":"intenta abrir para escritura sin escribir OpenMode"}`.
+     Esperado: `ok: false`, contiene `[bloqueado: solo lectura]` con `OpenMode como argumento genérico de GetValues` y
+     `grupo de métodos (delegado) con un parámetro OpenMode: GetObject` (si además sale un error `CS`, anótalo: en
+     Civil 3D `Transaction.GetObject` tiene varias sobrecargas).
+   Después de las cinco: menú Deshacer **igual** que al final del paso 6, **ningún archivo nuevo** en `backups\`, y
    contar con solo lectura → `resultado: 1`.
 
-9. **Escritura que el compilador no ve: la para Civil 3D (decisivo).** `Curve.Extend` alarga una curva; las reglas de
-   solo lectura no la conocen, así que el script compila y lo tiene que parar Civil 3D al ejecutarse (la línea está
-   abierta solo para lectura y el dibujo, bloqueado para lectura). `ejecutar_codigo` con
+9. **Escritura sobre un objeto abierto para lectura: la rechaza Civil 3D al ejecutarse (decisivo).** `Curve.Extend`
+   alarga una curva; las reglas de solo lectura no la conocen, así que el script compila y lo tiene que parar Civil 3D
+   al ejecutarse porque la línea está abierta solo para lectura. **Este paso no prueba el bloqueo de lectura del
+   dibujo**: cambiar un objeto abierto para lectura da `eNotOpenForWrite` con cualquier bloqueo. El bloqueo de lectura
+   (`eLockViolation` al abrir para escritura) no tiene forma conocida de probarse sin saltarse las reglas de
+   compilación: todas las maneras conocidas de abrir para escritura las rechaza el paso 8. `ejecutar_codigo` con
    `args={"codigo_csharp":"Line l = null;\nforeach (var id in F.EspacioModelo())\n    if (F.Abrir<Entity>(id) is Line x) l = x;\nif (l == null) return \"sin líneas\";\nl.Extend(false, new Point3d(l.EndPoint.X + 50, l.EndPoint.Y, 0));\nreturn l.Length;","solo_lectura":true,"pedido":"intenta alargar la línea con solo lectura"}`.
    Esperado:
    - `ok: false`; el error empieza por `Con solo_lectura=true el script intentó escribir en la línea 5 y se impidió (`
-     y sigue con el **texto literal de AutoCAD: por anotar** (se espera algo como `Exception: eNotOpenForWrite`;
+     y sigue con el **texto literal de AutoCAD: por anotar** (se espera `eNotOpenForWrite`, algo como `Exception: eNotOpenForWrite`;
      cópialo tal cual: decide la tabla de miembros); termina con `No se tocó el dibujo: solo lectura (dibujo bloqueado
      para lectura y transacción abortada), sin copia de seguridad y sin entrada en Deshacer. Si el script necesita
      escribir, quita solo_lectura y simula primero (simular=true).`;
@@ -268,12 +283,17 @@ Desde aquí ya se puede mirar el dibujo en pantalla.
 
 ### G. `Database.AddDBObject` bloqueado también sin `solo_lectura`
 
-17. **`AddDBObject` no compila (decisivo).** `ejecutar_codigo` (sin `solo_lectura`, simulación por defecto) con
+17. **`AddDBObject` y otros bloqueos de todo modo (decisivo).** `ejecutar_codigo` (sin `solo_lectura`, simulación por defecto) con
     `args={"codigo_csharp":"var id = F.Db.AddDBObject(new Line());\nreturn id;","pedido":"intenta añadir un objeto fuera de la transacción"}`.
     Esperado: `ok: false`, el error empieza por `ejecutar_codigo: el código no se puede ejecutar (1 uso no permitido).
     No se ejecutó nada: sin copia de seguridad, sin contexto de comando y sin entrada en Deshacer.` y contiene
-    `[bloqueado: transacción]` y `AddDBObject: usa F.Tr o una transacción anidada`. El menú Deshacer igual y ningún
-    archivo nuevo en `backups\`.
+    `[bloqueado: transacción]` y `AddDBObject: usa F.Tr o una transacción anidada`. Después, dos llamadas más, también
+    sin `solo_lectura` (auditoría de la ronda C):
+    - **17b**: `args={"codigo_csharp":"F.Db.XBindXrefs(new ObjectIdCollection(), true);\nF.Db.DetachXref(ObjectId.Null);\nreturn null;","pedido":"intenta tocar las referencias externas"}`
+      → `ok: false`, `(2 usos no permitidos)`, con `[bloqueado: documentos]` en `XBindXrefs` y en `DetachXref`.
+    - **17c**: `args={"codigo_csharp":"(F.Db.Clayer, _) = (F.Db.Clayer, 0);\nreturn null;","pedido":"intenta cambiar la capa actual por desestructuración"}`
+      → `ok: false`, contiene `[bloqueado: variables de sistema]` y `Clayer (asignación)` (igual que `F.Db.Clayer = ...`).
+    El menú Deshacer igual y ningún archivo nuevo en `backups\` después de las tres.
 
 18. **Cierre** (no decide). `leer_historial` con `args={"ultimas_n":30}`: anota las líneas de `ejecutar_codigo` (las de
     solo lectura dicen `compilado con solo_lectura` y `solo lectura terminada, sin cambios`) y las de
@@ -297,6 +317,7 @@ Desde aquí ya se puede mirar el dibujo en pantalla.
   enteros de esos pasos.
 - Las respuestas literales de los pasos 16 y 17 (y si el 16 se saltó, por qué).
 - **El texto literal de AutoCAD del paso 9** (lo que va entre paréntesis después de `se impidió`).
+- Las respuestas literales de 8d, 8e, 17b y 17c y, en 8d, si la pestaña `Presentación1` sigue en el dibujo.
 - Si Jose miró el dibujo en pantalla, en qué paso (debe ser después del 10).
 - Una lista final de los miembros de la sección 1.17.6 de `miembros_por_verificar_civil3d.md` que pasan a
   `ejecutado en Civil 3D 2027` con la fecha, y los que fallaron con su error literal.

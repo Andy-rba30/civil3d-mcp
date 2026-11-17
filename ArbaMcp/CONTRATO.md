@@ -326,8 +326,8 @@ funciones locales, sin declarar clases ni métodos; puede empezar con `using`. U
    el proceso (`Environment` salvo `NewLine`, `AppDomain`, `GC`, `Console`, `Quit`), ventanas y entrada interactiva
    (`ShowAlertDialog`, `Editor.Get*`, `Autodesk.AutoCAD.Windows`, `Autodesk.Windows`, `System.Windows`), eventos
    (cualquier `+=` a un evento), comandos (`SendStringToExecute`, `Editor.Command`, `Application.Invoke` de LISP),
-   la transacción (`StartOpenCloseTransaction`, `TopTransaction`, `ObjectId.Open` y, desde 1.17.6, `Database.AddDBObject`, que hace residente un objeto fuera de la transacción: al abortar una simulación quedaría en el dibujo; para añadir, `F.Agregar` o `AppendEntity`/`SetAt` más `F.Tr.AddNewlyCreatedDBObject`; también desde 1.17.6, `Database.Insert` (las 3 sobrecargas), `DeepCloneObjects`, `WblockCloneObjects`, `EraseEmptyObjects` y `ReclaimMemoryFromErasedObjects`; `Database.Purge` sigue permitido: solo quita de la lista lo que no se puede purgar), documentos (abrir, cerrar,
-   guardar, cambiar el dibujo activo; desde 1.17.6 también `Database.Wblock` y `BindXrefs`; `AttachXref` ya lo estaba por su parámetro de archivo), variables de sistema y del dibujo (`SetSystemVariable`, asignar propiedades de `Database` como `Clayer`, el perfil `UserConfigurationManager`: abortar la transacción no las deshace), el plugin (de ArbaMcp solo `F`) y la
+   la transacción (`StartOpenCloseTransaction`, `TopTransaction`, `ObjectId.Open` y, desde 1.17.6, `Database.AddDBObject`, que hace residente un objeto fuera de la transacción: al abortar una simulación quedaría en el dibujo; para añadir, `F.Agregar` o `AppendEntity`/`SetAt` más `F.Tr.AddNewlyCreatedDBObject`; también desde 1.17.6, `Database.Insert` (las 3 sobrecargas), `DeepCloneObjects`, `WblockCloneObjects`, `EraseEmptyObjects`, `ReclaimMemoryFromErasedObjects` y, desde la auditoría de la ronda C, `DisableUndoRecording` (de `Database` y de `DBObject`: apaga el registro de Deshacer); `Database.Purge` sigue permitido: solo quita de la lista lo que no se puede purgar), documentos (abrir, cerrar,
+   guardar, cambiar el dibujo activo; desde 1.17.6 también `Database.Wblock` y `BindXrefs` y, desde la auditoría de la ronda C, `XBindXrefs`, `DetachXref`, `ReloadXrefs`, `UnloadXrefs` y `ResolveXrefs`; `AttachXref` ya lo estaba por su parámetro de archivo), las asignaciones también por desestructuración (`(F.Db.Clayer, _) = (id, 0)` se bloquea como `F.Db.Clayer = id`), variables de sistema y del dibujo (`SetSystemVariable`, asignar propiedades de `Database` como `Clayer`, el perfil `UserConfigurationManager`: abortar la transacción no las deshace), el plugin (de ArbaMcp solo `F`) y la
    regla del proyecto (`Remove`/`RemoveAt` de regiones, líneas base y superficies de corredor). También `goto`,
    atributos, `#line` y los nombres que empiezan por `__arba`.
 3. **Ejecución en el hilo principal**, en contexto `Documento` (una entrada `Executefunction` de Deshacer) y con el
@@ -383,24 +383,36 @@ funciones locales, sin declarar clases ni métodos; puede empezar con `using`. U
    Con `solo_lectura=true` el script corre como una lectura: contexto `Aplicacion`, dibujo bloqueado para lectura
    (`DocumentLockMode.Read`), **sin copia de seguridad y sin entrada en Deshacer**, sin las comprobaciones previas de
    escritura (vale también con un dibujo abierto en solo lectura), y `simular` no cuenta (si llega `simular=false`,
-   aviso). No es la opción por defecto: sin `solo_lectura`, todo es como en la 1.17.5. Que no pueda escribir lo
-   garantizan seis capas:
+   aviso). No es la opción por defecto: sin `solo_lectura`, todo es como en la 1.17.5. **Con `solo_lectura=true` NO
+   hay copia de seguridad**: la protección son las reglas de compilación, el bloqueo de lectura del dibujo, la
+   transacción abortada siempre y la detección de cambios después. Son seis capas:
    1. **Al compilar** no pasa (`[bloqueado: solo lectura]`, sin copia, sin contexto y sin Deshacer): `F.Agregar`,
       `F.EscribirTexto`, `F.Abrir` con `escribir` distinto de la constante `false`; cualquier `OpenMode` que no sea la
       constante `OpenMode.ForRead` (`ForWrite`, `ForNotify`, conversiones, variables, condiciones); en cualquier tipo de
       Autodesk, `UpgradeOpen`, `UpgradeFromNotify`, `Erase`, `AppendEntity`, `AddNewlyCreatedDBObject`, `SwapIdWith`,
       `HandOverTo`, `DeepCloneObjects`, `WblockCloneObjects`, `Wblock`, `Audit` y `LockDocument` (pediría bloqueo de
-      escritura); en los objetos del dibujo (`DBObject` y derivados, `Database`, `Transaction`, `TransactionManager`,
-      `Editor`) y en cualquier tipo de Civil 3D, los métodos que empiezan por `Add`, `Append`, `Create`, `Remove`,
-      `Delete`, `Set`, `Rebuild`, `Paste`, `Import`, `Update`, `Rename`, `Insert`, `Extract`, `Clear`, `Reverse`, `Join`
-      o `Transform` (como palabra: `SetTargets` sí, `Settings` no) y **asignar sus propiedades** (`l.Layer = ...`,
-      `l.StartPoint = ...`). Lo que vive solo en memoria sigue permitido (`Point3d`, `Extents3d.AddExtents`,
+      escritura) y, desde la auditoría de la ronda C, `DeepClone`, `WblockClone`, `XBindXrefs`, `DetachXref`,
+      `ReloadXrefs`, `UnloadXrefs`, `ResolveXrefs`, `DisableUndoRecording`, `Close`, `Cancel` y `DowngradeOpen`; en los
+      objetos del dibujo (`DBObject` y derivados, `Database`, `Transaction`, `TransactionManager`, `Editor` y, desde la
+      auditoría, los gestores que no son `DBObject` pero cambian el dibujo: `LayoutManager`, `LayerStateManager`,
+      `ObjectContextManager`, `ObjectContextCollection` y `DataLinkManager`) y en cualquier tipo de Civil 3D, los métodos
+      que empiezan por `Add`, `Append`, `Create`, `Remove`, `Delete`, `Set`, `Rebuild`, `Paste`, `Import`, `Update`,
+      `Rename`, `Insert`, `Extract`, `Clear`, `Reverse`, `Join`, `Transform`, `Save`, `Restore`, `Clone` o `Copy` (como
+      palabra: `SetTargets` sí, `Settings` no) y **asignar sus propiedades** (`l.Layer = ...`, `l.StartPoint = ...`,
+      `LayoutManager.Current.CurrentLayout = ...`, también por desestructuración: `(l.Layer, _) = ("0", 0)`). Además,
+      desde la auditoría, nada que lleve `OpenMode` escondido: un tipo con `OpenMode` dentro (`OpenMode[]`,
+      `List<OpenMode>`, `Func<ObjectId, OpenMode, DBObject>`), `typeof(OpenMode)`, `OpenMode` como argumento genérico
+      (`Enum.GetValues<OpenMode>()`, `Enum.Parse<OpenMode>`) o un método con un parámetro `OpenMode` pasado como delegado
+      (`.Zip(modos, F.Tr.GetObject)`). Lo que vive solo en memoria sigue permitido (`Point3d`, `Extents3d.AddExtents`,
       `ObjectIdCollection.Add`, `new Line(...)` sin añadirla). Las reglas generales siguen mandando. Estas reglas no
       pueden ser completas (la API tiene cientos de métodos que escriben, por ejemplo `Curve.Extend`): lo que se les
       escapa lo paran las capas siguientes.
    2. **Bloqueo de lectura** del documento, como las simulaciones de `Escritura.CrearObjeto`: se espera que AutoCAD
-      rechace abrir algo para escritura (`eLockViolation`) y que un objeto abierto para lectura no se deje cambiar
-      (`eNotOpenForWrite`). **Por verificar en Civil 3D** (`VALIDACION_1176.md`, paso decisivo con `Curve.Extend`).
+      rechace abrir algo para escritura (`eLockViolation`). **Sin forma conocida de probarlo en Civil 3D**: todas las
+      maneras conocidas de abrir para escritura las rechaza antes la capa 1, y probarlo exigiría saltarse esas reglas.
+      Aparte, un objeto abierto para lectura no se deja cambiar con ningún bloqueo (`eNotOpenForWrite`): eso es lo
+      que comprueba `VALIDACION_1176.md`, paso 9, con `Curve.Extend` (rechazo en ejecución de una escritura sobre un
+      objeto abierto para lectura, no el bloqueo de lectura).
    3. **La Fachada** lanza con `F.Agregar`, `F.EscribirTexto` y `F.Abrir(id, true)` («solo_lectura=true: F.Agregar
       escribe en el dibujo...»).
    4. **La transacción del plugin se aborta siempre**, también con `simular=false`.
@@ -414,9 +426,10 @@ funciones locales, sin declarar clases ni métodos; puede empezar con `using`. U
       la Fachada) da «Con solo_lectura=true el script intentó escribir en la línea N y se impidió (Tipo: mensaje). No se
       tocó el dibujo: solo lectura (dibujo bloqueado para lectura y transacción abortada), sin copia de seguridad y sin
       entrada en Deshacer. Si el script necesita escribir, quita solo_lectura y simula primero (simular=true).».
-   Por qué no hace falta copia: la copia es del `.dwg` guardado en disco, y un script no puede guardar
+   Por qué no se hace copia: la copia es del `.dwg` guardado en disco, y un script no puede guardar
    (`Save`/`SaveAs`/`ReadDwgFile` bloqueados), así que con solo lectura el `.dwg` de disco no cambia; lo que protege
-   el dibujo en memoria son las capas 2 a 5. Respuesta: la de una simulación (`simulado: true`, `antes`/`despues` en
+   el dibujo en memoria son las capas 1 a 5, y si algo escapara a todas, el aviso «ATENCIÓN» de la capa 5 pide no
+   guardar el dibujo. Respuesta: la de una simulación (`simulado: true`, `antes`/`despues` en
    0, `datos`, `resultado`) más `solo_lectura: true` y `copia: null`, con `accion` «Ejecutar un script de solo lectura
    de N línea(s): con el dibujo bloqueado para lectura y la transacción abortada al final, sin copia de seguridad y sin
    entrada en Deshacer.»; `datos.deshacer.comando` sale vacío (no hay pseudocomando). **Sugerencia**: sin

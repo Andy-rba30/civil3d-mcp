@@ -115,6 +115,59 @@ namespace ArbaMcp.Pruebas
             Permitido("Line l = null;\nvar capa = l.Layer;\nvar p = l.StartPoint;\nCiv.Entity e = null;\nreturn new { capa, x = p.X, nombre = e.Name };");
         }
 
+        // ------------------------------------------------------------------ auditoría de la ronda C
+        [Fact]
+        public void I3_GestoresQueNoSonDBObjectYMetodosSinApertura()
+        {
+            // El ejemplo literal del auditor
+            Bloqueado("LayoutManager.Current.DeleteLayout(\"Presentación1\");\nreturn 1;", "LayoutManager.DeleteLayout");
+            Bloqueado("var id = LayoutManager.Current.CreateLayout(\"Nueva\");\nreturn id;", "LayoutManager.CreateLayout");
+            Bloqueado("LayoutManager.Current.CurrentLayout = \"Model\";\nreturn null;", "LayoutManager.CurrentLayout (asignación)");
+            Bloqueado("Database db = null;\ndb.LayerStateManager.SaveLayerState(\"E\", 0, default(ObjectId));\nreturn null;", "LayerStateManager.SaveLayerState");
+            Bloqueado("Database db = null;\ndb.LayerStateManager.DeleteLayerState(\"E\");\nreturn null;", "LayerStateManager.DeleteLayerState");
+            Bloqueado("DBObject o = null;\nvar c = o.DeepClone(o, null, true);\nreturn null;", ".DeepClone");
+            Bloqueado("DBObject o = null;\no.Close();\nreturn null;", ".Close");
+            Bloqueado("DBObject o = null;\no.Cancel();\nreturn null;", ".Cancel");
+            Bloqueado("DBObject o = null;\no.DowngradeOpen();\nreturn null;", ".DowngradeOpen");
+            Bloqueado("DBObject o = null;\no.CopyFrom(null);\nreturn null;", ".CopyFrom");
+            // Leer de los gestores sigue valiendo
+            Permitido("var n = LayoutManager.Current.LayoutCount;\nvar actual = LayoutManager.Current.CurrentLayout;\nDatabase db = null;\nvar hay = db.LayerStateManager.HasLayerState(\"E\");\nreturn new { n, actual, hay };");
+        }
+
+        [Fact]
+        public void I4_OpenModeEscondidoEnTiposDelegadosYGenericos()
+        {
+            // Los dos ejemplos literales del auditor: compilaban con 0 escrituras reconocidas
+            var zip = Bloqueado("Transaction tr = null; ObjectId id = default(ObjectId);\nvar o = new[] { id }.Zip(Enum.GetValues<OpenMode>().Skip(1), tr.GetObject).First();\nreturn null;");
+            Assert.Equal(2, zip.Linea);
+            var r = SoloLectura("Transaction tr = null; ObjectId id = default(ObjectId);\nvar o = new[] { id }.Zip(Enum.GetValues<OpenMode>().Skip(1), tr.GetObject).First();\nreturn null;");
+            Assert.Contains("grupo de métodos (delegado) con un parámetro OpenMode: GetObject", r.Mensaje);
+            Assert.Contains("OpenMode como argumento genérico de GetValues", r.Mensaje);
+            Bloqueado("Transaction tr = null; ObjectId id = default(ObjectId);\nDBObject Abre<T>(Func<ObjectId, T, DBObject> f, ObjectId i, T[] m) => f(i, m[1]);\nvar o = Abre(tr.GetObject, id, Enum.GetValues<OpenMode>());\nreturn null;",
+                "grupo de métodos (delegado) con un parámetro OpenMode: GetObject");
+            // Tipos compuestos, typeof y Parse sin escribir ForWrite
+            Bloqueado("OpenMode[] modos = null;\nreturn modos;", "tipo con OpenMode dentro (Autodesk.AutoCAD.DatabaseServices.OpenMode[])");
+            Bloqueado("var l = new List<OpenMode>();\nreturn l.Count;", "tipo con OpenMode dentro");
+            Bloqueado("Func<ObjectId, OpenMode, DBObject> f = null;\nreturn f;", "tipo con OpenMode dentro");
+            Bloqueado("var t = typeof(OpenMode);\nreturn t.Name;", "typeof(OpenMode)");
+            Bloqueado("var m = Enum.Parse<OpenMode>(\"ForWrite\");\nreturn null;", "OpenMode como argumento genérico de Parse");
+            Bloqueado("Enum.TryParse<OpenMode>(\"ForWrite\", out var m);\nreturn null;", "OpenMode como argumento genérico de TryParse");
+            // Llamar a GetObject con la constante ForRead sigue valiendo
+            Permitido("Transaction tr = null; ObjectId id = default(ObjectId);\nvar o = new[] { id }.Select(x => tr.GetObject(x, OpenMode.ForRead)).First();\nreturn null;");
+        }
+
+        [Fact]
+        public void I5_AsignacionPorDesestructuracion()
+        {
+            Bloqueado("Line l = null;\n(l.Layer, _) = (\"0\", 0);\nreturn null;", ".Layer (asignación)");
+            Bloqueado("Line l = null; int x;\n((l.Layer, x), _) = ((\"0\", 1), 2);\nreturn null;", ".Layer (asignación)");
+            // (foreach ((l.Layer, var n) in ...) no es C# válido: CS8186, el foreach tiene que declarar sus variables)
+            // Asignación condicional de C# 14 (a?.b = c): también es una asignación
+            Bloqueado("Line l = null;\nl?.Layer = \"0\";\nreturn null;", ".Layer (asignación)");
+            // Desestructurar en variables nuevas no escribe nada
+            Permitido("Line l = null;\nvar (capa, largo) = (l.Layer, l.Length);\nreturn capa + largo;");
+        }
+
         // ------------------------------------------------------------------ lo que solo vive en memoria y las lecturas
         [Fact]
         public void LoQueVivePorEnMemoriaYLasLecturasCompilan()

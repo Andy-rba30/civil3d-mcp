@@ -210,7 +210,73 @@ namespace ArbaMcp.Nucleo
                     Tipo(ti.Type, n);
                     if (!SymbolEqualityComparer.Default.Equals(ti.Type, ti.ConvertedType)) Tipo(ti.ConvertedType, n);
                     ModoDeApertura(e, ti.Type);
+                    OpenModeEnTipoCompuesto(e, ti);
                 }
+                OpenModeEnMetodosYTypeof(n);
+            }
+
+            // ------------------------------------------------------------------ OpenMode escondido (auditoría de la ronda C, I4)
+            // Sin escribir ninguna expresión OpenMode se podía abrir para escritura: new[] { id }.Zip(Enum.GetValues<OpenMode>()
+            // .Skip(1), F.Tr.GetObject), o una función local genérica con T = OpenMode. Con solo_lectura no compila ningún tipo
+            // que lleve OpenMode dentro (OpenMode[], IEnumerable<OpenMode>, Func<..., OpenMode, ...>), ni typeof(OpenMode), ni
+            // un método con OpenMode como argumento genérico, ni un grupo de métodos (delegado) con un parámetro OpenMode.
+
+            private static bool EsOpenMode(ITypeSymbol t) => t is INamedTypeSymbol nt && NombreCompleto(nt) == CodigoReglas.TipoOpenMode;
+
+            /// <summary>True si el tipo lleva OpenMode dentro (elemento de un arreglo, argumento genérico, elemento de una tupla), sin ser OpenMode.</summary>
+            private static bool ContieneOpenMode(ITypeSymbol t, int profundidad = 0)
+            {
+                if (t == null || profundidad > 8) return false;
+                switch (t)
+                {
+                    case IArrayTypeSymbol a: return EsOpenMode(a.ElementType) || ContieneOpenMode(a.ElementType, profundidad + 1);
+                    case INamedTypeSymbol nt:
+                        foreach (var ta in nt.TypeArguments)
+                            if (EsOpenMode(ta) || ContieneOpenMode(ta, profundidad + 1)) return true;
+                        return nt.IsTupleType && nt.TupleElements.Any(e => EsOpenMode(e.Type) || ContieneOpenMode(e.Type, profundidad + 1));
+                }
+                return false;
+            }
+
+            private void OpenModeEnTipoCompuesto(ExpressionSyntax e, TypeInfo ti)
+            {
+                var t = ContieneOpenMode(ti.Type) ? ti.Type : ContieneOpenMode(ti.ConvertedType) ? ti.ConvertedType : null;
+                if (t == null) return;
+                // Solo la expresión más exterior con ese tipo (en a.b.c, no también a.b si lleva el mismo tipo)
+                if (e.Parent is ExpressionSyntax padre)
+                {
+                    var tp = _m.GetTypeInfo(padre);
+                    if (ContieneOpenMode(tp.Type) || ContieneOpenMode(tp.ConvertedType)) return;
+                }
+                Escritura(e, "tipo con OpenMode dentro (" + t.ToDisplayString() + ")");
+            }
+
+            private void OpenModeEnMetodosYTypeof(SyntaxNode n)
+            {
+                if (n is TypeOfExpressionSyntax tof)
+                {
+                    if (EsOpenMode(_m.GetTypeInfo(tof.Type).Type)) Escritura(n, "typeof(OpenMode)");
+                    return;
+                }
+                if (!(n is SimpleNameSyntax sn)) return;
+                var info = _m.GetSymbolInfo(sn);
+                if (!((info.Symbol ?? info.CandidateSymbols.FirstOrDefault()) is IMethodSymbol m)) return;
+                if (m.TypeArguments.Any(t => EsOpenMode(t) || ContieneOpenMode(t)))
+                    Escritura(sn, "OpenMode como argumento genérico de " + m.Name);
+                if (EsGrupoDeMetodos(sn) && m.Parameters.Any(p => EsOpenMode(p.Type) || ContieneOpenMode(p.Type)))
+                    Escritura(sn, "grupo de métodos (delegado) con un parámetro OpenMode: " + m.Name);
+            }
+
+            /// <summary>True si el nombre de un método se usa sin llamarlo (F.Tr.GetObject pasado como delegado).</summary>
+            private static bool EsGrupoDeMetodos(SimpleNameSyntax sn)
+            {
+                SyntaxNode expr = sn;
+                if (sn.Parent is MemberAccessExpressionSyntax ma && ma.Name == sn) expr = ma;
+                else if (sn.Parent is MemberBindingExpressionSyntax mb) expr = mb;
+                if (expr.Parent is InvocationExpressionSyntax inv && inv.Expression == expr) return false;
+                // a?.Metodo(...): la llamada envuelve al acceso condicional
+                if (expr is MemberBindingExpressionSyntax && expr.Parent is InvocationExpressionSyntax inv2 && inv2.Expression == expr) return false;
+                return !(expr.Parent is MemberAccessExpressionSyntax padre && padre.Expression == expr);   // x.Metodo.Algo no es C# válido con un método
             }
 
             /// <summary>
@@ -446,8 +512,12 @@ namespace ArbaMcp.Nucleo
                 SyntaxNode expr = n;
                 if (n.Parent is MemberAccessExpressionSyntax ma && ma.Name == n) expr = ma;
                 else if (n.Parent is MemberBindingExpressionSyntax mb) expr = mb;
+                // Auditoría de la ronda C (I5): (l.Layer, _) = ("0", 0) asigna cada elemento de la tupla de la izquierda,
+                // también en tuplas anidadas (el foreach con destinos que no son variables nuevas no compila: CS8186)
+                while (expr.Parent is ArgumentSyntax arg && arg.Parent is TupleExpressionSyntax tupla) expr = tupla;
                 var p = expr.Parent;
                 if (p is AssignmentExpressionSyntax a && a.Left == expr) return true;
+                if (p is ForEachVariableStatementSyntax fe && fe.Variable == expr) return true;
                 if (p is PrefixUnaryExpressionSyntax pre && (pre.IsKind(SyntaxKind.PreIncrementExpression) || pre.IsKind(SyntaxKind.PreDecrementExpression))) return true;
                 if (p is PostfixUnaryExpressionSyntax post && (post.IsKind(SyntaxKind.PostIncrementExpression) || post.IsKind(SyntaxKind.PostDecrementExpression))) return true;
                 return false;
