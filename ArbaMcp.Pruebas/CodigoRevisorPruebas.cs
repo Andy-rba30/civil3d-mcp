@@ -256,6 +256,19 @@ return v;");
         }
 
         [Fact]
+        public void AsignacionConElDestinoEntreParentesis_CuentaComoAsignacion()
+        {
+            // Segunda revisión (N1): sin solo_lectura compilaban aunque sin paréntesis se bloquean
+            Scripts.Bloqueado("Database db = null; ObjectId id = default(ObjectId);\n(db.Clayer) = id;\nreturn null;", CodigoReglas.Sistema);
+            Scripts.Bloqueado("(Application.DocumentManager.MdiActiveDocument) = null;\nreturn null;", CodigoReglas.Documentos);
+            Scripts.Bloqueado("(HostApplicationServices.WorkingDatabase) = null;\nreturn null;", CodigoReglas.Documentos);
+            Scripts.Bloqueado("RasterImageDef r = null;\n(r.SourceFileName) = \"x.png\";\nreturn null;", CodigoReglas.Documentos);
+            Scripts.Bloqueado("Database db = null; ObjectId id = default(ObjectId);\n(((db.Clayer)), _) = (id, 0);\nreturn null;", CodigoReglas.Sistema);
+            // Leer entre paréntesis sigue valiendo
+            Scripts.CompilarBien("Database db = null;\nvar capa = (db.Clayer);\nreturn capa;");
+        }
+
+        [Fact]
         public void Transaccion_DatabaseAddDBObjectTambienSinSoloLectura()
         {
             // 1.17.6: hace residente un objeto fuera de la transacción (al abortar la simulación quedaría en el dibujo)
@@ -290,6 +303,9 @@ return v;");
             Scripts.Bloqueado("Database db = null; db.ReloadXrefs(new ObjectIdCollection()); return null;", CodigoReglas.Documentos);
             Scripts.Bloqueado("Database db = null; db.UnloadXrefs(new ObjectIdCollection()); return null;", CodigoReglas.Documentos);
             Scripts.Bloqueado("Database db = null; db.ResolveXrefs(false, false); return null;", CodigoReglas.Documentos);
+            // Segunda revisión (n1): la misma familia
+            Scripts.Bloqueado("Database db = null; db.RestoreOriginalXrefSymbols(); return null;", CodigoReglas.Documentos);
+            Scripts.Bloqueado("Database db = null; db.RestoreForwardingXrefSymbols(); return null;", CodigoReglas.Documentos);
             Scripts.Bloqueado("Database db = null; db.DisableUndoRecording(true); return null;", CodigoReglas.Transaccion);
             Scripts.Bloqueado("Line l = null; l.DisableUndoRecording(true); return null;", CodigoReglas.Transaccion);
             // Purge solo quita de la lista lo que no se puede purgar: no cambia el dibujo y sigue permitido

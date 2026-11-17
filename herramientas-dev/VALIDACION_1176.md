@@ -188,8 +188,9 @@ Reglas:
      Esperado: `ok: false`, contiene `[bloqueado: solo lectura] F.Abrir con 'escribir' distinto de false (true)`.
    - **8d** (auditoría, una presentación no es un `DBObject`): `args={"codigo_csharp":"LayoutManager.Current.DeleteLayout(\"Presentación1\");\nreturn 1;","solo_lectura":true,"pedido":"intenta borrar una presentación con solo lectura"}`.
      Esperado: `ok: false`, contiene `[bloqueado: solo lectura] Autodesk.AutoCAD.DatabaseServices.LayoutManager.DeleteLayout`.
-     (Con la 1.17.6 de antes de la auditoría compilaba y **borraba la presentación**: si sale `ok: true`, es un FALLO
-     grave; anótalo y comprueba en Civil 3D que la pestaña `Presentación1` sigue.)
+     (Sin este bloqueo, antes de la auditoría, compilaba con `solo_lectura` y **podría borrar la presentación**; nadie lo
+     ha ejecutado en Civil 3D. Si sale `ok: true`, es un FALLO grave: anótalo y comprueba en Civil 3D que la pestaña
+     `Presentación1` sigue.)
    - **8e** (auditoría, `OpenMode` escondido): `args={"codigo_csharp":"foreach (var id in F.EspacioModelo())\n{\n    var o = new[] { id }.Zip(Enum.GetValues<OpenMode>().Skip(1), F.Tr.GetObject).First();\n}\nreturn 0;","solo_lectura":true,"pedido":"intenta abrir para escritura sin escribir OpenMode"}`.
      Esperado: `ok: false`, contiene `[bloqueado: solo lectura]` con `OpenMode como argumento genérico de GetValues` y
      `grupo de métodos (delegado) con un parámetro OpenMode: GetObject` (si además sale un error `CS`, anótalo: en

@@ -327,7 +327,7 @@ funciones locales, sin declarar clases ni métodos; puede empezar con `using`. U
    (`ShowAlertDialog`, `Editor.Get*`, `Autodesk.AutoCAD.Windows`, `Autodesk.Windows`, `System.Windows`), eventos
    (cualquier `+=` a un evento), comandos (`SendStringToExecute`, `Editor.Command`, `Application.Invoke` de LISP),
    la transacción (`StartOpenCloseTransaction`, `TopTransaction`, `ObjectId.Open` y, desde 1.17.6, `Database.AddDBObject`, que hace residente un objeto fuera de la transacción: al abortar una simulación quedaría en el dibujo; para añadir, `F.Agregar` o `AppendEntity`/`SetAt` más `F.Tr.AddNewlyCreatedDBObject`; también desde 1.17.6, `Database.Insert` (las 3 sobrecargas), `DeepCloneObjects`, `WblockCloneObjects`, `EraseEmptyObjects`, `ReclaimMemoryFromErasedObjects` y, desde la auditoría de la ronda C, `DisableUndoRecording` (de `Database` y de `DBObject`: apaga el registro de Deshacer); `Database.Purge` sigue permitido: solo quita de la lista lo que no se puede purgar), documentos (abrir, cerrar,
-   guardar, cambiar el dibujo activo; desde 1.17.6 también `Database.Wblock` y `BindXrefs` y, desde la auditoría de la ronda C, `XBindXrefs`, `DetachXref`, `ReloadXrefs`, `UnloadXrefs` y `ResolveXrefs`; `AttachXref` ya lo estaba por su parámetro de archivo), las asignaciones también por desestructuración (`(F.Db.Clayer, _) = (id, 0)` se bloquea como `F.Db.Clayer = id`), variables de sistema y del dibujo (`SetSystemVariable`, asignar propiedades de `Database` como `Clayer`, el perfil `UserConfigurationManager`: abortar la transacción no las deshace), el plugin (de ArbaMcp solo `F`) y la
+   guardar, cambiar el dibujo activo; desde 1.17.6 también `Database.Wblock` y `BindXrefs` y, desde la auditoría de la ronda C, `XBindXrefs`, `DetachXref`, `ReloadXrefs`, `UnloadXrefs`, `ResolveXrefs`, `RestoreOriginalXrefSymbols` y `RestoreForwardingXrefSymbols`; `AttachXref` ya lo estaba por su parámetro de archivo), las asignaciones también por desestructuración o con el destino entre paréntesis (`(F.Db.Clayer, _) = (id, 0)` y `(F.Db.Clayer) = id` se bloquean como `F.Db.Clayer = id`), variables de sistema y del dibujo (`SetSystemVariable`, asignar propiedades de `Database` como `Clayer`, el perfil `UserConfigurationManager`: abortar la transacción no las deshace), el plugin (de ArbaMcp solo `F`) y la
    regla del proyecto (`Remove`/`RemoveAt` de regiones, líneas base y superficies de corredor). También `goto`,
    atributos, `#line` y los nombres que empiezan por `__arba`.
 3. **Ejecución en el hilo principal**, en contexto `Documento` (una entrada `Executefunction` de Deshacer) y con el
@@ -392,18 +392,21 @@ funciones locales, sin declarar clases ni métodos; puede empezar con `using`. U
       Autodesk, `UpgradeOpen`, `UpgradeFromNotify`, `Erase`, `AppendEntity`, `AddNewlyCreatedDBObject`, `SwapIdWith`,
       `HandOverTo`, `DeepCloneObjects`, `WblockCloneObjects`, `Wblock`, `Audit` y `LockDocument` (pediría bloqueo de
       escritura) y, desde la auditoría de la ronda C, `DeepClone`, `WblockClone`, `XBindXrefs`, `DetachXref`,
-      `ReloadXrefs`, `UnloadXrefs`, `ResolveXrefs`, `DisableUndoRecording`, `Close`, `Cancel` y `DowngradeOpen`; en los
+      `ReloadXrefs`, `UnloadXrefs`, `ResolveXrefs`, `DisableUndoRecording`, `Close`, `Cancel`, `DowngradeOpen` y
+      `EvaluateFields` (actualiza los campos); en los
       objetos del dibujo (`DBObject` y derivados, `Database`, `Transaction`, `TransactionManager`, `Editor` y, desde la
       auditoría, los gestores que no son `DBObject` pero cambian el dibujo: `LayoutManager`, `LayerStateManager`,
       `ObjectContextManager`, `ObjectContextCollection` y `DataLinkManager`) y en cualquier tipo de Civil 3D, los métodos
       que empiezan por `Add`, `Append`, `Create`, `Remove`, `Delete`, `Set`, `Rebuild`, `Paste`, `Import`, `Update`,
       `Rename`, `Insert`, `Extract`, `Clear`, `Reverse`, `Join`, `Transform`, `Save`, `Restore`, `Clone` o `Copy` (como
       palabra: `SetTargets` sí, `Settings` no) y **asignar sus propiedades** (`l.Layer = ...`, `l.StartPoint = ...`,
-      `LayoutManager.Current.CurrentLayout = ...`, también por desestructuración: `(l.Layer, _) = ("0", 0)`). Además,
+      `LayoutManager.Current.CurrentLayout = ...`, también por desestructuración, `(l.Layer, _) = ("0", 0)`, y con el
+      destino entre paréntesis, `(l.Layer) = "0"`, `(l.ColorIndex)++`, en cualquier anidación). Además,
       desde la auditoría, nada que lleve `OpenMode` escondido: un tipo con `OpenMode` dentro (`OpenMode[]`,
       `List<OpenMode>`, `Func<ObjectId, OpenMode, DBObject>`), `typeof(OpenMode)`, `OpenMode` como argumento genérico
       (`Enum.GetValues<OpenMode>()`, `Enum.Parse<OpenMode>`) o un método con un parámetro `OpenMode` pasado como delegado
-      (`.Zip(modos, F.Tr.GetObject)`). Lo que vive solo en memoria sigue permitido (`Point3d`, `Extents3d.AddExtents`,
+      (`.Zip(modos, F.Tr.GetObject)`). **Límite conocido**: los prefijos bloquean también alguna copia que solo vive en
+      memoria (`entidad.Clone()`, `DBDictionary.CopyTo`); un script de lectura no las necesita. Lo que vive solo en memoria sigue permitido (`Point3d`, `Extents3d.AddExtents`,
       `ObjectIdCollection.Add`, `new Line(...)` sin añadirla). Las reglas generales siguen mandando. Estas reglas no
       pueden ser completas (la API tiene cientos de métodos que escriben, por ejemplo `Curve.Extend`): lo que se les
       escapa lo paran las capas siguientes.

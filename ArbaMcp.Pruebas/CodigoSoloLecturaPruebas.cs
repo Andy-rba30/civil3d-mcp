@@ -130,6 +130,8 @@ namespace ArbaMcp.Pruebas
             Bloqueado("DBObject o = null;\no.Cancel();\nreturn null;", ".Cancel");
             Bloqueado("DBObject o = null;\no.DowngradeOpen();\nreturn null;", ".DowngradeOpen");
             Bloqueado("DBObject o = null;\no.CopyFrom(null);\nreturn null;", ".CopyFrom");
+            // Segunda revisión (n2): actualizar los campos escribe
+            Bloqueado("Database db = null;\nvar n = db.EvaluateFields();\nreturn n;", ".EvaluateFields");
             // Leer de los gestores sigue valiendo
             Permitido("var n = LayoutManager.Current.LayoutCount;\nvar actual = LayoutManager.Current.CurrentLayout;\nDatabase db = null;\nvar hay = db.LayerStateManager.HasLayerState(\"E\");\nreturn new { n, actual, hay };");
         }
@@ -162,6 +164,14 @@ namespace ArbaMcp.Pruebas
             Bloqueado("Line l = null;\n(l.Layer, _) = (\"0\", 0);\nreturn null;", ".Layer (asignación)");
             Bloqueado("Line l = null; int x;\n((l.Layer, x), _) = ((\"0\", 1), 2);\nreturn null;", ".Layer (asignación)");
             // (foreach ((l.Layer, var n) in ...) no es C# válido: CS8186, el foreach tiene que declarar sus variables)
+            // Segunda revisión (N1): con el destino entre paréntesis, en cualquier anidación y combinado con tuplas
+            Bloqueado("Line l = null;\n(l.Layer) = \"0\";\nreturn null;", ".Layer (asignación)");
+            Bloqueado("Line l = null;\n((l.Layer), _) = (\"0\", 0);\nreturn null;", ".Layer (asignación)");
+            Bloqueado("Line l = null;\n(l.ColorIndex)++;\nreturn null;", ".ColorIndex (asignación)");
+            Bloqueado("Line l = null;\n((l.ColorIndex)) += 1;\nreturn null;", ".ColorIndex (asignación)");
+            Bloqueado("(LayoutManager.Current.CurrentLayout) = \"Model\";\nreturn null;", "LayoutManager.CurrentLayout (asignación)");
+            // Leer entre paréntesis sigue valiendo
+            Permitido("Line l = null;\nvar capa = (l.Layer);\nvar n = (l.ColorIndex) + 1;\nreturn (capa, n);");
             // Asignación condicional de C# 14 (a?.b = c): también es una asignación
             Bloqueado("Line l = null;\nl?.Layer = \"0\";\nreturn null;", ".Layer (asignación)");
             // Desestructurar en variables nuevas no escribe nada

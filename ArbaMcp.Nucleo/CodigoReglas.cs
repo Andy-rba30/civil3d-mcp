@@ -275,6 +275,9 @@ namespace ArbaMcp.Nucleo
             new ReglaMiembro("Database", "ReloadXrefs", Documentos),
             new ReglaMiembro("Database", "UnloadXrefs", Documentos),
             new ReglaMiembro("Database", "ResolveXrefs", Documentos),
+            // Segunda revisión (n1): la misma familia de referencias externas
+            new ReglaMiembro("Database", "RestoreOriginalXrefSymbols", Documentos),
+            new ReglaMiembro("Database", "RestoreForwardingXrefSymbols", Documentos),
             new ReglaMiembro("Database", "DisableUndoRecording", Transaccion),
             new ReglaMiembro("DBObject", "DisableUndoRecording", Transaccion),
             new ReglaMiembro("HostApplicationServices", "WorkingDatabase", Documentos, soloEscritura: true),
@@ -437,7 +440,9 @@ namespace ArbaMcp.Nucleo
             "UpgradeOpen", "UpgradeFromNotify", "Erase", "AppendEntity", "AddNewlyCreatedDBObject", "SwapIdWith", "HandOverTo",
             "DeepCloneObjects", "WblockCloneObjects", "Wblock", "Audit", "LockDocument",
             "DeepClone", "WblockClone", "XBindXrefs", "DetachXref", "ReloadXrefs", "UnloadXrefs", "ResolveXrefs",
-            "DisableUndoRecording", "Close", "Cancel", "DowngradeOpen"
+            "DisableUndoRecording", "Close", "Cancel", "DowngradeOpen",
+            // Segunda revisión (n2): actualiza los campos del dibujo
+            "EvaluateFields"
         };
 
         /// <summary>

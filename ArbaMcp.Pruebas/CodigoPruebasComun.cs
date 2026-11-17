@@ -100,6 +100,7 @@ namespace Autodesk.AutoCAD.DatabaseServices
         public void DowngradeOpen() { }
         public void DisableUndoRecording(bool disable) { }
         public void CopyFrom(object otro) { }
+        public int ColorIndex { get; set; }
     }
     // Auditoría de la ronda C (I3): gestores que heredan de RXObject, no de DBObject, y cambian el dibujo
     public class LayoutManager : Autodesk.AutoCAD.Runtime.RXObject
@@ -176,6 +177,9 @@ namespace Autodesk.AutoCAD.DatabaseServices
         public void ReloadXrefs(ObjectIdCollection xrefIds) { }
         public void UnloadXrefs(ObjectIdCollection xrefIds) { }
         public void ResolveXrefs(bool useThreadEngine, bool doNewOnly) { }
+        public void RestoreOriginalXrefSymbols() { }
+        public void RestoreForwardingXrefSymbols() { }
+        public int EvaluateFields() => 0;
         public void DisableUndoRecording(bool disable) { }
         public void DeepCloneObjects(ObjectIdCollection ids, ObjectId owner, object mapping, bool deferTranslation) { }
         public void WblockCloneObjects(ObjectIdCollection ids, ObjectId owner, object mapping, int cloning, bool deferTranslation) { }
