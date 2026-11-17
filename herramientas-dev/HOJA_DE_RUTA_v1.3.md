@@ -7,7 +7,7 @@ prompt.
 
 ---
 
-## 0. Avance (actualizado el 15/11/2026, tras la ronda B con la 1.17.4: Etapa 3 hecha, salvo la 3.3, mensual)
+## 0. Avance (actualizado el 16/11/2026, tras la validación de la 1.17.5: Etapa 3 hecha, salvo la 3.3, mensual)
 
 Leyenda: ✅ hecho y verificado · 🟡 hecho, falta comprobar algo · ⬜ pendiente · ❓ no se puede comprobar desde
 civil3d-mcp (vive en `memoria-firma` o en la PC).
@@ -33,12 +33,13 @@ civil3d-mcp (vive en `memoria-firma` o en la PC).
 | Etapa 2 | 2.7 `calcular_volumenes` | ✅ | 1.14.0 y correcciones 1.14.2 y 1.14.3 (tabla por progresivas), informes 114, 1142 y 1143 del 14/11/2026 (PR #31) |
 | Etapa 2 | 2.8 Receta "flujo vial completo" | ✅ | Receta 2b de `INSTRUCCIONES_AGENTE.md` (PR #29); informe del flujo completo del 14/11/2026 (117 s frente a 130 min). **Hito de la Etapa 2 cumplido**: la tarea 10 da OK (evaluación del 14/11/2026) |
 | Etapa 2 | Extra: `listar_pis` (tabla de PI del eje, tarea 9 de la evaluación) | ✅ | 1.15.0, informe 115 del 14/11/2026 (PR #35); en `main` como 1.15.1 |
-| Etapa 3 | 3.1 `ejecutar_codigo` | ✅ | 1.16.0, con las correcciones 1.17.3 y 1.17.4 (referencias de Roslyn dentro de acad.exe); informe 116 del 14/11/2026 (PR #43). Dos hallazgos abiertos: objetos creados en 0 y `_.UNDO 1` que no quita la línea (corrección 1.17.5 en curso) |
+| Etapa 3 | 3.1 `ejecutar_codigo` | ✅ | 1.16.0, con las correcciones 1.17.3 y 1.17.4 (referencias de Roslyn dentro de acad.exe); informe 116 del 14/11/2026 (PR #43). Sus dos hallazgos (objetos creados en 0 y `_.UNDO 1` que no quitaba la línea) los resolvió la corrección 1.17.5 (PR #46), validada el 16/11/2026 (informe 1175: el recuento da 1 y un `_.UNDO 1` quita la línea; el fallo anterior era un zoom de por medio) |
 | Etapa 3 | 3.2 Recetas (`guardar_receta`, `ejecutar_receta`, recetas primero en `buscar_api`) | ✅ | 1.17.0, informe 117 del 14/11/2026 (PR #43): receta guardada con la aprobación del dueño, subida con L.2 y reutilizada en una conversación nueva del agente |
 | Etapa 3 | Extras: 1.17.1 tabla por progresivas dentro de la Datum · 1.17.2 estilo con las curvas pedidas | ✅ | Informes 1171 (diferencia con la superficie de volumen: 0,31 % en corte y 0,05 % en relleno) y 1172 (elige `Contours 1m and 5m (Background)`) del 14/11/2026 (PR #43) |
 | Etapa 3 | 5.2-D y 5.2-PC con la 1.17.4 | ✅ | Evaluación del 14/11/2026 (22:52): **10 de 10 OK** en 284 s sumando las diez tareas; la tarea 10 (flujo completo) en 140 s frente a 7800 s a mano (`herramientas-dev/informes/informe_evaluacion_20261114_2252.yaml`) |
 | Etapa 3 | 3.3 Promoción de recetas (cada mes) | ⬜ mensual | Se corre cada mes, con L.2 antes; propone herramientas a partir de las recetas usadas 3 veces o más (la de prueba va por 2: informe 117, paso 16) |
-| Etapa 4 | 4.1 Tablas DG-2018 · 4.2 `verificar_norma` · 4.3 Norma en el alineamiento | ⬜ | — |
+| Etapa 4 | 4.1 Tablas DG-2018 | 🟡 | Hecha en `memoria-firma` el 15/11/2026 (`normas/tablas/`: `dg2018.sqlite`, `VERIFICAR.md`; 5 casos en `normas/casos_prueba/`); falta la revisión de Jose (tablas críticas al 100 %) y decidir la Tabla 303.02 |
+| Etapa 4 | 4.2 `verificar_norma` · 4.3 Norma en el alineamiento | ⬜ | Esperan la revisión de la 4.1 |
 | Continuo | F · L.2 · 5.2 | ❓ | Viven en `memoria-firma` y en la PC |
 
 **Decisión del dueño (13/11/2026): solo 3 rondas de prueba en la PC** para lo que queda: **A** = Etapa 2 completa
@@ -62,15 +63,17 @@ Resueltos después:
   5 m (1.17.2, informe 1172 del 14/11/2026, PR #43).
 - `memoria-firma/evaluacion/datos_prueba/` ya tiene los datos de la evaluación (sincronización del 14/11/2026 a las
   16:03, anotada por la sesión orquestadora en `REGISTRO_AVANCE.md` el 15/11/2026).
+- `ejecutar_codigo` cuenta lo que crea un script (`despues.objetos_creados: 1` con una línea, por la fuente `fachada`),
+  un solo `_.UNDO 1` quita lo que dibuja si no se toca la vista (en la 1.16.0 lo impidió un zoom) y el alias
+  `TransactionManager` compila sin CS0104 (1.17.5, informe 1175 del 16/11/2026, PR #46).
 
 Siguen abiertos:
 
 - Ctrl+Z no quita la superficie TIN (informe 1.7.0), ni las superficies de corredor (informe 1.12.0), ni la superficie de
-  volumen (informe 1.14.0), ni la línea que dibuja `ejecutar_codigo` (informe 1.16.0, paso 5c); en cambio, sí quita las
-  rasantes (1.10.0), el corredor (1.11.0) y un contorno (1.14.1). Valorar un deshacer propio, como `deshacer_objetivos`.
-- `ejecutar_codigo` (informe 1.16.0, pasos 4b y 5a): `despues.objetos_creados` da 0 con una línea creada, en simulación
-  y en real. Lo investiga la 1.17.5 (`tarea/3.4-codigo-objetos-deshacer`, junto con el `_.UNDO 1` y el alias de la H3),
-  que se probará con la ronda C.
+  volumen (informe 1.14.0); en cambio, sí quita las rasantes (1.10.0), el corredor (1.11.0), un contorno (1.14.1) y la
+  línea que dibuja `ejecutar_codigo` (1.17.5). Valorar un deshacer propio, como `deshacer_objetivos`.
+- `ejecutar_codigo` (informe 1175): cada simulación, también un simple conteo, deja una entrada `Executefunction` en
+  Deshacer y hace copia de seguridad; valorar si un script que solo lee puede no dejar ninguna, como las demás lecturas.
 - `ejecutar_codigo` (revisión previa del 15/11/2026): comprobar en Civil 3D si algún miembro heredado de
   `GraphicsInterface.Drawable` sale bloqueado por la lista blanca (H4).
 - `crear_superficie_tin` (informe 1172, pasos 2 y 4): aviso «No se pudo releer el estilo de la superficie creada
