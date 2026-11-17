@@ -180,7 +180,11 @@ Reglas:
    - **Frecuencia 0**: `args={"nombre":"C","alineamiento":"Eje 1","perfil":"Rasante 1","ensamblaje":"Ensamblaje 1","frecuencia":0,"simular":true}`
      → `La 'frecuencia' debe ser un número mayor que 0 (metros entre secciones del corredor); llegó 0.`
    - **Sin frecuencia**: `args={"nombre":"C","alineamiento":"Eje 1","perfil":"Rasante 1","ensamblaje":"Ensamblaje 1","simular":true}`
-     → `Falta el parámetro obligatorio 'frecuencia' (metros entre secciones del corredor, por ejemplo 10).`
+     → lo rechaza **el puente** antes de llegar al plugin, porque `frecuencia` es obligatoria en la herramienta MCP: un
+     error de validación que contiene `1 validation error for crear_corredorArguments`, `args.frecuencia` y
+     `Field required` (informe 111, paso 4). No es un `ok: false` del plugin y no añade línea a `mcp_log.jsonl`. El
+     texto del plugin, `Falta el parámetro obligatorio 'frecuencia' (metros entre secciones del corredor, por ejemplo
+     10).`, solo sale si se llama al plugin sin pasar por el puente.
 
 5. **Creación real (decisivo).** `crear_corredor` **sin** `simular` (con la 1.10.1 el plugin la ensaya antes con
    `simular=true`; si el ensayo pasa, la escritura sigue igual y deja **una** entrada en Deshacer):
