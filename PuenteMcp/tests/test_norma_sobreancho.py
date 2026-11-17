@@ -38,6 +38,9 @@ EJES = {
     "Eje grande": {"fin": 1000, "pis": [curva(1, "derecha", 300, 300, 500)]},
     "Eje juntas": {"fin": 1000, "pis": [curva(1, "izquierda", 80, 200, 300), curva(2, "izquierda", 100, 350, 450)]},
     "Eje inicio": {"fin": 500, "pis": [curva(1, "izquierda", 80, 20, 120)]},
+    # Vía de baja velocidad (30 y 40 km/h) con curvas cerradas de R = 25 y 30 m (requisito de la orquestadora: el XML de
+    # criterios que usa hoy el dueño no funciona a 30 km/h).
+    "Eje cerrado": {"fin": 600, "pis": [curva(1, "izquierda", 25, 200, 239.2699), curva(2, "derecha", 30, 400, 447.1239)]},
     "Eje espiral": {"fin": 800, "pis": [{"numero": 1, "tipo": "AlignmentSCS", "tiene_curva": False, "giro": "izquierda",
                                          "aviso": "tipo no soportado todavía"}, curva(2, "derecha", 80, 400, 500)]},
 }
@@ -191,6 +194,33 @@ def test_dos_curvas_en_el_borde_interior_con_factor(servidor, puente, plugin):
     assert [x["tema"] for x in p["pendiente_de_decision"]] == [ns.PENDIENTE_TRANSICION["tema"], ns.PENDIENTE_REDONDEO["tema"]]
     assert p["pendiente_de_decision"][0]["quien_decide"] == "Jose"
     assert p["lecturas"] == {"listar_pis": "id-listar-pis"}
+
+
+@pytest.mark.parametrize("velocidad", [30, 40])
+def test_baja_velocidad_con_curvas_cerradas(servidor, puente, plugin, velocidad):
+    """30 y 40 km/h con R = 25 y 30 m: la fórmula de la DG-2018 con V / (10 √R), dentro del rango de la figura
+    302.18B (sin aviso de velocidad) y el factor de EJEMPLO de la T302.20 solo donde el radio está en la tabla."""
+    r = crear(puente, eje="Eje cerrado", simular=True, **{**PROYECTO, "velocidad_diseno": velocidad,
+                                                         "vehiculo_diseno": "ejemplo_corto"})
+    _, ens = enviados(servidor)
+    p = r["propuesta_norma"]
+    assert not any("figura 302.18B" in a for a in p["avisos"])
+    c25, c30 = p["curvas"]
+    assert c25["termino_velocidad"] == n._limpio(velocidad / (10 * math.sqrt(25)))
+    assert c25["termino_geometrico"] == n._limpio(2 * (25 - math.sqrt(25 * 25 - 5 * 5)))
+    assert c25["sobreancho_formula"] == round(sa(2, 25, 5, velocidad), 4)
+    assert c25["factor_reduccion"]["valor"] == 0.75 and c25["sobreancho"] == round(sa(2, 25, 5, velocidad) * 0.75, 4)
+    assert c30["factor_reduccion"] is None and c30["sobreancho"] == round(sa(2, 30, 5, velocidad), 4)
+    assert [(e["borde"], e["progresiva_inicial"], e["progresiva_final"], e["sobreancho"]) for e in ens] == [
+        ("izquierdo", 200, 239.2699, c25["sobreancho"]), ("derecho", 400, 447.1239, c30["sobreancho"])]
+    assert all(e["longitud_transicion"] == 40 for e in ens)
+
+
+def test_el_termino_de_velocidad_es_el_de_la_norma():
+    """V / (10 √R) de la DG-2018 (302.09), no 0,05·V/√R: a 30 km/h y R = 25 da 0,6 m, no 0,3."""
+    f = ns.sobreancho_formula(1, 25, 5, 30)
+    assert f["termino_velocidad"] == pytest.approx(0.6)
+    assert f["termino_velocidad"] != pytest.approx(0.05 * 30 / math.sqrt(25))
 
 
 def test_menos_de_40_cm_no_se_aplica_y_se_crean_los_bordes(servidor, puente, plugin):

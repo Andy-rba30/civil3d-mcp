@@ -261,6 +261,7 @@ def crear_base(carpeta_memoria: str, sin_tablas: tuple = ()) -> str:
     ins("sobreancho_reduccion", [
         ("T302.20", None, 1, 7.20, 80.0, 0.5),     # ejemplo
         ("T302.20", None, 2, 7.20, 150.0, 0.25),   # ejemplo
+        ("T302.20", None, 3, 7.20, 25.0, 0.75),    # ejemplo (curva cerrada de una vía de 30 km/h)
     ])
     con.execute("INSERT INTO referencias VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 ("T302.20", "tabla", None, "Factores de reducción del sobreancho para anchos de calzada en tangente de "

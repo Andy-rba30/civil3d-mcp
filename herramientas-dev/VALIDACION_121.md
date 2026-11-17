@@ -12,7 +12,7 @@ Copia este texto tal cual en el agente que tiene conectado el MCP de Civil 3D. R
   **4** del puente (`buscar_api`, `guardar_receta`, `ejecutar_receta` y `verificar_norma`). Si la rama conjunta trae
   herramientas de otras tareas, el número que diga su PR.
 - `memoria-firma` clonado y al día (`git pull`) en `C:\Proyectos\memoria-firma`, con `MEMORIA_FIRMA_DIR` apuntando ahí
-  (variable de usuario). Solo la necesitan los pasos 11 y 12 (el sobreancho de la norma).
+  (variable de usuario). Solo la necesitan los pasos 11 a 13 (el sobreancho de la norma).
 - `ARBA_MCP_CODIGO` no hace falta: esta validación no usa `ejecutar_codigo`.
 - Reparto de papeles: el agente local **instala y verifica**; el código y este prompt los mantiene la sesión de
   desarrollo a partir del informe. El agente no edita ningún archivo del repositorio salvo su informe en
@@ -27,7 +27,8 @@ Copia este texto tal cual en el agente que tiene conectado el MCP de Civil 3D. R
   3. En el **puente**, `crear_bordes_calzada` con `velocidad_diseno`, `numero_carriles`, `ancho_calzada` y
      `vehiculo_diseno` calcula el sobreancho de cada curva con la DG-2018 (302.09) y lo pone en el borde interior. **Las
      tablas del sobreancho las añade la tarea 6.4 a `dg2018.sqlite`**: si tu base aún no las tiene, los pasos 11 y 12
-     solo comprueban el mensaje que lo dice.
+     solo comprueban el mensaje que lo dice. La herramienta debe funcionar también a **30 y 40 km/h** (el XML de criterios
+     que se usa hoy en Civil 3D no funciona a 30 km/h): el paso 13 lo compara con un cálculo a mano.
 - **Lo que esta validación decide** (no se sabe todavía; por eso hay preguntas): cómo modela Civil 3D la transición de
   un ensanchamiento (`OffsetAlignmentInfo.AddWidening`), el signo del desplazamiento de `CreateOffsetAlignment` y de
   `AddWidening`, y si `_.UNDO 1` quita los dos bordes. **Los pasos 0, 3, 4, 8, 9 y 10 son los decisivos.**
@@ -221,7 +222,8 @@ cada curva del `Eje 1`, en el tramo del PC al PT, con 40 m de transición):
     `crear_bordes_calzada` con `args={"eje":"Eje 1","nombre_izquierdo":"Eje 1 - Norma izq","nombre_derecho":"Eje 1 - Norma der","simular":true,"velocidad_diseno":60}`.
     Esperado, según tu base:
     - **Si la base aún no tiene las tablas del sobreancho** (la 6.4 sin terminar): `ok: false` y un `error` que
-      contiene «no tiene todavía las tablas del sobreancho» y «No se llamó a Civil 3D». Anótalo y **salta el paso 12**.
+      contiene «no tiene todavía las tablas del sobreancho» y «No se llamó a Civil 3D». Anótalo y **salta los pasos 12 y
+      13**.
     - **Si las tiene**: `ok: false`, `error` que empieza por «Faltan datos del proyecto para calcular el sobreancho de
       la DG-2018: numero_carriles, ancho_calzada, vehiculo_diseno» y `faltan` con `vehiculo_diseno` y sus
       `valores_validos` (anótalos).
@@ -238,6 +240,29 @@ cada curva del `Eje 1`, en el tramo del PC al PT, con 40 m de transición):
     `longitud_transicion: 40` (o ninguno si Sa < 0,40) y `pendiente_de_decision` con la transición del peralte y el
     redondeo. Pega `propuesta_norma` completo.
 
+13. **Comparación a 30 km/h con curvas cerradas** (solo si el paso 11 dio `faltan`). Se compara lo que propone la
+    herramienta con lo que Jose calcula **a mano con la DG-2018** (302.09: Sa = n (R − √(R² − L²)) + V / (10 √R) y la
+    Tabla 302.20). **No uses ni copies valores del XML de criterios de Civil 3D**: no son de la norma.
+    a. `ejecutar_comando` con `args={"comando":"_.-LAYER _M EJE_30  ","timeout_s":20,"pedido":"crea la capa EJE_30"}` y con
+       `args={"comando":"_.PLINE 1000,4500 1300,4500 1300,4800 1600,4800  ","timeout_s":20,"pedido":"dibuja la polilínea del eje de 30 km/h"}`
+       (**dos espacios** al final).
+    b. `crear_alineamiento_desde_polilinea` con
+       `args={"nombre":"Eje 30","capa":"EJE_30","radio":25,"radios_por_pi":"[25, 30]","pedido":"crea el eje de 30 km/h con radios 25 y 30"}`
+       → dos curvas: PI 1 a la izquierda con R = 25 y PI 2 a la derecha con R = 30. `listar_pis` con
+       `args={"alineamiento":"Eje 30"}`: anota el PC y el PT de cada curva.
+    c. Pide a Jose los datos de esta vía: **número de carriles**, **ancho de calzada** y **vehículo de diseño** (de la
+       lista del paso 11). No los supongas.
+    d. `crear_bordes_calzada` con
+       `args={"eje":"Eje 30","simular":true,"velocidad_diseno":30,"numero_carriles":<n>,"ancho_calzada":<ancho>,"vehiculo_diseno":"<vehículo>","pedido":"simula los bordes del eje de 30 km/h con el sobreancho de la norma"}`.
+       Esperado: **ningún** aviso de «fuera del rango de la figura 302.18B» (30 km/h está dentro); por curva,
+       `termino_velocidad` = 30 / (10 √R) (**0.6** con R = 25 y **0.5477** con R = 30), `termino_geometrico` =
+       n (R − √(R² − L²)), el `factor_reduccion` de la T302.20 o su `nota_factor`, `sobreancho`, `se_aplica` y, si se
+       aplica, el ensanchamiento en el borde **interior** (izquierdo en el PI 1, derecho en el PI 2) del PC al PT, con 40 m
+       de transición (o recortada, con aviso, si no cabe).
+    e. Jose calcula a mano cada curva con la DG-2018 y te dicta su resultado. Pon en el informe una tabla: curva, R, L,
+       V, n, término geométrico, término de velocidad, factor de la T302.20, Sa a mano, Sa de la herramienta y diferencia.
+       Una diferencia de más de 0,01 m, o un factor distinto, es un hallazgo: anota cómo lo calculó Jose.
+
 ## Informe
 
 Guarda `herramientas-dev/informes/informe_validacion_121_<AAAAMMDD>.md` con: versión de Civil 3D, DWG usado (nombre,
@@ -245,6 +270,7 @@ sin rutas de obra), commit de `memoria-firma` (`git -C C:\Proyectos\memoria-firm
 ensamblaje y de sus subensamblajes (paso 1g), una tabla paso / resultado (OK, FALLO) / respuesta literal / tiempo, los
 bloques `izquierdo` y `derecho` del paso 3 completos (con `medicion` y `regiones_civil3d`), **las respuestas P1 a P4
 del paso 4** con lo que dictó Jose, las medidas del paso 8, el resultado del `_.UNDO 1` del paso 9 y los recuentos de
-`mcp_log.jsonl` y de `backups\` de los pasos 2, 3, 5, 6 y 11. Al final, la lista de lo que te parezca dudoso (una
+`mcp_log.jsonl` y de `backups\` de los pasos 2, 3, 5, 6 y 11 y, si se hizo, la tabla de comparación a 30 km/h del
+paso 13. Al final, la lista de lo que te parezca dudoso (una
 transición que no cuadra, un borde que no llega, un sobreancho de la norma que no te salga a mano) para que el dueño lo
 revise.
