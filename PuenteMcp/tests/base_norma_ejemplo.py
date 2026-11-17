@@ -156,6 +156,7 @@ def crear_base(carpeta_memoria: str, sin_tablas: tuple = ()) -> str:
     ])
     ins("radio_sin_transicion", [
         ("T302.11B", 147, 1, 60, 210.0),   # DG-2018
+        ("T302.11B", 147, 2, 50, 150.0),   # DG-2018
         ("T302.11A", 147, 1, 60, 250.0),   # ejemplo
         ("T302.11A", 147, 2, 100, 900.0),  # ejemplo
     ])

@@ -25,7 +25,7 @@ import norma_alineamiento as norma_eje  # 1.19.0: crear_alineamiento_desde_polil
 import norma_peralte  # 1.20.0: aplicar_peralte con velocidad_diseno (DG-2018)
 import norma_sobreancho as norma_bordes  # 1.21.0: crear_bordes_calzada con velocidad_diseno (sobreancho DG-2018)
 
-__version__ = "1.21.0"
+__version__ = "1.21.1"
 
 CARPETA = os.path.dirname(os.path.abspath(__file__))
 
@@ -451,6 +451,11 @@ async def _crear_eje_con_norma(nombre: str, parametros: list, datos: dict) -> di
             propuesta = await anyio.to_thread.run_sync(calcular)
         except norma_vial.ErrorNorma as e:
             return con_ms({"ok": False, "error": str(e), "propuesta_norma": {"simulacion_de_ensayo": {"id_log": ensayo_id}}})
+        # 1.21.1: en la escritura real, un PI bajo la norma no se crea sin la confirmación del usuario (radios_por_pi)
+        bloqueo = norma_eje.falta_confirmacion(propuesta, args.get("simular"))
+        if bloqueo:
+            bloqueo["propuesta_norma"] = norma_eje.bloque_propuesta(ctx, propuesta, None, insunits, ensayo_id)
+            return con_ms(bloqueo)
 
         final = dict(args)
         final["radio"] = norma_eje.radio_por_defecto(args.get("radio"), propuesta["radios_por_pi"])
