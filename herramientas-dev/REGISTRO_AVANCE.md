@@ -63,13 +63,13 @@ una presenta su plan y la orquestadora lo aprueba por `send_message`):
 
 | Tarea | Sesión | Rama / repo | Versión | Estado |
 |---|---|---|---|---|
-| 6.1 `ejecutar_codigo` protegido sin `solo_lectura` | `session_01CdHU3589GnkBnGhy7K9ugg` | `tarea/6.1-codigo-escritura-segura` | 1.19.2 | plan pendiente |
+| 6.1 `ejecutar_codigo` protegido sin `solo_lectura` | `session_01CdHU3589GnkBnGhy7K9ugg` | `tarea/6.1-codigo-escritura-segura` | 1.19.2 | plan aprobado (sin Close/Cancel en la lista de excepciones), trabajando |
 | 6.2 Documentos pendientes | `session_01CdHU39JEMaAg6NgzUWPSRn` | `tarea/6.2-documentos-pendientes` | — | **terminada**, PR #50 (borrador) |
-| 6.3 `crear_secciones`: grupos y superficie | `session_01CdHU36NsaMFpqqxZwcY9Qd` | `tarea/6.3-secciones-grupos` | 1.19.3 | plan pendiente |
+| 6.3 `crear_secciones`: grupos y superficie | `session_01CdHU36NsaMFpqqxZwcY9Qd` | `tarea/6.3-secciones-grupos` | 1.19.3 | plan aprobado (opción A con salvaguardas; `secciones` sin cambiar de tipo + `secciones_detalle`), trabajando |
 | 6.4 Tablas DG-2018 de peralte y sobreancho | `session_01CdHU35F8CtvPhdpJWdzCMn` | `memoria-firma` (main) | — | plan aprobado, trabajando |
 | 6.5 Peralte (`listar_peralte`, `aplicar_peralte`) | `session_01CdHU35tiuKgqTBqsCUGeTE` | `tarea/6.5-peralte` | 1.20.0 | plan aprobado, trabajando |
 | 6.6 Bordes de calzada (`crear_bordes_calzada`, `listar_bordes_calzada`) | `session_01CdHU37Cy3fgHeSz8Jv7MJf` | `tarea/6.6-bordes-sobreancho` | 1.21.0 | plan aprobado, trabajando |
-| 6.7 Evaluación honesta (comprobaciones manuales) | `session_01CdHU38kGV8ado1NVu2nujn` | `memoria-firma` (main) | — | plan pendiente |
+| 6.7 Evaluación honesta (comprobaciones manuales) | `session_01CdHU38kGV8ado1NVu2nujn` | `memoria-firma` (main) | — | plan aprobado (banco versión 2; tareas 1, 2, 3, 5, 8, 9 y 10 con comprobaciones del MCP), trabajando |
 | 6.9 `verificar_norma` y propuesta de radios con las decisiones del dueño | `session_01CdHU36FFBPjbfjEgijDCci` | `tarea/6.9-norma-decisiones` | 1.21.1 | plan pendiente |
 | 6.10 Digitalizar las Figuras 302.02 a 302.05 (peralte) | `session_01CdHU34ytgX6VkmhiAmnegy` | `memoria-firma` (main) | — | plan pendiente; no toca la base hasta que acabe la 6.4 |
 | 6.8 XML DG-2018 corregido desde la base | — | — | — | después de 6.4 y 6.10 |
