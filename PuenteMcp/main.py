@@ -20,8 +20,9 @@ from pydantic import create_model, Field
 
 import buscar_api as memoria_firma  # herramienta local del puente (1.5.0): busca en memoria-firma sin Civil 3D
 import recetas  # herramientas locales del puente (1.17.0): guardar_receta y ejecutar_receta
+import norma as norma_vial  # herramienta local del puente (1.18.0): verificar_norma (DG-2018)
 
-__version__ = "1.17.5"
+__version__ = "1.18.0"
 
 CARPETA = os.path.dirname(os.path.abspath(__file__))
 
@@ -237,7 +238,7 @@ def type_to_python(t: str):
 # ---------------------------------------------------------------------------------------------- herramientas locales
 # Herramientas que viven en el puente y no en el plugin: se registran al arrancar, están disponibles aunque Civil 3D
 # esté cerrado y la sincronización con GET /tools nunca las quita (no están en known_tools).
-HERRAMIENTAS_LOCALES = {"buscar_api", "guardar_receta", "ejecutar_receta"}
+HERRAMIENTAS_LOCALES = {"buscar_api", "guardar_receta", "ejecutar_receta", "verificar_norma"}
 
 
 async def buscar_api(consulta: str, limite: int = memoria_firma.LIMITE_POR_DEFECTO) -> str:
@@ -309,6 +310,75 @@ async def ejecutar_receta(nombre: str, parametros: typing.Union[dict, str, None]
 
 mcp.add_tool(guardar_receta)
 mcp.add_tool(ejecutar_receta)
+
+
+def _args_lectura(args: dict, pedido: typing.Optional[str]) -> dict:
+    if pedido:
+        args["pedido"] = pedido
+    return args
+
+
+async def verificar_norma(norma: str, tipo_elemento: str, nombre: str, alineamiento: typing.Optional[str] = None,
+                          velocidad_diseno: typing.Optional[float] = None, clasificacion: typing.Optional[str] = None,
+                          orografia: typing.Optional[str] = None, ubicacion: typing.Optional[str] = None,
+                          peralte_maximo: typing.Optional[float] = None, pavimentada: typing.Optional[bool] = None,
+                          altitud_msnm: typing.Optional[float] = None, cotas_msnm: typing.Optional[bool] = None,
+                          pedido: typing.Optional[str] = None) -> str:
+    """Verifica un eje o una rasante del dibujo contra la norma DG-2018 (solo norma='DG-2018') con la base
+    MEMORIA_FIRMA_DIR\\normas\\tablas\\dg2018.sqlite. tipo_elemento='alineamiento' (nombre = el eje; se lee con
+    listar_pis) o 'rasante' (nombre = el perfil y alineamiento = su eje; se leen listar_pis y listar_pvis). Datos del
+    proyecto: velocidad_diseno (km/h, una celda de la T204.01), clasificacion ('Carretera de segunda clase'...),
+    orografia (Plano, Ondulado, Accidentado, Escarpado), ubicacion (rural, urbana, rural con peligro de hielo),
+    peralte_maximo (%; en un eje de Tercera Clase o en terreno accidentado), pavimentada (Tercera Clase),
+    altitud_msnm o cotas_msnm=true (rasante en terreno accidentado o escarpado). SI FALTA UN DATO no lee el dibujo:
+    responde ok=false con 'faltan' (dato, motivo y valores válidos); pregúntaselo al usuario, nunca lo supongas ni
+    interpoles una velocidad. Si no, devuelve 'filas' (elemento, progresiva, comprobación, valor de diseño, valor
+    exigido, resultado Cumple / No cumple / Cumple con aviso / Aviso / No verificable / Sin valor en la norma, y la
+    referencia con tabla, sección y páginas), 'resumen', 'no_comprobado', 'avisos' y 'tabla' (markdown para mostrar).
+    Manda la tabla de la norma; si la fórmula pide más, «Cumple con aviso». Solo lee el dibujo. Argumentos directos
+    (no dentro de 'args'); responde JSON. Envía pedido con las palabras del usuario."""
+    inicio = time.perf_counter()
+
+    def ms() -> int:
+        return int((time.perf_counter() - inicio) * 1000)
+
+    datos = {"velocidad_diseno": velocidad_diseno, "clasificacion": clasificacion, "orografia": orografia,
+             "ubicacion": ubicacion, "peralte_maximo": peralte_maximo, "pavimentada": pavimentada,
+             "altitud_msnm": altitud_msnm, "cotas_msnm": cotas_msnm}
+    try:
+        preparada = await anyio.to_thread.run_sync(
+            lambda: norma_vial.preparar(norma, tipo_elemento, nombre, alineamiento, datos))
+    except norma_vial.ErrorNorma as e:
+        return _a_texto({"ok": False, "error": str(e), "ms_puente": ms()})
+    try:
+        if preparada["faltan"]:
+            salida = norma_vial.respuesta_faltan(preparada)
+            salida["ms_puente"] = ms()
+            return _a_texto(salida)
+        lecturas = {}
+        r_pis = await _ejecutar("listar_pis", _args_lectura({"alineamiento": preparada["eje"]}, pedido), TIMEOUT_LECTURA)
+        if "error" in r_pis:
+            return _a_texto(con_tiempos(r_pis, ms()))
+        lecturas["listar_pis"] = r_pis.get(CLAVE_ID_LOG)
+        pvis = None
+        if preparada["tipo_elemento"] == "rasante" and not norma_vial.unidades_no_validas(r_pis["resultado"]):
+            r_pvis = await _ejecutar("listar_pvis", _args_lectura(
+                {"alineamiento": preparada["eje"], "perfil": preparada["perfil"]}, pedido), TIMEOUT_LECTURA)
+            if "error" in r_pvis:
+                return _a_texto(con_tiempos(r_pvis, ms()))
+            lecturas["listar_pvis"] = r_pvis.get(CLAVE_ID_LOG)
+            pvis = r_pvis["resultado"]
+        salida = await anyio.to_thread.run_sync(
+            lambda: norma_vial.verificar(preparada, r_pis["resultado"], pvis, lecturas))
+    except norma_vial.ErrorNorma as e:
+        return _a_texto({"ok": False, "error": str(e), "ms_puente": ms()})
+    finally:
+        preparada["base"].cerrar()
+    salida["ms_puente"] = ms()
+    return _a_texto(salida)
+
+
+mcp.add_tool(verificar_norma)
 
 
 # ---------------------------------------------------------------------------------------------- registro dinámico
