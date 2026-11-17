@@ -39,6 +39,9 @@ CREATE TABLE reglas (id TEXT PRIMARY KEY, seccion TEXT, pagina_pdf INTEGER, pagi
     regla TEXT, cita_pdf TEXT, referencia TEXT, nota TEXT, imagen TEXT);
 CREATE TABLE relacion_radios (ref TEXT, pagina_pdf INTEGER, orden INTEGER, grupo INTEGER, lado_pdf TEXT,
     radio_entrada_m REAL, salida_max_texto TEXT, salida_max_operador TEXT, salida_max_m REAL, salida_min_m REAL);
+CREATE TABLE sobreancho_vehiculos (ref TEXT, pagina_pdf INTEGER, orden INTEGER, vehiculo TEXT, l_m REAL);
+CREATE TABLE sobreancho_reduccion (ref TEXT, pagina_pdf INTEGER, orden INTEGER, ancho_calzada_m REAL, radio_m REAL,
+    factor REAL);
 CREATE TABLE tangente_min_mismo_sentido (ref TEXT, pagina_pdf INTEGER, orden INTEGER, velocidad_kmh INTEGER,
     longitud_min_m REAL);
 CREATE TABLE velocidad_diseno (ref TEXT, pagina_pdf INTEGER, orden INTEGER, clasificacion TEXT, orografia TEXT,
@@ -248,6 +251,20 @@ def crear_base(carpeta_memoria: str, sin_tablas: tuple = ()) -> str:
         ("F37", "Longitud con deflexión pequeña", "30*(10 - Delta)", "302.02", 126, 125),
     ]
     ins("formulas", [(i, n, None, e, None, s, pp, pi, None) for i, n, e, s, pp, pi in formulas])
+
+    # Sobreancho (1.21.0). ESQUEMA PROVISIONAL hasta el de la tarea 6.4 y valores de EJEMPLO (ni los vehículos ni los
+    # factores son de la norma): solo prueban la lógica de norma_sobreancho.py.
+    ins("sobreancho_vehiculos", [
+        ("VEH-EJEMPLO", None, 1, "ejemplo_corto", 5.0),     # ejemplo
+        ("VEH-EJEMPLO", None, 2, "ejemplo_largo", 10.0),    # ejemplo
+    ])
+    ins("sobreancho_reduccion", [
+        ("T302.20", None, 1, 7.20, 80.0, 0.5),     # ejemplo
+        ("T302.20", None, 2, 7.20, 150.0, 0.25),   # ejemplo
+    ])
+    con.execute("INSERT INTO referencias VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                ("T302.20", "tabla", None, "Factores de reducción del sobreancho para anchos de calzada en tangente de "
+                 "7.20 m", "302.09", None, None, None, None, None, 0, None))
 
     ins("metadatos", [("documento", "DG-2018 (tabla pequeña de ejemplo para pruebas)"), ("script_version", "ejemplo")])
     for tabla in sin_tablas:

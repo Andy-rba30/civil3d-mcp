@@ -22,8 +22,9 @@ import buscar_api as memoria_firma  # herramienta local del puente (1.5.0): busc
 import recetas  # herramientas locales del puente (1.17.0): guardar_receta y ejecutar_receta
 import norma as norma_vial  # herramienta local del puente (1.18.0): verificar_norma (DG-2018)
 import norma_alineamiento as norma_eje  # 1.19.0: crear_alineamiento_desde_polilinea con velocidad_diseno (DG-2018)
+import norma_sobreancho as norma_bordes  # 1.21.0: crear_bordes_calzada con velocidad_diseno (sobreancho DG-2018)
 
-__version__ = "1.19.1"
+__version__ = "1.21.0"
 
 CARPETA = os.path.dirname(os.path.abspath(__file__))
 
@@ -387,10 +388,15 @@ mcp.add_tool(verificar_norma)
 
 
 # ---------------------------------------------------------------------------------------------- eje con la norma (1.19.0)
-# Herramientas del plugin que el puente amplía con los datos del proyecto de la DG-2018 (norma_alineamiento.py). La
-# ampliación se aplica en _crear_handler, el único camino por el que se registran las herramientas del plugin (también
-# al volver a sincronizar), así que no se pierde.
-AMPLIACIONES_NORMA = {"crear_alineamiento_desde_polilinea"}
+# Herramientas del plugin que el puente amplía con los datos del proyecto de la DG-2018: herramienta → (módulo con
+# CAMPOS_PROYECTO, se_puede_ampliar, es_con_norma y DESCRIPCION; parámetro obligatorio del plugin que con la norma pasa
+# a ser opcional y el texto que se añade a su descripción). La ampliación se aplica en _crear_handler, el único camino
+# por el que se registran las herramientas del plugin (también al volver a sincronizar), así que no se pierde. La
+# función que atiende cada una está en EJECUTAR_CON_NORMA, al final de esta sección.
+AMPLIACIONES_NORMA = {
+    "crear_alineamiento_desde_polilinea": (norma_eje, "radio", norma_eje.DESCRIPCION_RADIO),          # 1.19.0
+    "crear_bordes_calzada": (norma_bordes, norma_bordes.PARAMETRO_OPCIONAL, norma_bordes.DESCRIPCION_DESPLAZAMIENTO),  # 1.21.0
+}
 
 
 async def _crear_eje_con_norma(nombre: str, parametros: list, datos: dict) -> dict:
@@ -494,43 +500,109 @@ async def _crear_eje_con_norma(nombre: str, parametros: list, datos: dict) -> di
         base.cerrar()
 
 
+# ---------------------------------------------------------------------------------------------- bordes con la norma (1.21.0)
+async def _crear_bordes_con_norma(nombre: str, parametros: list, datos: dict) -> dict:
+    """crear_bordes_calzada con velocidad_diseno: valida los datos del proyecto (sin llamar al plugin si falta alguno),
+    lee las curvas del eje con listar_pis (y las unidades), calcula el sobreancho de cada curva con la DG-2018 (302.09)
+    y llama al plugin con esos ensanchamientos. El puente no escribe nada: la única escritura es la llamada final del
+    plugin, con sus reglas (copia, una entrada de Deshacer, log)."""
+    inicio = time.perf_counter()
+
+    def ms() -> int:
+        return int((time.perf_counter() - inicio) * 1000)
+
+    def con_ms(salida: dict) -> dict:
+        salida["ms_puente"] = ms()
+        return salida
+
+    args, proyecto = norma_bordes.separar(datos)
+    if args.get("ensanchamientos") is not None:
+        return con_ms({"ok": False, "error": "Con velocidad_diseno el puente calcula los ensanchamientos de la DG-2018: no "
+                                             "pases 'ensanchamientos'. Si el usuario quiere sus propios valores, llama sin "
+                                             "los datos del proyecto. No se llamó a Civil 3D."})
+    pedido = args.get("pedido")
+    base = None
+    try:
+        try:
+            base = norma_vial.BaseNorma(norma_vial.localizar_base())
+            norma_bordes.comprobar_tablas(base)
+            ctx, faltan = norma_bordes.resolver(base, proyecto)
+        except norma_vial.ErrorNorma as e:
+            return con_ms({"ok": False, "error": str(e)})
+        if faltan:
+            return con_ms(norma_bordes.respuesta_faltan(faltan))
+        eje = args.get("eje")
+        r_pis = await _ejecutar("listar_pis", _args_lectura({"alineamiento": eje}, pedido), TIMEOUT_LECTURA)
+        if "error" in r_pis:
+            return con_tiempos(r_pis, ms())
+        lecturas = {"listar_pis": r_pis.get(CLAVE_ID_LOG)}
+        tabla = r_pis["resultado"] if isinstance(r_pis["resultado"], dict) else {}
+        motivo = norma_vial.unidades_no_validas(tabla)
+        if motivo:
+            return con_ms({"ok": False, "error": motivo + " No se llamó a crear_bordes_calzada: crea los bordes sin "
+                                                          "velocidad_diseno, con tus 'ensanchamientos'.",
+                           "lecturas": lecturas})
+        propuesta = await anyio.to_thread.run_sync(lambda: norma_bordes.proponer(base, ctx, tabla))
+        d, origen_d, aviso_d = norma_bordes.desplazamiento(args, ctx)
+        if aviso_d:
+            propuesta["avisos"].insert(0, aviso_d)
+        bloque = norma_bordes.bloque_propuesta(ctx, propuesta, d, origen_d, lecturas)
+        final = norma_bordes.argumentos_plugin(args, d, propuesta["ensanchamientos"])
+        r_final = await _ejecutar(nombre, final, _timeout_s(nombre, parametros, final))
+        salida = con_tiempos(r_final, ms())
+        salida["propuesta_norma"] = bloque
+        return salida
+    finally:
+        if base is not None:
+            base.cerrar()
+
+
+# Quién atiende cada herramienta de AMPLIACIONES_NORMA cuando la llamada trae datos del proyecto.
+EJECUTAR_CON_NORMA = {
+    "crear_alineamiento_desde_polilinea": _crear_eje_con_norma,
+    "crear_bordes_calzada": _crear_bordes_con_norma,
+}
+
+
 # ---------------------------------------------------------------------------------------------- registro dinámico
 known_tools = set()
 
 
 def _crear_handler(nombre: str, parametros: list, descripcion: str):
     """Función que el SDK expone como herramienta MCP: un único argumento 'args' con el modelo de la herramienta.
-    Las herramientas de AMPLIACIONES_NORMA (1.19.0) reciben además los datos del proyecto de la DG-2018 y 'radio'
-    opcional, si el plugin publica los parámetros que hacen falta y ninguno con el mismo nombre."""
-    ampliada = nombre in AMPLIACIONES_NORMA and norma_eje.se_puede_ampliar(parametros)
-    if nombre in AMPLIACIONES_NORMA and not ampliada:
+    Las herramientas de AMPLIACIONES_NORMA (1.19.0 y 1.21.0) reciben además los datos del proyecto de la DG-2018 y su
+    parámetro opcional con la norma ('radio' o 'desplazamiento'), si el plugin publica los parámetros que hacen falta y
+    ninguno con el mismo nombre."""
+    modulo, opcional, desc_opcional = AMPLIACIONES_NORMA.get(nombre, (None, None, ""))
+    ampliada = modulo is not None and modulo.se_puede_ampliar(parametros)
+    if modulo is not None and not ampliada:
         print(f"Aviso: no se amplía '{nombre}' con la norma: el plugin no publica "
-              f"{', '.join(sorted(norma_eje.PARAMETROS_NECESARIOS))} o ya publica {norma_eje.campos_que_chocan(parametros)}")
+              f"{', '.join(sorted(modulo.PARAMETROS_NECESARIOS))} o ya publica {modulo.campos_que_chocan(parametros)}")
     fields = {}
     for p in parametros:
         ptype = type_to_python(p["type"])
         desc = p.get("description", "")
-        if ampliada and p["name"] == "radio":
-            fields[p["name"]] = (typing.Optional[ptype], Field(None, description=desc + norma_eje.DESCRIPCION_RADIO))
+        if ampliada and p["name"] == opcional:
+            fields[p["name"]] = (typing.Optional[ptype], Field(None, description=desc + desc_opcional))
         elif p.get("required", False):
             fields[p["name"]] = (ptype, Field(..., description=desc))
         else:
             fields[p["name"]] = (typing.Optional[ptype], Field(None, description=desc))
     if ampliada:
-        for campo, (ptype, desc) in norma_eje.CAMPOS_PROYECTO.items():
+        for campo, (ptype, desc) in modulo.CAMPOS_PROYECTO.items():
             fields[campo] = (typing.Optional[ptype], Field(None, description=desc))
     SchemaModel = create_model(f"{nombre}_Model", **fields)
 
     async def handler(args: SchemaModel) -> str:  # type: ignore[valid-type]
         datos = args.model_dump(exclude_none=True)
-        if ampliada and norma_eje.es_con_norma(datos):
-            return _a_texto(await _crear_eje_con_norma(nombre, parametros, datos))
+        if ampliada and modulo.es_con_norma(datos):
+            return _a_texto(await EJECUTAR_CON_NORMA[nombre](nombre, parametros, datos))
         inicio = time.perf_counter()
         respuesta = await _ejecutar(nombre, datos, _timeout_s(nombre, parametros, datos))
         return _a_texto(con_tiempos(respuesta, int((time.perf_counter() - inicio) * 1000)))
 
     handler.__name__ = nombre
-    handler.__doc__ = (descripcion or "") + (norma_eje.DESCRIPCION if ampliada else "")
+    handler.__doc__ = (descripcion or "") + (modulo.DESCRIPCION if ampliada else "")
     return handler
 
 
