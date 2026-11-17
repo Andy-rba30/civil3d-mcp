@@ -443,8 +443,9 @@ namespace ArbaMcp.Nucleo
                     return;
                 }
 
-                // Solo lectura (1.17.6): lo que escribe en el dibujo (UpgradeOpen, Erase, Add..., Create..., asignaciones...)
-                if (CodigoReglas.CategoriaSoloLectura(TiposConBases(receptor, declarante), nombreMiembro, escritura, metodo != null) != null)
+                // Solo lectura (1.17.6): lo que escribe en el dibujo (UpgradeOpen, Erase, Add..., Create..., asignaciones...);
+                // desde la 1.19.1, también todo método de los objetos del dibujo que no sea de lectura (Curve.Extend)
+                if (CodigoReglas.CategoriaSoloLectura(TiposConBases(receptor, declarante), nombreMiembro, escritura, metodo != null, nombreTipo) != null)
                     Escritura(n, Nombre(declarante) + "." + s.Name + (escritura ? " (asignación)" : ""));
 
                 // Punteros nativos devueltos o guardados (UnmanagedObject, campos IntPtr): solo IntPtr.Zero

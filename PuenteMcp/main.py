@@ -23,7 +23,7 @@ import recetas  # herramientas locales del puente (1.17.0): guardar_receta y eje
 import norma as norma_vial  # herramienta local del puente (1.18.0): verificar_norma (DG-2018)
 import norma_alineamiento as norma_eje  # 1.19.0: crear_alineamiento_desde_polilinea con velocidad_diseno (DG-2018)
 
-__version__ = "1.19.0"
+__version__ = "1.19.1"
 
 CARPETA = os.path.dirname(os.path.abspath(__file__))
 

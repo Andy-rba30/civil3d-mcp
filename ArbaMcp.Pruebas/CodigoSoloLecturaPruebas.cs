@@ -199,11 +199,43 @@ return new { n, ids.Count, largo = linea.Length, g };");
         }
 
         [Fact]
-        public void UnaEscrituraQueLasReglasNoVenCompilaYLaParaElBloqueoEnEjecucion()
+        public void UnMetodoDelDibujoQueNoEsDeLecturaNoCompila()
         {
-            // Curve.Extend cambia la curva (catálogo, 17/11/2026) pero no está en las reglas: compila con solo_lectura y la
-            // detiene Civil 3D al ejecutarse (objeto abierto para lectura). Es el paso (c) de VALIDACION_1176.
-            Permitido("Transaction tr = null;\nvar l = (Line)tr.GetObject(default(ObjectId), OpenMode.ForRead);\nl.Extend(false, new Point3d(10, 0, 0));\nreturn null;");
+            // 1.19.1: Curve.Extend sobre una línea abierta para lectura no dio eNotOpenForWrite sino que cerró Civil 3D
+            // (17/11/2026, VALIDACION_1176, paso 9). En la 1.17.6 compilaba y se confiaba en que Civil 3D lo parara; desde la
+            // 1.19.1, en los objetos del dibujo y de Civil 3D solo compilan los métodos de lectura.
+            var p = Bloqueado("Transaction tr = null;\nvar l = (Line)tr.GetObject(default(ObjectId), OpenMode.ForRead);\nl.Extend(false, new Point3d(10, 0, 0));\nreturn null;", "Autodesk.AutoCAD.DatabaseServices.Curve.Extend");
+            Assert.Equal(3, p.Linea);
+            Assert.Contains("solo se pueden llamar métodos de lectura", p.Mensaje);
+            // El script del paso 9 de VALIDACION_1176 (con un BlockTableRecord en vez de F.EspacioModelo, que la Fachada de
+            // prueba no tiene): la línea 5 es la de Extend, como allí
+            var paso9 = Bloqueado("Line l = null;\nBlockTableRecord btr = null;\nforeach (var id in btr) if (F.Abrir<Entity>(id) is Line x) l = x;\nif (l == null) return \"sin líneas\";\nl.Extend(false, new Point3d(l.EndPoint.X + 50, l.EndPoint.Y, 0));\nreturn l.Length;", "[bloqueado: solo lectura] Autodesk.AutoCAD.DatabaseServices.Curve.Extend: con solo_lectura=true el script solo puede leer");
+            Assert.Equal(5, paso9.Linea);
+            Assert.Contains("Línea 5, columna", SoloLectura("Line l = null;\nBlockTableRecord btr = null;\nforeach (var id in btr) if (F.Abrir<Entity>(id) is Line x) l = x;\nif (l == null) return \"sin líneas\";\nl.Extend(false, new Point3d(l.EndPoint.X + 50, l.EndPoint.Y, 0));\nreturn l.Length;").Mensaje);
+            // Un método de Civil 3D que escribe sin prefijo conocido (TinSurface.RaiseSurface, catálogo)
+            Bloqueado("Civ.TinSurface s = null;\ns.RaiseSurface(1.0);\nreturn null;", "Autodesk.Civil.DatabaseServices.TinSurface.RaiseSurface");
+        }
+
+        [Fact]
+        public void LosMetodosDeLecturaDeCivilYLinqSobreObjetosDelDibujoCompilan()
+        {
+            Permitido(@"Civ.Alignment a = null;
+double x = 0, y = 0, pk = 0, d = 0;
+a.PointLocation(100, 0, ref x, ref y);
+a.StationOffset(x, y, ref pk, ref d);
+Civ.Profile p = null;
+var cota = p.ElevationAt(100);
+Civ.Surface s = null;
+var z = s.FindElevationAtXY(x, y);
+BlockTable bt = null;
+var hay = bt.Has(""*Model_Space"");
+BlockTableRecord btr = null;
+var n = btr.Count();
+var primero = btr.FirstOrDefault();
+var texto = btr.ToString();
+Autodesk.AutoCAD.EditorInput.Editor ed = null;
+ed.WriteMessage(""leído"");
+return new { x, y, pk, cota, z, hay, n, primero, texto };");
         }
 
         [Fact]
@@ -280,7 +312,25 @@ return new { n, ids.Count, largo = linea.Length, g };");
             Assert.Equal(CodigoReglas.SoloLectura, CodigoReglas.CategoriaSoloLectura(linea, "Layer", true, false));
             Assert.Null(CodigoReglas.CategoriaSoloLectura(linea, "Layer", false, false));
             Assert.Null(CodigoReglas.CategoriaSoloLectura(linea, "GetPointAtParameter", false, true));
-            Assert.Null(CodigoReglas.CategoriaSoloLectura(linea, "Extend", false, true));
+            // 1.19.1: un método que no es de lectura, en un tipo del dibujo, no compila con solo_lectura (Curve.Extend cerró Civil 3D)
+            Assert.Equal(CodigoReglas.SoloLectura, CodigoReglas.CategoriaSoloLectura(linea, "Extend", false, true));
+            Assert.Equal(CodigoReglas.SoloLectura, CodigoReglas.CategoriaSoloLectura(linea, "Extend", false, true, "Autodesk.AutoCAD.DatabaseServices.Curve"));
+            // ... salvo que lo declare un tipo que no es de Autodesk (LINQ sobre un BlockTableRecord, object.ToString)
+            Assert.Null(CodigoReglas.CategoriaSoloLectura(linea, "Cast", false, true, "System.Linq.Enumerable"));
+            // Lecturas sin prefijo de lectura, el constructor, los operadores y la transacción
+            Assert.Null(CodigoReglas.CategoriaSoloLectura(linea, ".ctor", false, true));
+            Assert.Null(CodigoReglas.CategoriaSoloLectura(new[] { "Autodesk.AutoCAD.DatabaseServices.Transaction" }, "Commit", false, true));
+            Assert.Null(CodigoReglas.CategoriaSoloLectura(new[] { "Autodesk.Civil.DatabaseServices.Profile" }, "ElevationAt", false, true));
+            Assert.Null(CodigoReglas.CategoriaSoloLectura(new[] { "Autodesk.Civil.DatabaseServices.TinSurface" }, "FindElevationAtXY", false, true));
+            Assert.Null(CodigoReglas.CategoriaSoloLectura(new[] { "Autodesk.Civil.DatabaseServices.CorridorSurface" }, "LinkCodes", false, true));
+            Assert.Null(CodigoReglas.CategoriaSoloLectura(new[] { "Autodesk.Civil.DatabaseServices.Alignment" }, "op_Equality", false, true));
+            Assert.Equal(CodigoReglas.SoloLectura, CodigoReglas.CategoriaSoloLectura(new[] { "Autodesk.Civil.DatabaseServices.TinSurface" }, "RaiseSurface", false, true));
+            // Los prefijos de lectura cuentan como palabra: «Getaway» o «Total» no son lecturas
+            Assert.True(CodigoReglas.EsMetodoDeLectura("GetPointAtParameter"));
+            Assert.True(CodigoReglas.EsMetodoDeLectura("TryGetObjectId"));
+            Assert.False(CodigoReglas.EsMetodoDeLectura("Total"));
+            Assert.False(CodigoReglas.EsMetodoDeLectura("Extend"));
+            Assert.False(CodigoReglas.EsMetodoDeLectura(null));
 
             // En memoria: ObjectIdCollection y la geometría no son del dibujo
             Assert.Null(CodigoReglas.CategoriaSoloLectura(new[] { "Autodesk.AutoCAD.DatabaseServices.ObjectIdCollection" }, "Add", false, true));

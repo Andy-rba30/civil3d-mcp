@@ -407,15 +407,32 @@ funciones locales, sin declarar clases ni métodos; puede empezar con `using`. U
       (`Enum.GetValues<OpenMode>()`, `Enum.Parse<OpenMode>`) o un método con un parámetro `OpenMode` pasado como delegado
       (`.Zip(modos, F.Tr.GetObject)`). **Límite conocido**: los prefijos bloquean también alguna copia que solo vive en
       memoria (`entidad.Clone()`, `DBDictionary.CopyTo`); un script de lectura no las necesita. Lo que vive solo en memoria sigue permitido (`Point3d`, `Extents3d.AddExtents`,
-      `ObjectIdCollection.Add`, `new Line(...)` sin añadirla). Las reglas generales siguen mandando. Estas reglas no
-      pueden ser completas (la API tiene cientos de métodos que escriben, por ejemplo `Curve.Extend`): lo que se les
-      escapa lo paran las capas siguientes.
+      `ObjectIdCollection.Add`, `new Line(...)` sin añadirla). Las reglas generales siguen mandando. **Desde la 1.19.1,
+      en esos mismos tipos (los del dibujo y cualquiera de Civil 3D) solo compilan los métodos de lectura**: los que
+      empiezan por `Get`, `TryGet`, `Is`, `Has`, `Can`, `Find`, `Contains`, `To`, `Equals`, `Compare` o `Intersect`
+      (como palabra), los operadores y una lista de lecturas sin ese prefijo, confirmadas en el catálogo de la API
+      (`CodigoReglas.MetodosDeLectura`: el constructor, `Dispose`, `StartTransaction`, `StartOpenCloseTransaction`,
+      `Commit`, `Abort`, `MoveNext`, `IndexOf`, `NameAt`, `Editor.WriteMessage`, `PointLocation`, `StationOffset`,
+      `StationOffsetAcceptOutOfRange`, `StationOffsetElevationToXYZ`, `DistanceToAlignment`, `ElevationAt`, `GradeAt`,
+      `EntityAtId`, `EntityAtStation`, `DesignChecks`, `SortedStations`, `Stations`, `ObjectIds`,
+      `MainBaselineStationToOffsetBaselineStation`, `OffsetBaselineStationToMainBaselineStation`, `OffsetBaselineNames`,
+      `SampleElevations`, `IdentifyFeatureTypeAtXY`, `LinkCodes`, `PointCodes`, `FeatureLineCodes`,
+      `FeatureLineCodeIsBreak`, `BoundaryNames`, `CodeNames`, `SurfaceNames`, `MaskNames`, `PolygonPoints`,
+      `ReferenceBoundaryIds`, `SourceObjectName` y `AdditionalStations`). Cualquier otro método de esos tipos no compila
+      (`Curve.Extend`, `TinSurface.RaiseSurface`). Los
+      métodos que declara un tipo que no es de Autodesk (LINQ sobre un `BlockTableRecord`, `object.ToString`) no
+      cuentan. Motivo: `Curve.Extend` sobre una línea abierta para lectura **cerró Civil 3D** (17/11/2026,
+      `VALIDACION_1176.md`, paso 9, con la 1.19.0): en vez del error `eNotOpenForWrite` esperado, el proceso se cayó, así
+      que no se puede contar con que Civil 3D pare lo que la capa 1 deje pasar. Sin `solo_lectura` estos métodos se
+      siguen permitiendo y solo se cuentan en `escrituras_reconocidas`.
    2. **Bloqueo de lectura** del documento, como las simulaciones de `Escritura.CrearObjeto`: se espera que AutoCAD
       rechace abrir algo para escritura (`eLockViolation`). **Sin forma conocida de probarlo en Civil 3D**: todas las
       maneras conocidas de abrir para escritura las rechaza antes la capa 1, y probarlo exigiría saltarse esas reglas.
-      Aparte, un objeto abierto para lectura no se deja cambiar con ningún bloqueo (`eNotOpenForWrite`): eso es lo
-      que comprueba `VALIDACION_1176.md`, paso 9, con `Curve.Extend` (rechazo en ejecución de una escritura sobre un
-      objeto abierto para lectura, no el bloqueo de lectura).
+      Aparte, cambiar un objeto abierto para lectura **no** da siempre `eNotOpenForWrite`: con `Curve.Extend` Civil 3D
+      2027 se cerró (17/11/2026, `VALIDACION_1176.md`, paso 9, con la 1.19.0). Ese caso lo para ahora la capa 1 (desde
+      la 1.19.1, solo métodos de lectura), y el paso 9 comprueba ese rechazo al compilar. **Sin `solo_lectura`**, un
+      script que llame a un método que escribe sobre un objeto que abrió para lectura (olvidando `F.Abrir(id, true)`)
+      también puede cerrar Civil 3D: es un límite conocido.
    3. **La Fachada** lanza con `F.Agregar`, `F.EscribirTexto` y `F.Abrir(id, true)` («solo_lectura=true: F.Agregar
       escribe en el dibujo...»).
    4. **La transacción del plugin se aborta siempre**, también con `simular=false`.

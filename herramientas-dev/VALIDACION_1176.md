@@ -198,27 +198,28 @@ Reglas:
    Después de las cinco: menú Deshacer **igual** que al final del paso 6, **ningún archivo nuevo** en `backups\`, y
    contar con solo lectura → `resultado: 1`.
 
-9. **Escritura sobre un objeto abierto para lectura: la rechaza Civil 3D al ejecutarse (decisivo).** `Curve.Extend`
-   alarga una curva; las reglas de solo lectura no la conocen, así que el script compila y lo tiene que parar Civil 3D
-   al ejecutarse porque la línea está abierta solo para lectura. **Este paso no prueba el bloqueo de lectura del
-   dibujo**: cambiar un objeto abierto para lectura da `eNotOpenForWrite` con cualquier bloqueo. El bloqueo de lectura
-   (`eLockViolation` al abrir para escritura) no tiene forma conocida de probarse sin saltarse las reglas de
-   compilación: todas las maneras conocidas de abrir para escritura las rechaza el paso 8. `ejecutar_codigo` con
+9. **Un método que no es de lectura no compila con solo lectura (decisivo).** `Curve.Extend` alarga una curva. Con la
+   1.19.0 este script compilaba y Civil 3D **se cerró** al ejecutarlo (17/11/2026: no dio `eNotOpenForWrite`). Desde
+   la 1.19.1, con `solo_lectura=true`, en los objetos del dibujo y de Civil 3D solo compilan los métodos de lectura, así
+   que el script se rechaza **antes de ejecutar nada**. Este paso tampoco prueba el bloqueo de lectura del dibujo
+   (`eLockViolation`), que sigue sin forma conocida de probarse. `ejecutar_codigo` con
    `args={"codigo_csharp":"Line l = null;\nforeach (var id in F.EspacioModelo())\n    if (F.Abrir<Entity>(id) is Line x) l = x;\nif (l == null) return \"sin líneas\";\nl.Extend(false, new Point3d(l.EndPoint.X + 50, l.EndPoint.Y, 0));\nreturn l.Length;","solo_lectura":true,"pedido":"intenta alargar la línea con solo lectura"}`.
    Esperado:
-   - `ok: false`; el error empieza por `Con solo_lectura=true el script intentó escribir en la línea 5 y se impidió (`
-     y sigue con el **texto literal de AutoCAD: por anotar** (se espera `eNotOpenForWrite`, algo como `Exception: eNotOpenForWrite`;
-     cópialo tal cual: decide la tabla de miembros); termina con `No se tocó el dibujo: solo lectura (dibujo bloqueado
-     para lectura y transacción abortada), sin copia de seguridad y sin entrada en Deshacer. Si el script necesita
-     escribir, quita solo_lectura y simula primero (simular=true).`;
-   - si en vez de eso el error empieza por `Con solo_lectura=true el script no puede cambiar el dibujo, pero se
-     detectaron objetos` o por `ATENCIÓN: en un script de solo lectura`, cópialo entero: Civil 3D dejó cambiar la línea
-     y la paró la comprobación de después (es un hallazgo, pero el dibujo no debe haber cambiado);
-   - si sale `ok: true` con `resultado: 150`, es un **FALLO**: anótalo y sigue.
-   Después: menú Deshacer **igual** que al final del paso 6, **ningún archivo nuevo** en `backups\`, y comprobar que la
-   línea sigue midiendo 100: `ejecutar_codigo` con
+   - `ok: false`, **Civil 3D sigue abierto** y la respuesta llega en menos de 5 s;
+   - el error contiene `Línea 5, columna` y `[bloqueado: solo lectura] Autodesk.AutoCAD.DatabaseServices.Curve.Extend:
+     con solo_lectura=true el script solo puede leer` y `solo se pueden llamar métodos de lectura`, y termina con `No se
+     ejecutó nada: sin copia de seguridad, sin contexto de comando y sin entrada en Deshacer.` Copia el error entero;
+   - si Civil 3D se cierra o la respuesta es «Error de conexión», es un **FALLO**: **para aquí** (no sigas con la parte 1)
+     y anota lo que se vea en `%LOCALAPPDATA%\Autodesk\CER\`;
+   - si sale `ok: true`, o `ok: false` con un error que no es de compilación, es un **FALLO**: anótalo y sigue.
+   Después: `ping` → `"hay_dibujo": true`; menú Deshacer **igual** que al final del paso 6, **ningún archivo nuevo** en
+   `backups\`, y comprobar que la línea sigue midiendo 100: `ejecutar_codigo` con
    `args={"codigo_csharp":"double largo = 0;\nforeach (var id in F.EspacioModelo())\n    if (F.Abrir<Entity>(id) is Line x) largo = x.Length;\nreturn largo;","solo_lectura":true,"pedido":"mide la línea de prueba"}`
    → `resultado: 100`.
+   - **9b (no decide). Una lectura de Civil 3D sin prefijo de lectura sí compila.** `ejecutar_codigo` con
+     `args={"codigo_csharp":"var ed = F.Doc.Editor;\ned.WriteMessage(\"\\nPrueba 1.19.1\");\nint n = 0;\nforeach (var id in F.EspacioModelo())\n    if (F.Abrir<Entity>(id) is Line) n++;\nreturn n;","solo_lectura":true,"pedido":"escribe un mensaje y cuenta las líneas"}`
+     → `ok: true`, `resultado: 1`, `copia: null`, y en la línea de comandos de Civil 3D el texto `Prueba 1.19.1`. Si no
+     compila, copia el error.
 
 ### D (fin). Deshacer
 
@@ -317,7 +318,7 @@ Desde aquí ya se puede mirar el dibujo en pantalla.
 - El `despues.estilo` de la simulación y de la creación real de los pasos 13, 14 (perfil y vista) y 15, y los `avisos`
   enteros de esos pasos.
 - Las respuestas literales de los pasos 16 y 17 (y si el 16 se saltó, por qué).
-- **El texto literal de AutoCAD del paso 9** (lo que va entre paréntesis después de `se impidió`).
+- **El error literal del paso 9** (rechazo al compilar, desde la 1.19.1) y si Civil 3D siguió abierto, y el resultado del 9b.
 - Las respuestas literales de 8d, 8e, 17b y 17c y, en 8d, si la pestaña `Presentación1` sigue en el dibujo.
 - Si Jose miró el dibujo en pantalla, en qué paso (debe ser después del 10).
 - Una lista final de los miembros de la sección 1.17.6 de `miembros_por_verificar_civil3d.md` que pasan a

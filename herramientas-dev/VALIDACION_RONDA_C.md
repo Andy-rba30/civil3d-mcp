@@ -1,4 +1,4 @@
-# Prueba de la ronda C en Civil 3D (1.17.6 + 1.18.0 + 1.19.0): índice y orden
+# Prueba de la ronda C en Civil 3D (1.17.6 + 1.18.0 + 1.19.0, con la corrección 1.19.1): índice y orden
 
 Este archivo junta en **una sola sesión de pruebas** las tres validaciones de la ronda C y añade una cuarta parte, la
 repetición **sin zoom** de los `_.UNDO 1` que quedaron en duda. Lo usa el agente instalador con el **Prompt P**,
@@ -8,12 +8,13 @@ Civil 3D.
 ## Requisitos (una sola instalación para todo)
 
 - **Rama**: `tarea/ronda-c`. Lleva las tres versiones juntas: la corrección 1.17.6, `verificar_norma`
-  (1.18.0) y la norma dentro del eje (1.19.0). Se instala **una vez**. Con Civil 3D cerrado, en PowerShell desde la
+  (1.18.0), la norma dentro del eje (1.19.0) y, desde el 17/11/2026, la corrección **1.19.1** (ver «Estado tras la
+  primera prueba», abajo). Se instala **una vez**. Con Civil 3D cerrado, en PowerShell desde la
   raíz del repo: `powershell -ExecutionPolicy Bypass -File .\ArbaMcp\instalar.ps1`. Después, en `PuenteMcp`, `uv sync`.
   Reinicia el puente y el cliente MCP.
-- **Versión instalada**: `1.19.0`. Herramientas: **59** (55 del plugin y 4 del puente: `buscar_api`,
+- **Versión instalada**: `1.19.1`. Herramientas: **59** (55 del plugin y 4 del puente: `buscar_api`,
   `guardar_receta`, `ejecutar_receta` y `verificar_norma`).
-  - En el paso 0 de `VALIDACION_1176.md` y de `VALIDACION_118.md` se espera **`1.19.0`**, no el número de cada archivo,
+  - En el paso 0 de `VALIDACION_1176.md` y de `VALIDACION_118.md` se espera **`1.19.1`**, no el número de cada archivo,
     tanto en `ping` como en el `/ping` de PowerShell, y **59** herramientas (`VALIDACION_1176.md` dice 58 porque se
     escribió antes de `verificar_norma`). Todo lo demás de esos pasos 0 vale igual.
   - No reinstales entre partes, aunque el paso 0 de cada archivo nombre su propia rama: basta con abrir el dibujo de
@@ -29,6 +30,17 @@ Civil 3D.
 - Reparto de papeles: el agente **instala y verifica**. No edita el repositorio, salvo los informes en
   `herramientas-dev\informes\`, y no hace commits. Usa **solo** el MCP `civil3d`: nada de curl, scripts ni el puerto
   8765, salvo los pasos que piden PowerShell.
+
+## Estado tras la primera prueba (17/11/2026, con la 1.19.0)
+
+- **Parte 1**: pasos 0 a 8 OK; en el **paso 9** (`Curve.Extend` con `solo_lectura=true`) **Civil 3D se cerró**
+  (informe `informe_validacion_1176_20261117.md`). La 1.19.1 lo corrige: con `solo_lectura=true` ese script ya no compila.
+  **Repite la parte 1 entera** desde el paso 0, sobre una **copia nueva** (`PRUEBA_1176.dwg` quedó a medias por la
+  caída; no lo recuperes). Guarda el informe nuevo con otro nombre, `informe_validacion_1176_<AAAAMMDD>_b.md`, sin
+  borrar el primero.
+- **Partes 2, 3 y 4**: si ya se hicieron con la 1.19.0, **no se repiten** (la 1.19.1 solo cambia `ejecutar_codigo` con
+  `solo_lectura`); basta con el `ping` del paso 0 de la parte 1 (`1.19.1`). Si no se hicieron, van después de la parte 1,
+  como dice el orden.
 
 ## Orden
 

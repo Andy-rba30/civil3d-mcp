@@ -144,6 +144,7 @@ namespace Autodesk.AutoCAD.DatabaseServices
         public Line(Autodesk.AutoCAD.Geometry.Point3d inicio, Autodesk.AutoCAD.Geometry.Point3d fin) { }
         public double Length => 0;
         public Autodesk.AutoCAD.Geometry.Point3d StartPoint { get; set; }
+        public Autodesk.AutoCAD.Geometry.Point3d EndPoint { get; set; }
         [System.Obsolete(""Usa Length."")] public double Largo => 0;
     }
     public class Transaction : Autodesk.AutoCAD.Runtime.DisposableWrapper
@@ -194,8 +195,10 @@ namespace Autodesk.AutoCAD.DatabaseServices
     public class RasterImageDef : DBObject { public string SourceFileName { get; set; } }
     // Solo para la prueba de parámetros que contienen 'name' y no son archivos (en la API real, BlockTable.Has(string key))
     public class BlockTable : DBObject { public bool Has(string blockName) => false; }
-    public class BlockTableRecord : DBObject
+    public class BlockTableRecord : DBObject, System.Collections.Generic.IEnumerable<ObjectId>
     {
+        public System.Collections.Generic.IEnumerator<ObjectId> GetEnumerator() => null;
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => null;
         public string PathName { get; set; }
         public string Name { get; set; }
         public ObjectId AppendEntity(Entity e) => default(ObjectId);
@@ -263,22 +266,26 @@ namespace Autodesk.Civil.DatabaseServices
     public class Alignment : Entity
     {
         public static Autodesk.AutoCAD.DatabaseServices.ObjectId Create(object documento, string alignmentName, string siteName, string layerName, string styleName, string labelSetName) => default(Autodesk.AutoCAD.DatabaseServices.ObjectId);
+        public void PointLocation(double station, double offset, ref double easting, ref double northing) { }
+        public void StationOffset(double easting, double northing, ref double station, ref double offset) { }
     }
     public class Profile : Entity
     {
         public static Autodesk.AutoCAD.DatabaseServices.ObjectId CreateByLayout(string profileName, Autodesk.AutoCAD.DatabaseServices.ObjectId alignmentId, string layerName) => default(Autodesk.AutoCAD.DatabaseServices.ObjectId);
+        public double ElevationAt(double station) => 0;
     }
     public class Surface : Entity
     {
         public void Rebuild() { }
         public object GetGeneralProperties() => null;
+        public double FindElevationAtXY(double x, double y) => 0;
     }
     public class SurfaceStyleCollection
     {
         public bool Contains(string nombre) => false;
         public Autodesk.AutoCAD.DatabaseServices.ObjectId Add(string nombre) => default(Autodesk.AutoCAD.DatabaseServices.ObjectId);
     }
-    public class TinSurface : Surface { public void AddPointFile(string pointFilePath, int formato) { } }
+    public class TinSurface : Surface { public void AddPointFile(string pointFilePath, int formato) { } public void RaiseSurface(double amount) { } }
     public class BaselineRegionCollection
     {
         public int Count => 0;
