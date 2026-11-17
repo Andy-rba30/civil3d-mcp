@@ -34,6 +34,12 @@ namespace Autodesk.Civil
     // 1.8.0: valores de la configuración (PropertyObjectId.Value, PropertyString.Value)
     public class PropertyObjectId { public ObjectId Value { get; set; } }
     public class PropertyString { public string Value { get; set; } }
+    // 1.20.0 (listar_peralte, aplicar_peralte): enumerados del peralte. El catálogo no trae sus valores: van vacíos y el
+    // plugin los resuelve por nombre en tiempo de ejecución (Enum.GetNames); por verificar en Civil 3D
+    public enum SuperelevationCriticalStationType { }
+    public enum SuperelevationAttainmentRegionType { }
+    public enum SuperelevationCrossSegmentType { }
+    public enum SuperelevationTransitionRegionType { }
 }
 
 namespace Autodesk.Civil.Settings
@@ -236,6 +242,51 @@ namespace Autodesk.Civil.DatabaseServices
         public static ObjectId Create(Autodesk.Civil.ApplicationServices.CivilDocument doc, PolylineOptions opciones, string nombre, ObjectId sitio, ObjectId capa, ObjectId estilo, ObjectId etiquetas) => ObjectId.Null;
         public AlignmentEntityCollection Entities => new AlignmentEntityCollection();
         public string SiteName => "";
+        // 1.20.0 (listar_peralte, aplicar_peralte): confirmados en el catálogo (consulta de la orquestadora, 17/11/2026); por verificar
+        public SuperelevationCurveCollection SuperelevationCurves => new SuperelevationCurveCollection();
+        public SuperelevationCriticalStationCollection SuperelevationCriticalStations => new SuperelevationCriticalStationCollection();
+        public SuperelevationType SuperelevationType => default;
+        public bool UseDesignCriteriaFile { get; set; }
+        public string CriteriaFileName { get; set; }
+    }
+    // ---- 1.20.0 (listar_peralte, aplicar_peralte): peralte del eje; firmas del catálogo (consulta de la orquestadora, 17/11/2026), por verificar
+    public enum SuperelevationType { }
+    public class SECurve
+    {
+        public string Name { get; set; }
+        public double StartStation => 0; public double EndStation => 0;
+        public ObjectId ParentAlignmentId => ObjectId.Null;
+        public SuperelevationCriticalStationCollection CriticalStations => new SuperelevationCriticalStationCollection();
+    }
+    public class SuperelevationCurve : SECurve { }
+    public class SuperelevationCurveCollection : IEnumerable<SuperelevationCurve>
+    {
+        public int Count => 0;
+        public SuperelevationCurve AddUserDefinedCurve(AlignmentSubEntity startSubEntity, AlignmentSubEntity endSubEntity) => new SuperelevationCurve();
+        public IEnumerator<SuperelevationCurve> GetEnumerator() => new List<SuperelevationCurve>().GetEnumerator();
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+    public class SuperelevationCriticalStation
+    {
+        public double Station { get; set; }
+        public Autodesk.Civil.SuperelevationCriticalStationType StationType => default;
+        public Autodesk.Civil.SuperelevationTransitionRegionType TransitionRegionType => default;
+        public string SuperelevationCurveName => "";
+        public string TransitionDescription => "";
+        public double GetSlope(Autodesk.Civil.SuperelevationCrossSegmentType segmento) => 0;
+        public void SetSlope(Autodesk.Civil.SuperelevationCrossSegmentType segmento, double slope) { }
+    }
+    public class SuperelevationCriticalStationCollection : IEnumerable<SuperelevationCriticalStation>
+    {
+        public int Count => 0;
+        public SuperelevationCriticalStation this[int i] => new SuperelevationCriticalStation();
+        public void Add(double station, Autodesk.Civil.SuperelevationCriticalStationType criticalStationType, Autodesk.Civil.SuperelevationAttainmentRegionType attainmentRegionType) { }
+        public void Add(double station, Autodesk.Civil.SuperelevationCriticalStationType criticalStationType) { }
+        public SuperelevationCriticalStation GetCriticalStationAt(double station, double tolerance) => null;
+        public bool IsCriticalStation(double station, double tolerance) => false;
+        public void RemoveAt(int index) { }
+        public IEnumerator<SuperelevationCriticalStation> GetEnumerator() => new List<SuperelevationCriticalStation>().GetEnumerator();
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
     // ---- 1.8.0 (crear_alineamiento_desde_polilinea): polilínea de origen, entidades del eje y sitios
     public struct PolylineOptions { public ObjectId PlineId { get; set; } public bool AddCurvesBetweenTangents { get; set; } public bool EraseExistingEntities { get; set; } }
