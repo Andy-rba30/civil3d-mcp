@@ -291,8 +291,9 @@ Los prompts que no tocan Civil 3D (solo documentación, scripts de la nube o el 
   corredor de `crear_corredor` (informe 1.14.1, paso 5). Tampoco se quitaron las superficies Top y Datum de
   `crear_superficies_corredor` (informe 1.12.0, paso 10) ni el perfil de terreno de `crear_perfil_terreno_y_vista`
   (informe 1.14.1, paso 8), pero en esos dos casos hubo un `_.ZOOM` entre la creación y el `_.UNDO 1`, que pudo ser lo
-  deshecho: hay que repetirlo sin el zoom. Tampoco quitó la línea que dibujó `ejecutar_codigo` con `simular=false`
-  (informe 1.16.0, paso 5c: el conteo dio N0 + 1); está pendiente, más abajo.
+  deshecho: hay que repetirlo sin el zoom. La línea que dibuja `ejecutar_codigo` con `simular=false` **sí** se quita con
+  un `_.UNDO 1` si no se toca la vista; en la 1.16.0 no se quitó porque había un zoom de por medio (16/11/2026, informe
+  1.17.5, pasos 8 y 9, más abajo).
 - Los nombres de las líneas de muestreo deben ser **únicos en todo el dibujo**, no solo en su eje: `SampleLine.Create`
   rechaza uno repetido con `Sample line name should not duplicate.` y no crea nada (14/11/2026, informe 1.13.0, paso 9,
   y la evaluación automática de ese día, con un eje sin grupos). Desde la 1.14.2, `crear_secciones` antepone el nombre
@@ -357,8 +358,12 @@ Los prompts que no tocan Civil 3D (solo documentación, scripts de la nube o el 
   nueva**, el agente la encuentra con otras palabras y la reutiliza con `ejecutar_receta`, primero simulada y luego
   real; `veces_usada` pasa de 0 a 1 y a 2 (pasos 11 y 13). Un parámetro que la receta no tiene se rechaza sin llamar al
   plugin (paso 14).
-- **Pendiente** en `ejecutar_codigo` (14/11/2026, informe 1.16.0): la detección de objetos creados da **0** con una
-  línea creada (`despues.objetos_creados: 0` y `datos.objetos.creados: []`, en simulación y en real, pasos 4b y 5a),
-  aunque `datos.eventos_bd` dice `vigilados`. Además, un `_.UNDO 1` tras la escritura real **no** quitó la línea (paso
-  5c, conteo N0 + 1). Los investiga la corrección 1.17.5 (`tarea/3.4-codigo-objetos-deshacer`). Hasta que se valide,
-  `objetos.creados` no es fiable y no hay que contar con Ctrl+Z para quitar lo que dibuja un script.
+- **Qué crea un script de `ejecutar_codigo` y cómo se deshace** (16/11/2026, informe 1.17.5, con la 1.17.5): la línea
+  de `F.Agregar` sale con `despues.objetos_creados: 1`, en simulación y en real (pasos 4 y 6), y **solo la ve la fuente
+  `fachada`**. `Transaction.GetAllObjects()` de la transacción del plugin viene vacía (`objetos: 0`: por eso la 1.16.0
+  daba 0); la de `F.Tr` trae objetos, pero ninguno marcado como nuevo; los eventos de la base de datos no llegan
+  durante el script, sino al confirmar o abortar la transacción (`eventos_al_cerrar`). Sin tocar la vista, **un solo
+  `_.UNDO 1` quita la línea** (paso 8). Un `_.ZOOM` deja su propia entrada `Zoom` encima, y entonces el primer
+  `_.UNDO 1` deshace el zoom (paso 9): eso pasó en la 1.16.0. Cada **simulación** de `ejecutar_codigo`, también un
+  simple conteo, deja su propia entrada `Executefunction` y hace copia de seguridad (las excepciones de esta
+  herramienta), así que cuenta al deshacer. El alias `TransactionManager` compila sin CS0104 (paso 10).

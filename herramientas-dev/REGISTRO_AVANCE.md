@@ -54,7 +54,24 @@ haya que probar. Usa Opus con esfuerzo extra alto en las sesiones hijas. Actuali
   (plantilla métrica + ensamblaje, sin nada más; anotado en `ESTADO_PC.md`). Una copia reutilizada arrastra líneas de
   muestreo y falla la tarea 7.
 
-## Estado actual (14/11/2026, ronda A cerrada)
+## Estado actual (16/11/2026, Etapa 3 cerrada)
+
+**En `main`: versión 1.17.5, 55 herramientas del plugin, validada en Civil 3D 2027.** El dueño fusionó el 16/11 el
+**#43** (ronda B, 1.17.4), el **#45** (hallazgos de la ronda B) y el **#46** (`tarea/3.4-codigo-objetos-deshacer`,
+1.17.5). No queda ningún PR abierto y todas las ramas están fusionadas en `main`.
+- **L.1 con `main` (`ae1edfb`) OK en la PC** (16/11): Release sin errores ni avisos, `dotnet test` 578/578, pytest del
+  puente 166/166. `ARBA_MCP_CODIGO` estaba vacía: la puso L.1 y la quitó el paso 11 de la validación.
+- **VALIDACION_1175 OK** (16/11, `informes/informe_validacion_1175_20261116.md`, subido por el agente instalador en la
+  rama `informes/1175`): pasos decisivos 0, 4, 5, 6, 8 y 10 OK. `objetos_creados: 1` en simulación y en real, solo por la
+  fuente `fachada`; un solo `_.UNDO 1` quita la línea sin tocar la vista; el fallo de la 116 era el zoom (paso 9); el
+  alias `TransactionManager` compila. El «hallazgo» del 9d es del guion: el conteo es otra simulación de
+  `ejecutar_codigo` y deja su propia `Executefunction`. Hallazgos pasados a la tabla de miembros, a `CLAUDE.md` y a la
+  sección 0 de la hoja de ruta (sesión `claude/sharp-planck-e8miv2`).
+- **Siguiente**: que Jose revise en memoria-firma `normas/tablas/VERIFICAR.md` y `normas/casos_prueba/casos_dg2018.md`
+  y decida la duda de la Tabla 303.02 (sección «Ronda B en la PC», 04:14 y 04:24 del 15/11). Con las tablas críticas al
+  100 %, se lanza la **4.2 `verificar_norma`** y luego la 4.3 (ronda C).
+
+## Estado anterior (14/11/2026, ronda A cerrada)
 
 **En `main`: versión 1.15.1, 54 herramientas, validada en Civil 3D 2027 el 14/11/2026.** La Etapa 2 está hecha: la
 evaluación dio **10 de 10 OK** (hito: la tarea 10, flujo completo, en 176 s frente a 130 min) y las validaciones 1142
@@ -378,12 +395,12 @@ y todavía **no están en el repositorio**: hay que pedírselos al dueño o al a
   sigue teniendo puntos hasta ±30 m).
 - La evaluación marca OK comprobaciones manuales que no hace (curvas de la tarea 1, cálculo manual de la 8, informe de
   Civil 3D de la 9): aclararlo en `tareas.yaml` o en el prompt de evaluación.
-- `ejecutar_codigo` (revisión previa del 15/11): alias para `TransactionManager` en los using por defecto y el duplicado
-  en la biblioteca falsa de las pruebas (H3); comprobar en Civil 3D si algún miembro heredado de
-  `GraphicsInterface.Drawable` sale bloqueado por la lista blanca (H4).
-- `ejecutar_codigo` (informe 116 de la 1.17.4): `despues.objetos_creados` da 0 con una línea creada, en simulación y
-  en real (la detección de `datos.objetos.creados` no funciona en Civil 3D), y un `_.UNDO 1` tras la escritura real no
-  quitó la línea. Hay que investigarlo y probarlo con la ronda C.
+- `ejecutar_codigo` (revisión previa del 15/11): comprobar en Civil 3D si algún miembro heredado de
+  `GraphicsInterface.Drawable` sale bloqueado por la lista blanca (H4). El alias H3 quedó resuelto y validado en la
+  1.17.5 (16/11).
+- `ejecutar_codigo` (informe 1175): cada simulación, también un simple conteo, deja una entrada `Executefunction` en
+  Deshacer y hace copia de seguridad; valorar que un script que solo lee no deje ninguna. La fuente
+  `transaccion_script` trae objetos pero no marca la línea como nueva (`IsNewObject`): sin aclarar, no bloquea.
 - `crear_superficie_tin` (informe 1172): aviso «No se pudo releer el estilo de la superficie creada (Entity.StyleId)».
 - `crear_secciones`: comprobar si los nombres de **grupo** también deben ser únicos en todo el dibujo (propuesta de la
   hija de la 1.14.2) y añadir en `datos.lineas[].secciones` el nombre de la superficie del dibujo junto a `SourceName`.
