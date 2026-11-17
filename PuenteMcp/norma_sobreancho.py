@@ -94,6 +94,8 @@ V_MAX_FACTOR_KMH = 80.0            # «V ≤ 80» (R302.09.03-3); por encima, «
 SOBREANCHO_MINIMO_M = 0.40         # «un valor mínimo de 0.40 m ... para justificar su adopción» (R302.09.03-2)
 LONGITUD_TRANSICION_M = 40.0       # «Normalmente la longitud para desarrollar el sobreancho será de 40 m»
 TABLAS_SOBREANCHO = ("vehiculos_diseno", "sobreancho_reduccion")
+# Umbrales de las reglas de la 302.09 que usa el código; casos_norma_reales.py los compara con reglas.valor_num.
+UMBRALES_REGLAS = {REGLA_MINIMO: SOBREANCHO_MINIMO_M}
 # Filas de la T302.20 que la 6.4 marcó como posible errata (450 m da 0,08 y 400 m da 0,07).
 POSIBLE_ERRATA_RADIOS_M = (400.0, 450.0)
 

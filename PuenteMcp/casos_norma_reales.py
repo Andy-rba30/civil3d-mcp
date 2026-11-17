@@ -10,7 +10,8 @@ Uso, desde PuenteMcp (con MEMORIA_FIRMA_DIR apuntando a memoria-firma, o con --m
 
 Lee normas/casos_prueba/casos_dg2018.yaml y normas/tablas/dg2018.sqlite. Además comprueba que las fórmulas del código
 dan lo mismo que `formulas.expresion_python` de la base, que los umbrales de las reglas coinciden con `reglas.valor_num`
-y que todas las referencias que cita el código existen en la base.
+y que todas las referencias que cita el código existen en la base. Desde 1.21.0 también las del sobreancho
+(norma_sobreancho.py: la F46, el mínimo de 0,40 m de la R302.09.03-2 y sus referencias).
 
 Sale con 0 si todo coincide, 1 si algo no coincide y 2 si falta la memoria, la base o el archivo de casos.
 """
@@ -24,6 +25,7 @@ import sys
 import yaml
 
 import norma
+import norma_sobreancho
 
 RUTA_CASOS = os.path.join("normas", "casos_prueba", "casos_dg2018.yaml")
 
@@ -236,7 +238,7 @@ def evaluar(expresion: str, variables: dict) -> float:
 
 
 MUESTRA = {"V": 60.0, "Pmax": 0.08, "fmax": 0.15, "emax": 8.0, "A": 7.0, "Dp": 85.0, "D": 85.0, "h1": norma.ALTURA_OJO_M,
-           "h2": norma.ALTURA_OBJETO_M, "Delta": 3.0}
+           "h2": norma.ALTURA_OBJETO_M, "Delta": 3.0, "n": 2, "R": 60.0, "L": 10.55}
 FORMULAS_CODIGO = {
     "F08": lambda m: norma.radio_minimo_formula(m["V"], m["Pmax"] * 100, m["fmax"]),
     "F09": lambda m: norma.radio_minimo_formula(m["V"], m["emax"], m["fmax"]),
@@ -248,11 +250,13 @@ FORMULAS_CODIGO = {
     "F35": lambda m: norma.tangente_minima_o(m["V"]),
     "F36": lambda m: norma.tangente_maxima(m["V"]),
     "F37": lambda m: norma.longitud_deflexion_pequena(m["Delta"]),
+    "F46": lambda m: norma_sobreancho.sobreancho_formula(m["n"], m["R"], m["L"], m["V"])["sobreancho"],   # 1.21.0
 }
 
 
 def comprobar_formulas(base: norma.BaseNorma, informe: Informe):
-    informe.linea("Fórmulas del código frente a formulas.expresion_python de la base (V 60, A 7, D 85, Δ 3...):")
+    informe.linea("Fórmulas del código frente a formulas.expresion_python de la base (V 60, A 7, D 85, Δ 3, n 2, R 60, "
+                  "L 10.55...):")
     for ident, codigo in FORMULAS_CODIGO.items():
         r = base.fila("SELECT expresion_python FROM formulas WHERE id = ?", ident)
         if not r or not r["expresion_python"]:
@@ -268,7 +272,7 @@ def comprobar_formulas(base: norma.BaseNorma, informe: Informe):
 
 def comprobar_umbrales(base: norma.BaseNorma, informe: Informe):
     informe.linea("Umbrales del código frente a reglas.valor_num de la base:")
-    for ident, umbral in norma.UMBRALES_REGLAS.items():
+    for ident, umbral in {**norma.UMBRALES_REGLAS, **norma_sobreancho.UMBRALES_REGLAS}.items():
         r = base.fila("SELECT valor_num FROM reglas WHERE id = ?", ident)
         if r is None:
             informe.comparar(ident, "en la base", "no está en la base")
@@ -279,9 +283,10 @@ def comprobar_umbrales(base: norma.BaseNorma, informe: Informe):
 
 
 def comprobar_referencias(base: norma.BaseNorma, informe: Informe):
-    faltan = [i for i in norma.REFERENCIAS_USADAS if base.referencia(i).get("tipo") is None]
-    informe.comparar(f"Referencias que cita el código ({len(norma.REFERENCIAS_USADAS)}) presentes en la base",
-                     "todas", "todas" if not faltan else "faltan " + ", ".join(faltan))
+    for que, usadas in (("el código", norma.REFERENCIAS_USADAS), ("el sobreancho", norma_sobreancho.REFERENCIAS_USADAS)):
+        faltan = [i for i in usadas if base.referencia(i).get("tipo") is None]
+        informe.comparar(f"Referencias que cita {que} ({len(usadas)}) presentes en la base",
+                         "todas", "todas" if not faltan else "faltan " + ", ".join(faltan))
 
 
 # ---------------------------------------------------------------------------------------------- principal

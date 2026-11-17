@@ -220,7 +220,10 @@ cada curva del `Eje 1`, en el tramo del PC al PT, con 40 m de transición):
     de los pasos 2, 5 y 6. En `backups\`, las copias de las escrituras reales (o reutilizadas si el archivo no cambió).
     No deshagas nada más.
 
-11. **Sobreancho de la norma: sin datos, sin llamar a Civil 3D (decisivo).** Cuenta N11.
+11. **Sobreancho de la norma: sin datos, sin llamar a Civil 3D (decisivo).** Primero, en PowerShell desde `PuenteMcp`:
+    `uv run --frozen python casos_norma_reales.py` → con la base 1.2, la última línea con **0 fallos** y, entre las
+    líneas, `[OK   ] F46`, `[OK   ] R302.09.03-2` y `[OK   ] Referencias que cita el sobreancho (9) presentes en la
+    base`. Pega las líneas de `FALLO` si las hay. Luego cuenta N11.
     `crear_bordes_calzada` con `args={"eje":"Eje 1","nombre_izquierdo":"Eje 1 - Norma izq","nombre_derecho":"Eje 1 - Norma der","simular":true,"velocidad_diseno":60}`.
     Esperado, según tu base:
     - **Si la base es anterior a la 1.2** (sin las tablas del sobreancho): `ok: false` y un `error` que contiene «no

@@ -974,6 +974,8 @@ respuesta la marca `a_confirmar`):
   (contando los desarrollos), se unen en una con el mayor sobreancho y aviso.
 - Casos de control de la 6.4 (B2, n = 2, sin factor): 30 km/h y R = 25 → 5,27 m; R = 30 → 4,38 m; 40 km/h y R = 60 →
   2,39 m; 60 km/h y R = 400 → 0,58 m; R = 700 → 0,39 m (no se aplica). Están en `tests/test_norma_sobreancho.py`.
+  Con la base real, `casos_norma_reales.py` compara además la F46 del código con `formulas.expresion_python`, el
+  umbral de 0,40 m con `reglas.valor_num` de la R302.09.03-2 y las referencias de `norma_sobreancho.REFERENCIAS_USADAS`.
 
 **Respuesta**: la del plugin tal cual más `propuesta_norma`: `norma`, `seccion`, `referencia`, `formula`,
 `formula_referencia`, `criterio`, `proyecto` (`velocidad_diseno`, `numero_carriles`, `ancho_calzada`,

@@ -422,3 +422,29 @@ def test_resolver_sin_civil3d(memoria):
     assert ctx["velocidad"] == 60 and ctx["numero_carriles"] == 2 and ctx["ancho_calzada"] == 7.2
     assert ctx["vehiculo"] == "B2" and ctx["l_m"] == L_B2 and ctx["longitud_transicion"] == 40
     assert all(citas.values()), citas   # todo lo que cita el módulo está en la base de ejemplo
+
+
+# ---------------------------------------------------------------------------------------------- casos_norma_reales.py
+def test_casos_norma_reales_comprueba_el_sobreancho(memoria):
+    """El script de la base real compara la F46 del código con la de la base, el umbral 0,40 de la R302.09.03-2 y las
+    referencias del sobreancho (con la base de ejemplo, todo coincide)."""
+    import io
+    import casos_norma_reales
+    carpeta = memoria / "normas" / "casos_prueba"
+    carpeta.mkdir(parents=True)
+    (carpeta / "casos_dg2018.yaml").write_text("version: ejemplo\ncasos: []\n", encoding="utf-8")
+    salida = io.StringIO()
+    codigo = casos_norma_reales.main(["--memoria", str(memoria)], salida)
+    texto = salida.getvalue()
+    assert codigo == 0, texto
+    assert "[OK   ] F46" in texto and "[OK   ] R302.09.03-2" in texto
+    assert f"[OK   ] Referencias que cita el sobreancho ({len(ns.REFERENCIAS_USADAS)}) presentes en la base" in texto
+    # Sin la F47 en la base, la comprobación de referencias del sobreancho falla
+    import sqlite3
+    con = sqlite3.connect(str(memoria / "normas" / "tablas" / "dg2018.sqlite"))
+    con.execute("DELETE FROM formulas WHERE id = 'F47'")
+    con.commit()
+    con.close()
+    salida = io.StringIO()
+    assert casos_norma_reales.main(["--memoria", str(memoria)], salida) == 1
+    assert "faltan F47" in salida.getvalue()
