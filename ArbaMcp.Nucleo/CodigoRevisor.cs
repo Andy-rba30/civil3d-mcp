@@ -55,8 +55,8 @@ namespace ArbaMcp.Nucleo
         public static List<ProblemaCodigo> Revisar(SemanticModel modelo, IReadOnlyList<TextSpan> zonas, OpcionesRevision op, List<ProblemaCodigo> escrituras)
         {
             op = op ?? new OpcionesRevision();
-            var r = new Recorrido(modelo, op);
             var raiz = modelo.SyntaxTree.GetRoot();
+            var r = new Recorrido(modelo, op, raiz);
             foreach (var zona in zonas)
             {
                 foreach (var nodo in raiz.DescendantNodes(zona))
@@ -80,13 +80,15 @@ namespace ArbaMcp.Nucleo
         {
             private readonly SemanticModel _m;
             private readonly OpcionesRevision _op;
+            private readonly SyntaxNode _raiz;
+            private CodigoAperturas _aperturas;
             private readonly HashSet<string> _vistos = new HashSet<string>(StringComparer.Ordinal);
             private readonly HashSet<string> _vistasEscrituras = new HashSet<string>(StringComparer.Ordinal);
             public readonly List<ProblemaCodigo> Problemas = new List<ProblemaCodigo>();
             /// <summary>Usos que escriben según las reglas de solo lectura (1.17.6), con o sin solo_lectura.</summary>
             public readonly List<ProblemaCodigo> Escrituras = new List<ProblemaCodigo>();
 
-            public Recorrido(SemanticModel m, OpcionesRevision op) { _m = m; _op = op; }
+            public Recorrido(SemanticModel m, OpcionesRevision op, SyntaxNode raiz) { _m = m; _op = op; _raiz = raiz; }
 
             private void Anotar(SyntaxNode nodo, string categoria, string mensaje) => Anotar(nodo.GetLocation(), categoria, mensaje);
 
@@ -330,6 +332,46 @@ namespace ArbaMcp.Nucleo
                 }
             }
 
+            /// <summary>
+            /// Sin solo_lectura (1.19.2): si el objeto sobre el que se usa el miembro viene con seguridad de una apertura para
+            /// lectura (CodigoAperturas), el uso no compila: Curve.Extend sobre una línea abierta para lectura cerró Civil 3D.
+            /// </summary>
+            private void SobreObjetoDeLectura(SyntaxNode n, string que)
+            {
+                var instancia = Instancia(n);
+                if (instancia == null) return;
+                if (_aperturas == null)
+                {
+                    var metodo = _raiz.DescendantNodes().OfType<MethodDeclarationSyntax>()
+                        .FirstOrDefault(md => md.Identifier.ValueText == ResultadoCompilacion.Metodo);
+                    _aperturas = new CodigoAperturas(_m, metodo, _op.TipoFachada);
+                }
+                var origen = _aperturas.OrigenLectura(instancia);
+                if (origen == null) return;
+                int lineaOrigen = origen.GetLocation().GetMappedLineSpan().StartLinePosition.Line + 1;
+                Anotar(n, CodigoReglas.AbiertoParaLectura, que + " sobre '" + Primeras(instancia.Syntax) + "', abierto para lectura en la línea "
+                    + lineaOrigen + " (" + Primeras(origen) + "): " + CodigoReglas.Explicacion(CodigoReglas.AbiertoParaLectura));
+            }
+
+            /// <summary>El objeto sobre el que se usa un miembro (x en x.Metodo(), x.Propiedad = ..., x[i], x?.Metodo()), o null.</summary>
+            private IOperation Instancia(SyntaxNode n)
+            {
+                SyntaxNode expr = n.Parent is MemberAccessExpressionSyntax ma && ma.Name == n ? ma
+                    : n.Parent is MemberBindingExpressionSyntax mb && mb.Name == n ? (SyntaxNode)mb : n;
+                IOperation op = null;
+                if (expr.Parent is InvocationExpressionSyntax inv && inv.Expression == expr) op = _m.GetOperation(inv);
+                if (op == null) op = _m.GetOperation(expr);
+                switch (op)
+                {
+                    case IInvocationOperation i:
+                        if (i.Instance != null) return i.Instance;
+                        return i.TargetMethod != null && i.TargetMethod.IsExtensionMethod && i.Arguments.Length > 0 ? i.Arguments[0].Value : null;
+                    case IMemberReferenceOperation m:
+                        return m.Instance;
+                }
+                return null;
+            }
+
             /// <summary>Nombres completos del tipo sobre el que se usa un miembro y de sus bases, y del que lo declara y las suyas.</summary>
             private static List<string> TiposConBases(INamedTypeSymbol receptor, INamedTypeSymbol declarante)
             {
@@ -446,7 +488,14 @@ namespace ArbaMcp.Nucleo
                 // Solo lectura (1.17.6): lo que escribe en el dibujo (UpgradeOpen, Erase, Add..., Create..., asignaciones...);
                 // desde la 1.19.1, también todo método de los objetos del dibujo que no sea de lectura (Curve.Extend)
                 if (CodigoReglas.CategoriaSoloLectura(TiposConBases(receptor, declarante), nombreMiembro, escritura, metodo != null, nombreTipo) != null)
-                    Escritura(n, Nombre(declarante) + "." + s.Name + (escritura ? " (asignación)" : ""));
+                {
+                    string que = Nombre(declarante) + "." + s.Name + (escritura ? " (asignación)" : "");
+                    Escritura(n, que);
+                    // 1.19.2: sin solo_lectura, el mismo uso sobre un objeto que el script abrió para lectura (con solo_lectura
+                    // ya no compila por la regla de arriba, con sus mensajes de la 1.19.1)
+                    if (!_op.SoloLectura && !(metodo != null && CodigoReglas.MetodosValidosSobreObjetoDeLectura.Contains(nombreMiembro)))
+                        SobreObjetoDeLectura(n, que);
+                }
 
                 // Punteros nativos devueltos o guardados (UnmanagedObject, campos IntPtr): solo IntPtr.Zero
                 bool esIntPtrPropio = nombreTipo == "System.IntPtr" || nombreTipo == "System.UIntPtr";

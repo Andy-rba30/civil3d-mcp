@@ -329,7 +329,8 @@ funciones locales, sin declarar clases ni métodos; puede empezar con `using`. U
    la transacción (`StartOpenCloseTransaction`, `TopTransaction`, `ObjectId.Open` y, desde 1.17.6, `Database.AddDBObject`, que hace residente un objeto fuera de la transacción: al abortar una simulación quedaría en el dibujo; para añadir, `F.Agregar` o `AppendEntity`/`SetAt` más `F.Tr.AddNewlyCreatedDBObject`; también desde 1.17.6, `Database.Insert` (las 3 sobrecargas), `DeepCloneObjects`, `WblockCloneObjects`, `EraseEmptyObjects`, `ReclaimMemoryFromErasedObjects` y, desde la auditoría de la ronda C, `DisableUndoRecording` (de `Database` y de `DBObject`: apaga el registro de Deshacer); `Database.Purge` sigue permitido: solo quita de la lista lo que no se puede purgar), documentos (abrir, cerrar,
    guardar, cambiar el dibujo activo; desde 1.17.6 también `Database.Wblock` y `BindXrefs` y, desde la auditoría de la ronda C, `XBindXrefs`, `DetachXref`, `ReloadXrefs`, `UnloadXrefs`, `ResolveXrefs`, `RestoreOriginalXrefSymbols` y `RestoreForwardingXrefSymbols`; `AttachXref` ya lo estaba por su parámetro de archivo), las asignaciones también por desestructuración o con el destino entre paréntesis (`(F.Db.Clayer, _) = (id, 0)` y `(F.Db.Clayer) = id` se bloquean como `F.Db.Clayer = id`), variables de sistema y del dibujo (`SetSystemVariable`, asignar propiedades de `Database` como `Clayer`, el perfil `UserConfigurationManager`: abortar la transacción no las deshace), el plugin (de ArbaMcp solo `F`) y la
    regla del proyecto (`Remove`/`RemoveAt` de regiones, líneas base y superficies de corredor). También `goto`,
-   atributos, `#line` y los nombres que empiezan por `__arba`.
+   atributos, `#line` y los nombres que empiezan por `__arba`. Desde 1.19.2, sin `solo_lectura`, tampoco un cambio
+   sobre un objeto que el script abrió para lectura (`[bloqueado: abierto para lectura]`, punto 11).
 3. **Ejecución en el hilo principal**, en contexto `Documento` (una entrada `Executefunction` de Deshacer) y con el
    dibujo bloqueado, por `Escritura.Ejecutar`: comprobaciones previas y **copia de seguridad terminada antes de
    ejecutar nada, también al simular**. El script corre en una transacción anidada (`F.Tr`) dentro de una del plugin
@@ -424,7 +425,8 @@ funciones locales, sin declarar clases ni métodos; puede empezar con `using`. U
       cuentan. Motivo: `Curve.Extend` sobre una línea abierta para lectura **cerró Civil 3D** (17/11/2026,
       `VALIDACION_1176.md`, paso 9, con la 1.19.0): en vez del error `eNotOpenForWrite` esperado, el proceso se cayó, así
       que no se puede contar con que Civil 3D pare lo que la capa 1 deje pasar. Sin `solo_lectura` estos métodos se
-      siguen permitiendo y solo se cuentan en `escrituras_reconocidas`.
+      siguen permitiendo y se cuentan en `escrituras_reconocidas`, salvo sobre un objeto que el script abrió para
+      lectura: desde la 1.19.2 eso no compila (punto 11).
    2. **Bloqueo de lectura** del documento, como las simulaciones de `Escritura.CrearObjeto`: se espera que AutoCAD
       rechace abrir algo para escritura (`eLockViolation`). **Sin forma conocida de probarlo en Civil 3D**: todas las
       maneras conocidas de abrir para escritura las rechaza antes la capa 1, y probarlo exigiría saltarse esas reglas.
@@ -432,7 +434,8 @@ funciones locales, sin declarar clases ni métodos; puede empezar con `using`. U
       2027 se cerró (17/11/2026, `VALIDACION_1176.md`, paso 9, con la 1.19.0). Ese caso lo para ahora la capa 1 (desde
       la 1.19.1, solo métodos de lectura), y el paso 9 comprueba ese rechazo al compilar. **Sin `solo_lectura`**, un
       script que llame a un método que escribe sobre un objeto que abrió para lectura (olvidando `F.Abrir(id, true)`)
-      también puede cerrar Civil 3D: es un límite conocido.
+      también podía cerrar Civil 3D; desde la 1.19.2 no compila cuando el compilador ve de dónde viene el objeto
+      (punto 11), y lo que no puede seguir sigue siendo un límite conocido.
    3. **La Fachada** lanza con `F.Agregar`, `F.EscribirTexto` y `F.Abrir(id, true)` («solo_lectura=true: F.Agregar
       escribe en el dibujo...»).
    4. **La transacción del plugin se aborta siempre**, también con `simular=false`.
@@ -457,6 +460,38 @@ funciones locales, sin declarar clases ni métodos; puede empezar con `using`. U
    nada, `avisos` trae «El script no cambió nada y no usa ninguna de las escrituras que el plugin reconoce: si solo lee,
    pásalo con solo_lectura=true la próxima vez ...». `ejecutar_receta` (puente) acepta y pasa `solo_lectura` (ver
    *Recetas de código*).
+11. **Objetos abiertos para lectura** (desde 1.19.2, sin `solo_lectura`; `ArbaMcp.Nucleo.CodigoAperturas`). Motivo:
+   `Curve.Extend` sobre una línea abierta para lectura **cerró Civil 3D** (17/11/2026, `VALIDACION_1176.md`, paso 9) y,
+   sin `solo_lectura`, nada lo paraba. Al compilar, el revisor sigue cada objeto desde donde se abre: abren para lectura
+   `F.Abrir<T>(id)`, `F.Abrir<T>(id, false)` y cualquier método de Autodesk con un parámetro `OpenMode` al que se le pasa
+   la constante `ForRead` o `ForNotify` (`F.Tr.GetObject`, `id.GetObject`, `TransactionManager.GetObject`); `true`,
+   `ForWrite` y los objetos nuevos (`new Line(...)`) no. Lo sigue por variables, conversiones (`(Line)x`, `as`),
+   patrones (`is Line x`, `switch`), `?:`, `??`, `?.`, funciones locales, cadenas de LINQ que empiezan por `Select`
+   (`Where`, `OfType`, `ToList`, `First`, `foreach`, `ForEach`), listas llenadas con `Add`, arreglos y los subobjetos de
+   Civil 3D (`c.Baselines[0].BaselineRegions[0]` de un corredor abierto para lectura). Si el objeto viene **con
+   seguridad** de una apertura para lectura (todo lo que se asigna a la variable lo es, o `null`) y el script lo cambia
+   con un uso que la regla de solo lectura cuenta como escritura (un método que no es de lectura, como `Extend`,
+   `Erase`, `AppendEntity`, `SetDatabaseDefaults`, `Close` o `Cancel`, o asignar una propiedad, también con `++` o por
+   desestructuración), **no compila**, sin copia, sin contexto de comando y sin entrada en Deshacer:
+   `Línea 5, columna 3: [bloqueado: abierto para lectura] Autodesk.AutoCAD.DatabaseServices.Curve.Extend sobre 'l',
+   abierto para lectura en la línea 3 (F.Abrir<Entity>(id)): cambiar un objeto abierto para lectura no siempre da un
+   error en Civil 3D: con Curve.Extend, Civil 3D 2027 se cerró (17/11/2026). Para cambiarlo, abre el objeto con
+   F.Abrir(id, true) (o con OpenMode.ForWrite en GetObject), o llama a UpgradeOpen() sobre él antes de cambiarlo.`
+   Sobre un objeto abierto para lectura sí compilan los métodos que cambian el modo de apertura o leen y copian el
+   objeto (`CodigoReglas.MetodosValidosSobreObjetoDeLectura`: `UpgradeOpen`, `UpgradeFromNotify`, `DowngradeOpen`,
+   `DowngradeToNotify`, `Clone`, `DeepClone`, `WblockClone`, `Explode`, `Highlight`, `Unhighlight` y `List`; `Close` y
+   `Cancel` no, porque sobre un objeto abierto por la transacción no deben llamarse). **Lo que no se puede saber se deja
+   pasar, sin aviso**: un parámetro de una función local, una colección que pasa a otro método, una variable que recibe
+   aperturas para lectura y para escritura, un `escribir` o un `OpenMode` que no son constantes, o un `UpgradeOpen()`
+   sobre la variable o sobre otra que puede ser el mismo objeto (no se mira el orden: con un `UpgradeOpen()` en
+   cualquier sitio, deja de rechazarse). Así no se rompe ningún script válido, y cada rechazo se arregla igual (abrir
+   para escritura, que siempre vale en un script que escribe); un aviso no serviría, porque sale en la respuesta después
+   de ejecutar y, si Civil 3D se cierra, nunca llega. Si el análisis falla, no rechaza nada. Con `solo_lectura=true` no
+   cambia nada: esos usos ya no compilan por la capa 1 del punto 10, con sus mensajes de la 1.19.1. **Límites
+   conocidos**: un `UpgradeOpen()` puesto después del cambio, o una variable que pasa de lectura a escritura, no se
+   detectan; dos `F.Abrir(id)` del mismo objeto, con uno ya promovido a escritura, se rechazan aunque al ejecutar
+   valdrían (se arregla con `true`); y `Close()` o `Cancel()` sobre un objeto abierto para escritura siguen compilando
+   sin `solo_lectura`.
 
 **Roslyn dentro de Civil 3D**: las DLL (`Microsoft.CodeAnalysis.dll`, `Microsoft.CodeAnalysis.CSharp.dll` y sus
 traducciones en `es\`) vienen de NuGet al compilar y `instalar.ps1` las deja en `Contents\roslyn` del bundle, **nunca
@@ -492,6 +527,9 @@ curl.exe -X POST $u @h -d '{"tool":"ejecutar_codigo","args":{"codigo_csharp":"va
 # 1.17.6: un script que solo lee, con solo_lectura=true: sin copia de seguridad y sin entrada en Deshacer
 curl.exe -X POST $u @h -d '{"tool":"ejecutar_codigo","args":{"codigo_csharp":"int n = 0; foreach (var id in F.EspacioModelo()) if (F.Abrir<DBObject>(id) is Line) n++; return n;","solo_lectura":true,"pedido":"cuenta las líneas del dibujo"}}'
 #   → {"ok":true,...,"result":{"simulado":true,"herramienta":"ejecutar_codigo","accion":"Ejecutar un script de solo lectura de 1 línea(s): ...","cambios":[],...,"solo_lectura":true,"copia":null,"datos":{...},"resultado":0}}
+# 1.19.2: cambiar un objeto abierto para lectura no compila (aquí, F.Abrir sin true); con F.Abrir<Entity>(id, true) sí
+curl.exe -X POST $u @h -d '{"tool":"ejecutar_codigo","args":{"codigo_csharp":"foreach (var id in F.EspacioModelo()) if (F.Abrir<Entity>(id) is Line x) x.Extend(false, new Point3d(x.EndPoint.X + 50, x.EndPoint.Y, 0)); return 0;","pedido":"alarga las líneas 50 m"}}'
+#   → {"ok":false,"error":"Error de Civil 3D: ArgumentException: ejecutar_codigo: el código no se puede ejecutar (1 uso no permitido). ... Línea 1, columna 76: [bloqueado: abierto para lectura] Autodesk.AutoCAD.DatabaseServices.Curve.Extend sobre 'x', abierto para lectura en la línea 1 (F.Abrir<Entity>(id)): ... abre el objeto con F.Abrir(id, true) ..."}
 ```
 
 ## Exportación (excepción: por comando, no por API)
