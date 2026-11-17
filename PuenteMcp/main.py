@@ -22,8 +22,9 @@ import buscar_api as memoria_firma  # herramienta local del puente (1.5.0): busc
 import recetas  # herramientas locales del puente (1.17.0): guardar_receta y ejecutar_receta
 import norma as norma_vial  # herramienta local del puente (1.18.0): verificar_norma (DG-2018)
 import norma_alineamiento as norma_eje  # 1.19.0: crear_alineamiento_desde_polilinea con velocidad_diseno (DG-2018)
+import norma_peralte  # 1.20.0: aplicar_peralte con velocidad_diseno (DG-2018)
 
-__version__ = "1.19.1"
+__version__ = "1.20.0"
 
 CARPETA = os.path.dirname(os.path.abspath(__file__))
 
@@ -387,12 +388,6 @@ mcp.add_tool(verificar_norma)
 
 
 # ---------------------------------------------------------------------------------------------- eje con la norma (1.19.0)
-# Herramientas del plugin que el puente amplía con los datos del proyecto de la DG-2018 (norma_alineamiento.py). La
-# ampliación se aplica en _crear_handler, el único camino por el que se registran las herramientas del plugin (también
-# al volver a sincronizar), así que no se pierde.
-AMPLIACIONES_NORMA = {"crear_alineamiento_desde_polilinea"}
-
-
 async def _crear_eje_con_norma(nombre: str, parametros: list, datos: dict) -> dict:
     """crear_alineamiento_desde_polilinea con velocidad_diseno: valida los datos del proyecto (sin llamar al plugin si
     falta alguno), comprueba INSUNITS, simula una vez para leer los PI, propone el radio mínimo de la norma por PI,
@@ -494,43 +489,151 @@ async def _crear_eje_con_norma(nombre: str, parametros: list, datos: dict) -> di
         base.cerrar()
 
 
+# ---------------------------------------------------------------------------------------------- peralte con la norma (1.20.0)
+async def _aplicar_peralte_con_norma(nombre: str, parametros: list, datos: dict) -> dict:
+    """aplicar_peralte con velocidad_diseno: valida los datos del proyecto (sin llamar al plugin si falta alguno),
+    comprueba INSUNITS, lee las curvas con listar_pis, calcula con la DG-2018 el peralte y las progresivas críticas de
+    cada curva, comprueba que caben y llama al plugin con 'curvas'; con la escritura real, relee con listar_peralte. El
+    puente no escribe nada: la única escritura es la llamada del plugin, con sus reglas."""
+    inicio = time.perf_counter()
+
+    def ms() -> int:
+        return int((time.perf_counter() - inicio) * 1000)
+
+    def con_ms(salida: dict) -> dict:
+        salida["ms_puente"] = ms()
+        return salida
+
+    args, proyecto = norma_peralte.separar(datos)
+    choque = norma_peralte.error_curvas_y_norma(args)
+    if choque:
+        return con_ms({"ok": False, "error": choque})
+    args.pop("curvas", None)
+    eje = args.get("alineamiento")
+    pedido = args.get("pedido")
+    try:
+        preparada = await anyio.to_thread.run_sync(
+            lambda: norma_vial.preparar(norma_vial.NORMA, "alineamiento", eje, None, proyecto))
+    except norma_vial.ErrorNorma as e:
+        return con_ms({"ok": False, "error": str(e)})
+    base, ctx = preparada["base"], preparada["contexto"]
+    try:
+        try:
+            datos_peralte, faltan_peralte = await anyio.to_thread.run_sync(
+                lambda: norma_peralte.preparar_peralte(base, ctx, proyecto))
+        except norma_vial.ErrorNorma as e:
+            return con_ms({"ok": False, "error": str(e)})
+        faltan = list(preparada["faltan"] or []) + list(faltan_peralte or [])
+        if faltan:
+            return con_ms(norma_peralte.respuesta_faltan(faltan))
+
+        r_unidades = await _ejecutar("leer_variable", _args_lectura({"nombre": "INSUNITS"}, pedido), TIMEOUT_LECTURA)
+        if "error" in r_unidades:
+            return con_tiempos(r_unidades, ms())
+        insunits = {"INSUNITS": (r_unidades["resultado"] or {}).get("valor") if isinstance(r_unidades["resultado"], dict)
+                    else None, "id_log": r_unidades.get(CLAVE_ID_LOG)}
+        motivo = norma_peralte.unidades_no_metros(r_unidades["resultado"])
+        if motivo:
+            return con_ms({"ok": False, "error": motivo, "unidades": insunits})
+
+        r_pis = await _ejecutar("listar_pis", _args_lectura({"alineamiento": eje}, pedido), TIMEOUT_LECTURA)
+        if "error" in r_pis:
+            return con_tiempos(r_pis, ms())
+        lecturas = {"leer_variable": r_unidades.get(CLAVE_ID_LOG), "listar_pis": r_pis.get(CLAVE_ID_LOG)}
+        motivo = norma_vial.unidades_no_validas(r_pis["resultado"])
+        if motivo:
+            return con_ms({"ok": False, "error": motivo, "lecturas": lecturas})
+        try:
+            calculo = await anyio.to_thread.run_sync(
+                lambda: norma_peralte.calcular(base, ctx, datos_peralte, r_pis["resultado"]))
+        except norma_vial.ErrorNorma as e:
+            return con_ms({"ok": False, "error": str(e), "lecturas": lecturas})
+        bloque = norma_peralte.bloque_propuesta(ctx, calculo["curvas"], calculo["avisos"], insunits, lecturas)
+        if not calculo["curvas"]:
+            return con_ms({"ok": False, "error": f"El eje '{eje}' no tiene curvas circulares: no hay peralte que aplicar. "
+                                                 "No se llamó a aplicar_peralte.", "propuesta_norma": bloque})
+        if calculo["problemas"]:
+            return con_ms({"ok": False, "error": "El peralte de la norma no cabe en el eje: " + " ".join(calculo["problemas"])
+                                                 + " No se llamó a aplicar_peralte.", "propuesta_norma": bloque})
+        try:
+            curvas_plugin = norma_peralte.curvas_para_el_plugin(calculo["curvas"])
+        except norma_vial.ErrorNorma as e:
+            return con_ms({"ok": False, "error": str(e), "propuesta_norma": bloque})
+
+        final = dict(args)
+        final["curvas"] = json.dumps(curvas_plugin)
+        r_final = await _ejecutar(nombre, final, _timeout_s(nombre, parametros, final))
+        salida = con_tiempos(r_final, ms())
+        salida["propuesta_norma"] = bloque
+        if "error" in r_final:
+            return salida
+        resultado = r_final["resultado"] if isinstance(r_final["resultado"], dict) else {}
+        if not resultado.get("simulado"):
+            r_leido = await _ejecutar("listar_peralte", _args_lectura({"alineamiento": eje}, pedido), TIMEOUT_LECTURA)
+            if "error" in r_leido:
+                salida["verificacion"] = {"verificado": False, "error": r_leido["error"] + " (el peralte sí se aplicó: "
+                                          "míralo con listar_peralte)", "id_log": r_leido.get(CLAVE_ID_LOG)}
+            else:
+                verificacion = norma_peralte.verificar_lectura(calculo["curvas"], r_leido["resultado"])
+                verificacion["id_log"] = r_leido.get(CLAVE_ID_LOG)
+                salida["verificacion"] = verificacion
+        salida["ms_puente"] = ms()
+        return salida
+    finally:
+        base.cerrar()
+
+
+# Herramientas del plugin que el puente amplía con los datos del proyecto de la DG-2018: nombre → (módulo, manejador).
+# Cada módulo publica CAMPOS (los parámetros que añade), PARAMETROS_OPCIONALES (parámetros del plugin que dejan de ser
+# obligatorios, con el texto que se añade a su descripción), DESCRIPCION, se_puede_ampliar, campos_que_chocan y
+# es_con_norma. La ampliación se aplica en _crear_handler, el único camino por el que se registran las herramientas del
+# plugin (también al volver a sincronizar), así que no se pierde.
+AMPLIACIONES_NORMA = {
+    "crear_alineamiento_desde_polilinea": (norma_eje, _crear_eje_con_norma),   # 1.19.0
+    "aplicar_peralte": (norma_peralte, _aplicar_peralte_con_norma),             # 1.20.0
+}
+
+
 # ---------------------------------------------------------------------------------------------- registro dinámico
 known_tools = set()
 
 
 def _crear_handler(nombre: str, parametros: list, descripcion: str):
     """Función que el SDK expone como herramienta MCP: un único argumento 'args' con el modelo de la herramienta.
-    Las herramientas de AMPLIACIONES_NORMA (1.19.0) reciben además los datos del proyecto de la DG-2018 y 'radio'
-    opcional, si el plugin publica los parámetros que hacen falta y ninguno con el mismo nombre."""
-    ampliada = nombre in AMPLIACIONES_NORMA and norma_eje.se_puede_ampliar(parametros)
-    if nombre in AMPLIACIONES_NORMA and not ampliada:
+    Las herramientas de AMPLIACIONES_NORMA (1.19.0 y 1.20.0) reciben además los datos del proyecto de la DG-2018 y sus
+    PARAMETROS_OPCIONALES dejan de ser obligatorios ('radio' en crear_alineamiento_desde_polilinea, 'curvas' en
+    aplicar_peralte), si el plugin publica los parámetros que hacen falta y ninguno con el mismo nombre."""
+    modulo, manejador = AMPLIACIONES_NORMA.get(nombre, (None, None))
+    ampliada = modulo is not None and modulo.se_puede_ampliar(parametros)
+    if modulo is not None and not ampliada:
         print(f"Aviso: no se amplía '{nombre}' con la norma: el plugin no publica "
-              f"{', '.join(sorted(norma_eje.PARAMETROS_NECESARIOS))} o ya publica {norma_eje.campos_que_chocan(parametros)}")
+              f"{', '.join(sorted(modulo.PARAMETROS_NECESARIOS))} o ya publica {modulo.campos_que_chocan(parametros)}")
+    opcionales = modulo.PARAMETROS_OPCIONALES if ampliada else {}
     fields = {}
     for p in parametros:
         ptype = type_to_python(p["type"])
         desc = p.get("description", "")
-        if ampliada and p["name"] == "radio":
-            fields[p["name"]] = (typing.Optional[ptype], Field(None, description=desc + norma_eje.DESCRIPCION_RADIO))
+        if p["name"] in opcionales:
+            fields[p["name"]] = (typing.Optional[ptype], Field(None, description=desc + opcionales[p["name"]]))
         elif p.get("required", False):
             fields[p["name"]] = (ptype, Field(..., description=desc))
         else:
             fields[p["name"]] = (typing.Optional[ptype], Field(None, description=desc))
     if ampliada:
-        for campo, (ptype, desc) in norma_eje.CAMPOS_PROYECTO.items():
+        for campo, (ptype, desc) in modulo.CAMPOS.items():
             fields[campo] = (typing.Optional[ptype], Field(None, description=desc))
     SchemaModel = create_model(f"{nombre}_Model", **fields)
 
     async def handler(args: SchemaModel) -> str:  # type: ignore[valid-type]
         datos = args.model_dump(exclude_none=True)
-        if ampliada and norma_eje.es_con_norma(datos):
-            return _a_texto(await _crear_eje_con_norma(nombre, parametros, datos))
+        if ampliada and modulo.es_con_norma(datos):
+            return _a_texto(await manejador(nombre, parametros, datos))
         inicio = time.perf_counter()
         respuesta = await _ejecutar(nombre, datos, _timeout_s(nombre, parametros, datos))
         return _a_texto(con_tiempos(respuesta, int((time.perf_counter() - inicio) * 1000)))
 
     handler.__name__ = nombre
-    handler.__doc__ = (descripcion or "") + (norma_eje.DESCRIPCION if ampliada else "")
+    handler.__doc__ = (descripcion or "") + (modulo.DESCRIPCION if ampliada else "")
     return handler
 
 

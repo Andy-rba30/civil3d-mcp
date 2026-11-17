@@ -67,6 +67,10 @@ DESCRIPCION = (
     "simular=true). Simula primero (simular=true). Necesita MEMORIA_FIRMA_DIR."
 )
 DESCRIPCION_RADIO = " Con 'velocidad_diseno' no hace falta (el puente propone uno por PI); si lo pasas, manda el tuyo."
+# Para main._crear_handler (1.20.0, común a las herramientas ampliadas con la norma): los parámetros que se añaden y los
+# del plugin que dejan de ser obligatorios, con el texto que se añade a su descripción.
+CAMPOS = CAMPOS_PROYECTO
+PARAMETROS_OPCIONALES = {"radio": DESCRIPCION_RADIO}
 
 PASO_REDONDEO_M = 5.0           # las tablas de la norma redondean los radios a 5 m
 RADIO_MINIMO_PEDIBLE_M = 5.0    # por debajo de esto no se pide curva cuando el mínimo no cabe
