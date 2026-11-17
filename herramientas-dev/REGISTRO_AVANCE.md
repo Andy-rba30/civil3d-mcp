@@ -54,7 +54,32 @@ haya que probar. Usa Opus con esfuerzo extra alto en las sesiones hijas. Actuali
   (plantilla métrica + ensamblaje, sin nada más; anotado en `ESTADO_PC.md`). Una copia reutilizada arrastra líneas de
   muestreo y falla la tarea 7.
 
-## Estado actual (17/11/2026, ronda C en marcha)
+## Estado actual (17/11/2026, ronda C lista para la PC)
+
+**Rama para la PC: `tarea/ronda-c`, versión 1.19.0, 59 herramientas (55 del plugin + 4 del puente).** Junta:
+- `tarea/3.6-correcciones-1176` (hija B, `session_01GF7ZdydzsaLV7WfrxKwhVU`): 1.17.6 + correcciones de la auditoría
+  en `ejecutar_codigo` (I3-I6, N1).
+- `tarea/4.2-verificar-norma` (hija A, `session_01GF7Zdz8LwM4QbJw4N79ebj`): `verificar_norma`, 1.18.0.
+- `tarea/4.3-norma-alineamiento` (hija C, `session_01GF7Ze1Sj1yRE7XUNRKaQkR`): `velocidad_diseno` en
+  `crear_alineamiento_desde_polilinea`, 1.19.0, más las correcciones de la auditoría en la norma (I1, I2, M1, M2, M4,
+  M5).
+- Índice de la prueba: `herramientas-dev/VALIDACION_RONDA_C.md` (partes 1176, 118, 119 y `_.UNDO 1` sin zoom).
+
+Hechos de la ronda en la nube:
+- `memoria-firma` (directo en `main`): base DG-2018 ampliada (T302.01, T302.07/08, cuadros de deflexión y 3V/6V,
+  reglas, equivalencias, F34-F45), `normas/DECISIONES.md` y casos con «pavimentada»; verificación independiente contra
+  el PDF con 0 errores (`518fa70`).
+- `casos_norma_reales.py` contra la base real: 69 OK, 0 fallos (casos 2 y 3 fuera de alcance).
+- Auditoría independiente con Fable (0 bloqueantes, 6 importantes, 9 menores) y segunda revisión de las correcciones
+  (1 importante, N1, corregido). Quedan documentados M3 (Tercera pavimentada sin fila de Segunda) y M6 (unidades
+  leídas de dos sitios); M7 (`CLAUDE.md` en 1.17.5) se hace en la sesión de hallazgos.
+- Puntos para que Jose confirme (no bloquean la prueba): E7 sin espiral = No cumple; PI sin curva a más de 80 km/h =
+  No cumple; 500/400 m y 0°59′ como aviso; orden −1 %/+1 %; criterios propios donde la norma no define (lomo
+  quebrado, ventanas de pendiente media, descansos…); radio menor que el mínimo cuando la polilínea no deja sitio;
+  columna `tipo` de `reglas`; esquema e ids de la base en el repositorio público (M9).
+- **Siguiente**: PR en borrador de `tarea/ronda-c`, L.1 y P en la PC con `VALIDACION_RONDA_C.md`, sesión de hallazgos.
+
+## Estado anterior (17/11/2026, ronda C en marcha)
 
 **4.1 cerrada en `memoria-firma` el 17/11** (commit `0f8ca14`): verificación independiente de `dg2018.sqlite` contra el
 PDF por cuatro agentes, 1679 valores, **0 errores** (`normas/tablas/VERIFICACION_INDEPENDIENTE_20261117.md`). Decisión de
