@@ -921,26 +921,31 @@ T302.11B: 210 m, «superior» → 215) y `verificacion.resumen` sin «No cumple�
 ### `crear_bordes_calzada` con la norma (puente, desde 1.21.0)
 
 El puente amplía la herramienta del plugin con cinco parámetros opcionales, **dentro de `args`**: `velocidad_diseno`
-(km/h), `numero_carriles` (entero ≥ 1), `ancho_calzada` (m, en tangente), `vehiculo_diseno` (da L, la distancia entre
-el eje delantero y el posterior) y `longitud_transicion` (m, por defecto 40). Con **alguno** de ellos el puente atiende
-la llamada y calcula el sobreancho de cada curva con la DG-2018 (sección 302.09, páginas impresas 159 a 162); sin
-ninguno, la reenvía al plugin tal cual. La ampliación se aplica cada vez que el puente registra la herramienta, solo si el
-plugin publica `eje`, `desplazamiento`, `ensanchamientos` y `simular` y ninguno de los cinco; con ella `desplazamiento`
-deja de ser obligatorio (por defecto `ancho_calzada / 2`). Desde 1.21.0 `AMPLIACIONES_NORMA` de `main.py` es un
-diccionario (herramienta → módulo, parámetro que pasa a opcional y su texto) y `EJECUTAR_CON_NORMA` dice qué función
-atiende cada una; `crear_alineamiento_desde_polilinea` sigue igual. Código: `PuenteMcp/norma_sobreancho.py` (funciones
-puras) y `_crear_bordes_con_norma` en `PuenteMcp/main.py`.
+(km/h), `numero_carriles` (entero ≥ 1), `ancho_calzada` (m, en tangente), `vehiculo_diseno` (código de la T202.01, como
+`VL` o `B2`, o su nombre; da L, la distancia del frente al eje trasero) y `longitud_transicion` (m, por defecto 40). Con
+**alguno** de ellos el puente atiende la llamada y calcula el sobreancho de cada curva con la DG-2018 (sección 302.09,
+páginas impresas 159 a 162); sin ninguno, la reenvía al plugin tal cual. La ampliación se aplica cada vez que el puente
+registra la herramienta, solo si el plugin publica `eje`, `desplazamiento`, `ensanchamientos` y `simular` y ninguno de
+los cinco; con ella `desplazamiento` deja de ser obligatorio (por defecto `ancho_calzada / 2`). Desde 1.21.0
+`AMPLIACIONES_NORMA` de `main.py` es un diccionario (herramienta → módulo, parámetro que pasa a opcional y su texto) y
+`EJECUTAR_CON_NORMA` dice qué función atiende cada una; `crear_alineamiento_desde_polilinea` sigue igual. Código:
+`PuenteMcp/norma_sobreancho.py` (funciones puras) y `_crear_bordes_con_norma` en `PuenteMcp/main.py`.
+
+**Base** (`MEMORIA_FIRMA_DIR\normas\tablas\dg2018.sqlite`, versión 1.2, de la tarea 6.4): `vehiculos_diseno` (T202.01;
+L = `l_frontal_eje_trasero_m`, que solo tienen los vehículos de una separación de ejes: VL, B2, B3-1 y B4-1; en los
+articulados es NULL), `sobreancho_reduccion` (T302.20: `radio_m` y `factor_reduccion`, de 25 a 500 m, para calzadas de
+7,20 m en tangente), las fórmulas F46 (Sa) y F47 (desarrollo) y las reglas R302.09.02-1 y R302.09.03-1 a -4.
+`sobreancho_holguras` (T302.19) es solo informativa: la F46 no la usa.
 
 **Orden** (si un paso falla, responde sin seguir):
 
 1. Si la llamada trae `ensanchamientos`: error sin llamar a Civil 3D (con la norma los calcula el puente).
-2. Base de la norma (`MEMORIA_FIRMA_DIR\normas\tablas\dg2018.sqlite`) con las tablas del sobreancho; si aún no las
-   tiene: «La base de la norma ... no tiene todavía las tablas del sobreancho ... las añade la tarea 6.4», sin llamar a
-   Civil 3D. **Esquema provisional**: `sobreancho_vehiculos` (vehiculo, l_m) y `sobreancho_reduccion` (ancho_calzada_m,
-   radio_m, factor), los de la base de ejemplo de las pruebas, hasta que llegue el de la 6.4.
+2. La base con `vehiculos_diseno` y `sobreancho_reduccion`; si no las tiene: «La base de la norma ... no tiene todavía
+   las tablas del sobreancho ... las añadió la tarea 6.4 (base 1.2)», sin llamar a Civil 3D.
 3. Datos del proyecto. Si falta alguno o no vale: `{"ok": false, "error": "Faltan datos del proyecto para calcular el
    sobreancho de la DG-2018: ... No se llamó a Civil 3D: ni copia, ni Deshacer, ni línea en mcp_log.jsonl.", "faltan":
-   [{dato, motivo, valores_validos}], "ms_puente"}` (los vehículos válidos salen de la base).
+   [{dato, motivo, valores_validos}], "ms_puente"}`. Para `vehiculo_diseno`, `valores_validos` son los códigos con L y
+   el `motivo` los lista con su nombre y su L; un articulado (sin L) también responde `faltan` (P6).
 4. `listar_pis` del eje (su error sale tal cual) y sus unidades: si no son `Meters`, error sin llamar a
    `crear_bordes_calzada`.
 5. Sobreancho por curva circular (las espirales y otros tipos, aviso y sin sobreancho), con los criterios de abajo.
@@ -948,40 +953,45 @@ puras) y `_crear_bordes_con_norma` en `PuenteMcp/main.py`.
    incluido. La escritura es la del plugin (comprobación previa, copia, una entrada de Deshacer, antes/después medido,
    `mcp_log.jsonl`). Se llama aunque ninguna curva necesite sobreancho: los bordes se crean igual.
 
-**Criterios** (texto de la 302.09 leído en el PDF por la orquestadora, 17/11/2026):
+**Criterios** (302.09; las decisiones P4 a P8 están **pendientes del dueño**: se usa la opción recomendada y la
+respuesta la marca `a_confirmar`):
 
-- **Fórmula**: Sa = n (R − √(R² − L²)) + V / (10 √R), con n = `numero_carriles`, R el radio de la curva, L la del
-  vehículo y V = `velocidad_diseno`. **Sin redondear** (el texto no lo dice; pendiente del esquema de la 6.4). Si R ≤ L,
-  aviso y sin sobreancho.
+- **Fórmula** (F46): Sa = n (R − √(R² − L²)) + V / (10 √R), con n = `numero_carriles`, R el radio de la curva, L la del
+  vehículo y V = `velocidad_diseno`. El segundo término «lo evalúa el diseñador» (R302.09.03-1): se incluye siempre
+  (P4). **Sin redondear**. Si R ≤ L, aviso y sin sobreancho. Control de la base: n = 2, R = 60, L = 10,55, V = 40 →
+  2,386.
 - **Factor de reducción de la T302.20** («para anchos de calzada en tangente de 7.20 m»): se multiplica solo si
-  `ancho_calzada` es 7,20, V no pasa de 80 km/h y el radio está en la tabla (si se interpola lo dirá la 6.4); si no,
-  `nota_factor` dice por qué. Con V > 80 «el valor del sobreancho será calculado para cada caso»: fórmula sin factor.
-- **Mínimo**: «Se considera apropiado un valor mínimo de 0.40 m de sobreancho para justificar su adopción»: si
-  Sa < 0,40 m, no se aplica (no se sube a 0,40).
+  `ancho_calzada` es 7,20, V ≤ 80 km/h y el radio exacto está en la tabla, sin interpolar (P5); la respuesta da Sa
+  **sin y con** factor. Las filas de 400 y 450 m llevan la nota de posible errata (0,07 y 0,08). Con V > 80 «el valor
+  del sobreancho será calculado para cada caso» (R302.09.03-4): fórmula sin factor y aviso.
+- **Mínimo** (R302.09.03-2): «Se considera apropiado un valor mínimo de 0.40 m de sobreancho para justificar su
+  adopción»: si Sa < 0,40 m, no se aplica y se avisa; no se sube a 0,40 (P7).
 - **Velocidad** fuera de 30 a 80 km/h (rango de la figura 302.18B): fórmula y aviso.
-- **Dónde**: solo en el borde **interior** (giro a la izquierda → borde izquierdo), sobreancho pleno del PC al PT y una
-  transición lineal de 40 m («Normalmente la longitud para desarrollar el sobreancho será de 40 m») que termina en el PC
-  y empieza en el PT, o `longitud_transicion`; recortada, con aviso, si no cabe entre el inicio o el fin del eje y la
-  curva. Si las zonas de dos curvas del mismo borde se tocan (contando las transiciones), se unen en una con el mayor
-  sobreancho y aviso.
-- **Pendiente de decisión** (del dueño): usar en las curvas simples la longitud de transición del peralte («en la misma
-  longitud utilizada para la transición del peralte»; la calcula la tarea 6.5).
+- **Dónde**: solo en el borde **interior** (R302.09.03-3; giro a la izquierda → borde izquierdo), sobreancho pleno del PC
+  al PT y un desarrollo lineal (F47) de 40 m («Normalmente la longitud para desarrollar el sobreancho será de 40 m»)
+  que termina en el PC y empieza en el PT, o `longitud_transicion`, no la transición del peralte (F48; P8); recortado,
+  con aviso, si no cabe entre el inicio o el fin del eje y la curva. Si las zonas de dos curvas del mismo borde se tocan
+  (contando los desarrollos), se unen en una con el mayor sobreancho y aviso.
+- Casos de control de la 6.4 (B2, n = 2, sin factor): 30 km/h y R = 25 → 5,27 m; R = 30 → 4,38 m; 40 km/h y R = 60 →
+  2,39 m; 60 km/h y R = 400 → 0,58 m; R = 700 → 0,39 m (no se aplica). Están en `tests/test_norma_sobreancho.py`.
 
-**Respuesta**: la del plugin tal cual más `propuesta_norma`: `norma`, `seccion`, `referencia`, `formula`, `criterio`,
-`proyecto` (`velocidad_diseno`, `numero_carriles`, `ancho_calzada`, `vehiculo_diseno`, `l_m`, `referencia_vehiculo`),
-`desplazamiento` y `desplazamiento_origen` (`ancho_calzada / 2` o `usuario`, con aviso si no es la mitad del ancho),
-`longitud_transicion` y su origen, `ensanchamientos` (los enviados al plugin), `pendiente_de_decision`, `avisos`,
-`lecturas` (`listar_pis`: id_log) y `curvas`: por curva `pi`, `radio`, `giro`, `borde`, `progresiva_pc`,
-`progresiva_pt`, `datos` (n, R, L, V), `termino_geometrico`, `termino_velocidad`, `sobreancho_formula`,
-`factor_reduccion` (`valor`, `radio_tabla`, `referencia`) o `null` con `nota_factor`, `sobreancho`, `se_aplica`,
-`manda` (fórmula de la 302.09, y el factor de la T302.20 si se aplicó), `motivo` (si no se aplica) y `ensanchamiento`
-(el enviado, con `pis` si se unió con otra curva).
+**Respuesta**: la del plugin tal cual más `propuesta_norma`: `norma`, `seccion`, `referencia`, `formula`,
+`formula_referencia`, `criterio`, `proyecto` (`velocidad_diseno`, `numero_carriles`, `ancho_calzada`,
+`vehiculo_diseno`, `vehiculo_nombre`, `l_m`, `referencia_vehiculo`), `desplazamiento` y `desplazamiento_origen`
+(`ancho_calzada / 2` o `usuario`, con aviso si no es la mitad del ancho), `longitud_transicion` y su origen,
+`ensanchamientos` (los enviados al plugin), `pendiente_de_decision` (P4 a P8: `id`, `tema`, `referencia`,
+`opcion_usada`, `a_confirmar: true`), `nota_redondeo`, `avisos`, `lecturas` (`listar_pis`: id_log) y `curvas`: por curva
+`pi`, `radio`, `giro`, `borde`, `progresiva_pc`, `progresiva_pt`, `datos` (n, R, L, V), `termino_geometrico`,
+`termino_velocidad`, `sobreancho_sin_factor`, `factor_reduccion` (`valor`, `texto_pdf`, `radio_tabla`, `referencia`,
+`a_confirmar` y, en 400 y 450 m, `nota`) o `null` con `nota_factor`, `sobreancho_con_factor`, `sobreancho` (el que se
+usa), `se_aplica`, `manda` (la F46 y, si se aplicó, el factor de la T302.20), `motivo` (si no se aplica) y
+`ensanchamiento` (el enviado, con `pis` si se unió con otra curva).
 
 Ejemplo (herramienta MCP; argumentos dentro de `args`):
 
 ```json
 {"args": {"eje": "Eje 1", "simular": true, "velocidad_diseno": 60, "numero_carriles": 2, "ancho_calzada": 7.2,
-          "vehiculo_diseno": "<un vehículo de la base>", "pedido": "crea los bordes del Eje 1 con el sobreancho de la norma"}}
+          "vehiculo_diseno": "B2", "pedido": "crea los bordes del Eje 1 con el sobreancho de la norma"}}
 ```
 
 ### `exportar_dataset` (script del puente, desde 1.6.0)

@@ -546,7 +546,7 @@ async def _crear_bordes_con_norma(nombre: str, parametros: list, datos: dict) ->
         d, origen_d, aviso_d = norma_bordes.desplazamiento(args, ctx)
         if aviso_d:
             propuesta["avisos"].insert(0, aviso_d)
-        bloque = norma_bordes.bloque_propuesta(ctx, propuesta, d, origen_d, lecturas)
+        bloque = norma_bordes.bloque_propuesta(base, ctx, propuesta, d, origen_d, lecturas)
         final = norma_bordes.argumentos_plugin(args, d, propuesta["ensanchamientos"])
         r_final = await _ejecutar(nombre, final, _timeout_s(nombre, parametros, final))
         salida = con_tiempos(r_final, ms())

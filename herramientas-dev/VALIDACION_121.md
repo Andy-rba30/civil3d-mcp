@@ -25,9 +25,11 @@ Copia este texto tal cual en el agente que tiene conectado el MCP de Civil 3D. R
   2. `listar_bordes_calzada` (lectura): los bordes de un eje con su desplazamiento, su lado, las regiones que da Civil
      3D y lo **medido** (zonas ensanchadas con sus transiciones).
   3. En el **puente**, `crear_bordes_calzada` con `velocidad_diseno`, `numero_carriles`, `ancho_calzada` y
-     `vehiculo_diseno` calcula el sobreancho de cada curva con la DG-2018 (302.09) y lo pone en el borde interior. **Las
-     tablas del sobreancho las añade la tarea 6.4 a `dg2018.sqlite`**: si tu base aún no las tiene, los pasos 11 y 12
-     solo comprueban el mensaje que lo dice. La herramienta debe funcionar también a **30 y 40 km/h** (el XML de criterios
+     `vehiculo_diseno` (código de la T202.01: VL, B2, B3-1 o B4-1) calcula el sobreancho de cada curva con la DG-2018
+     (302.09, F46 y T302.20) y lo pone en el borde interior. Usa las tablas que la **tarea 6.4** añadió a
+     `dg2018.sqlite` (**versión 1.2**, commit `13776b1` de `memoria-firma` o posterior): si tu base es anterior, los
+     pasos 11 a 13 solo comprueban el mensaje que lo dice. Las decisiones P4 a P8 de la 6.4 (pendientes de Jose) salen
+     en `propuesta_norma.pendiente_de_decision` con `a_confirmar: true`. La herramienta debe funcionar también a **30 y 40 km/h** (el XML de criterios
      que se usa hoy en Civil 3D no funciona a 30 km/h): el paso 13 lo compara con un cálculo a mano.
 - **Lo que esta validación decide** (no se sabe todavía; por eso hay preguntas): cómo modela Civil 3D la transición de
   un ensanchamiento (`OffsetAlignmentInfo.AddWidening`), el signo del desplazamiento de `CreateOffsetAlignment` y de
@@ -221,24 +223,29 @@ cada curva del `Eje 1`, en el tramo del PC al PT, con 40 m de transición):
 11. **Sobreancho de la norma: sin datos, sin llamar a Civil 3D (decisivo).** Cuenta N11.
     `crear_bordes_calzada` con `args={"eje":"Eje 1","nombre_izquierdo":"Eje 1 - Norma izq","nombre_derecho":"Eje 1 - Norma der","simular":true,"velocidad_diseno":60}`.
     Esperado, según tu base:
-    - **Si la base aún no tiene las tablas del sobreancho** (la 6.4 sin terminar): `ok: false` y un `error` que
-      contiene «no tiene todavía las tablas del sobreancho» y «No se llamó a Civil 3D». Anótalo y **salta los pasos 12 y
-      13**.
-    - **Si las tiene**: `ok: false`, `error` que empieza por «Faltan datos del proyecto para calcular el sobreancho de
-      la DG-2018: numero_carriles, ancho_calzada, vehiculo_diseno» y `faltan` con `vehiculo_diseno` y sus
-      `valores_validos` (anótalos).
+    - **Si la base es anterior a la 1.2** (sin las tablas del sobreancho): `ok: false` y un `error` que contiene «no
+      tiene todavía las tablas del sobreancho» y «No se llamó a Civil 3D». Anótalo y **salta los pasos 12 y 13**.
+    - **Si es la 1.2**: `ok: false`, `error` que empieza por «Faltan datos del proyecto para calcular el sobreancho de
+      la DG-2018: numero_carriles, ancho_calzada, vehiculo_diseno» y `faltan` con `vehiculo_diseno`,
+      `valores_validos: ["VL", "B2", "B3-1", "B4-1"]` y un `motivo` que lista cada uno con su nombre y su L (B2 con
+      L = 10.55 m).
+    Después, `crear_bordes_calzada` con
+    `args={"eje":"Eje 1","simular":true,"velocidad_diseno":60,"numero_carriles":2,"ancho_calzada":7.2,"vehiculo_diseno":"T3S3"}`
+    (un articulado) → `faltan` con `vehiculo_diseno`, un `motivo` que dice «es un vehículo articulado ... no se inventa
+    (pendiente del dueño, P6)» y los mismos `valores_validos`.
     En los dos casos, vuelve a contar: **N11** (ninguna línea nueva) y ninguna entrada nueva en el menú Deshacer.
 
-12. **Sobreancho de la norma simulado** (solo si el paso 11 dio `faltan`). Pide a Jose el vehículo de diseño de la lista
-    `valores_validos` (anota cuál). `crear_bordes_calzada` con
-    `args={"eje":"Eje 1","nombre_izquierdo":"Eje 1 - Norma izq","nombre_derecho":"Eje 1 - Norma der","simular":true,"velocidad_diseno":60,"numero_carriles":2,"ancho_calzada":7.2,"vehiculo_diseno":"<vehículo>","pedido":"simula los bordes del Eje 1 con el sobreancho de la norma"}`.
+12. **Sobreancho de la norma simulado** (solo si el paso 11 dio `faltan`). `crear_bordes_calzada` con
+    `args={"eje":"Eje 1","nombre_izquierdo":"Eje 1 - Norma izq","nombre_derecho":"Eje 1 - Norma der","simular":true,"velocidad_diseno":60,"numero_carriles":2,"ancho_calzada":7.2,"vehiculo_diseno":"B2","pedido":"simula los bordes del Eje 1 con el sobreancho de la norma"}`.
     Esperado: la respuesta del plugin (`simulado: true`) y `propuesta_norma` con `seccion: "302.09"`,
-    `desplazamiento: 3.6` (`ancho_calzada / 2`), `longitud_transicion: 40`, `proyecto.l_m` (anótalo) y dos `curvas`:
-    PI 1 con `borde: "izquierdo"` y PI 2 con `borde: "derecho"`, cada una con `termino_geometrico`,
-    `termino_velocidad`, `sobreancho_formula` (compruébalo a mano: 2 (80 − √(6400 − L²)) + 60 / (10 √80)),
-    `factor_reduccion` o `nota_factor`, `sobreancho`, `se_aplica` y `manda`; `ensanchamientos` del PC al PT con
-    `longitud_transicion: 40` (o ninguno si Sa < 0,40) y `pendiente_de_decision` con la transición del peralte y el
-    redondeo. Pega `propuesta_norma` completo.
+    `formula_referencia` que empieza por `F46`, `desplazamiento: 3.6` (`ancho_calzada / 2`), `longitud_transicion: 40`,
+    `proyecto.vehiculo_diseno: "B2"`, `proyecto.l_m: 10.55` y dos `curvas`: PI 1 con `borde: "izquierdo"` y PI 2 con
+    `borde: "derecho"`, cada una con `termino_geometrico` ≈ 1.3972 (2 (80 − √(6400 − 10.55²))), `termino_velocidad`
+    ≈ 0.6708 (60 / (10 √80)), `sobreancho_sin_factor` ≈ 2.068, `factor_reduccion` (si el radio 80 está en la T302.20:
+    su `valor`, `a_confirmar: true` y `sobreancho_con_factor`) o `null` con `nota_factor` «El radio 80 m no está en la
+    T302.20...», `sobreancho`, `se_aplica` y `manda`; `ensanchamientos` del PC al PT con `longitud_transicion: 40` (o
+    ninguno si Sa < 0,40); y `pendiente_de_decision` con **P4, P5, P6, P7 y P8**, todos con `a_confirmar: true`. Pega
+    `propuesta_norma` completo.
 
 13. **Comparación a 30 km/h con curvas cerradas** (solo si el paso 11 dio `faltan`). Se compara lo que propone la
     herramienta con lo que Jose calcula **a mano con la DG-2018** (302.09: Sa = n (R − √(R² − L²)) + V / (10 √R) y la
@@ -251,17 +258,20 @@ cada curva del `Eje 1`, en el tramo del PC al PT, con 40 m de transición):
        → dos curvas: PI 1 a la izquierda con R = 25 y PI 2 a la derecha con R = 30. `listar_pis` con
        `args={"alineamiento":"Eje 30"}`: anota el PC y el PT de cada curva.
     c. Pide a Jose los datos de esta vía: **número de carriles**, **ancho de calzada** y **vehículo de diseño** (de la
-       lista del paso 11). No los supongas.
+       lista del paso 11). No los supongas. Referencia de control de la 6.4 (caso 8): con **B2**, 2 carriles y sin
+       factor, Sa = **5,27 m** con R = 25 y **4,38 m** con R = 30.
     d. `crear_bordes_calzada` con
        `args={"eje":"Eje 30","simular":true,"velocidad_diseno":30,"numero_carriles":<n>,"ancho_calzada":<ancho>,"vehiculo_diseno":"<vehículo>","pedido":"simula los bordes del eje de 30 km/h con el sobreancho de la norma"}`.
        Esperado: **ningún** aviso de «fuera del rango de la figura 302.18B» (30 km/h está dentro); por curva,
        `termino_velocidad` = 30 / (10 √R) (**0.6** con R = 25 y **0.5477** con R = 30), `termino_geometrico` =
-       n (R − √(R² − L²)), el `factor_reduccion` de la T302.20 o su `nota_factor`, `sobreancho`, `se_aplica` y, si se
-       aplica, el ensanchamiento en el borde **interior** (izquierdo en el PI 1, derecho en el PI 2) del PC al PT, con 40 m
-       de transición (o recortada, con aviso, si no cabe).
+       n (R − √(R² − L²)), `sobreancho_sin_factor`, el `factor_reduccion` de la T302.20 (con calzada de 7,20 m, si el
+       radio está en la tabla) y `sobreancho_con_factor`, o su `nota_factor`, `sobreancho`, `se_aplica` y, si
+       se aplica, el ensanchamiento en el borde **interior** (izquierdo en el PI 1, derecho en el PI 2) del PC al PT, con
+       40 m de desarrollo (o recortado, con aviso, si no cabe).
     e. Jose calcula a mano cada curva con la DG-2018 y te dicta su resultado. Pon en el informe una tabla: curva, R, L,
-       V, n, término geométrico, término de velocidad, factor de la T302.20, Sa a mano, Sa de la herramienta y diferencia.
-       Una diferencia de más de 0,01 m, o un factor distinto, es un hallazgo: anota cómo lo calculó Jose.
+       V, n, término geométrico, término de velocidad, factor de la T302.20, Sa sin factor y con factor a mano y de la
+       herramienta, y diferencia. Una diferencia de más de 0,01 m, o un factor distinto, es un hallazgo: anota cómo lo
+       calculó Jose. Pregúntale también cómo aplica él el factor (multiplicando u otra forma): es la decisión P5.
 
 ## Informe
 
