@@ -1,4 +1,4 @@
-# Prueba de la ronda D en Civil 3D (1.19.2 + 1.19.3 + 1.20.0 + 1.21.0 + 1.21.1): índice y orden
+# Prueba de la ronda D en Civil 3D (1.19.2 + 1.19.3 + 1.20.0 + 1.21.0 + 1.21.1 + 1.21.2): índice y orden
 
 Este archivo junta en **una sola sesión de pruebas** las cinco validaciones de la ronda D y las tres comprobaciones
 pendientes de `COMPROBACIONES_RONDA_D.md`. Lo usa el agente instalador con el **Prompt P**, después de instalar con el
@@ -12,12 +12,16 @@ pendientes de `COMPROBACIONES_RONDA_D.md`. Lo usa el agente instalador con el **
   Civil 3D cerrado, en PowerShell desde la raíz del repo, `powershell -ExecutionPolicy Bypass -File .\ArbaMcp\instalar.ps1`;
   después, en `PuenteMcp`, `uv sync`. Reinicia el puente (`startup_c3d_mcp.vbs`) y **recarga el MCP `civil3d` en
   Antigravity** (su caché no ve las herramientas nuevas).
-- **Versión instalada**: `1.21.1`. Herramientas: **63**, **59** del plugin (las 55 de la 1.19.1 más `listar_peralte`,
+- **Corrección 1.21.2 (18/11/2026)**: la primera prueba paró en la parte 1, paso 3: Civil 3D 2027 crea con cada eje
+  curvas de peralte vacías y las progresivas `BeginAlignment` y `EndAlignment`, y `aplicar_peralte` lo tomaba por
+  peralte. La 1.21.2 lo corrige y completa la `CORRESPONDENCIA` con los nombres que dio el paso 2. Se reinstala la rama
+  (Prompt L.1) y se **empieza otra vez desde la parte 1, paso 0**, con un dibujo nuevo (`PRUEBA_120_2.dwg`).
+- **Versión instalada**: `1.21.2`. Herramientas: **63**, **59** del plugin (las 55 de la 1.19.1 más `listar_peralte`,
   `aplicar_peralte`, `crear_bordes_calzada` y `listar_bordes_calzada`) y **4** del puente (`buscar_api`,
   `guardar_receta`, `ejecutar_receta` y `verificar_norma`).
-  - En el **paso 0 de cada parte** se espera **`1.21.1`** y **63** herramientas, no el número de cada archivo (la 1192
+  - En el **paso 0 de cada parte** se espera **`1.21.2`** y **63** herramientas, no el número de cada archivo (la 1192
     dice 1.19.2 y 59; la 1193, 1.19.3 y 55 del plugin; la 120, 1.20.0 y 61; la 121, 1.21.0 y 63; la 1211, 59). El
-    `curl.exe -s http://127.0.0.1:8765/ping` de la 1192 debe dar `{"ok":true,"servidor":"ArbaMcp","version":"1.21.1"}`.
+    `curl.exe -s http://127.0.0.1:8765/ping` de la 1192 debe dar `{"ok":true,"servidor":"ArbaMcp","version":"1.21.2"}`.
     Todo lo demás de esos pasos 0 vale igual.
   - **No reinstales entre partes**, aunque el paso 0 de cada archivo nombre su propia rama o diga «si no, instala».
 - **`memoria-firma` al día**: en `C:\Proyectos\memoria-firma`, `git pull`, con `MEMORIA_FIRMA_DIR` apuntando ahí
@@ -57,6 +61,8 @@ El catálogo de la API no los trae, y sin ellos no se puede completar la tabla `
 `aplicar_peralte` con la norma no escribe**: calcula el peralte, lo devuelve en `propuesta_norma` y responde «Falta la
 correspondencia entre la DG-2018 y los nombres de Civil 3D para ...» (paso 10d). Con `enumerados` y la tabla
 «concepto → nombre elegido → por qué» del paso 3, la sesión de desarrollo rellena la correspondencia en esta misma rama.
+**Hecho en la 1.21.2** con lo que salió el 17/11/2026: el paso 2 sigue siendo decisivo (confirma que los nombres no
+cambian y que el eje recién creado sale `tiene_peralte: false`), y el paso 10 ya escribe (10d simula y 10g escribe).
 
 Por eso la parte 1 va la primera y, **en cuanto termine el paso 2**, guarda ya el informe de la parte 1 como archivo con
 `enumerados` completo (lo completas al final de la parte). Si la prueba se corta después, ese dato ya está guardado.
@@ -65,7 +71,7 @@ Por eso la parte 1 va la primera y, **en cuanto termine el paso 2**, guarda ya e
 
 | Parte | Archivo | Dibujo | Qué prueba | Pasos decisivos |
 |---|---|---|---|---|
-| 1 | `herramientas-dev/VALIDACION_120.md` | `PRUEBA_120.dwg` (dibujo **Nuevo** con la plantilla métrica, como dice el archivo) | Peralte: `listar_peralte`, `aplicar_peralte` con valores explícitos y el peralte de la DG-2018 calculado en el puente, sin escribir | 0, **2** (el de la `CORRESPONDENCIA`), 4, 5, 7, 9 y 10 |
+| 1 | `herramientas-dev/VALIDACION_120.md` | `PRUEBA_120.dwg` (dibujo **Nuevo** con la plantilla métrica, como dice el archivo) | Peralte: `listar_peralte`, `aplicar_peralte` con valores explícitos y el peralte de la DG-2018 calculado en el puente, que desde la 1.21.2 se escribe | 0, **2** (el de la `CORRESPONDENCIA`), 3, 4, 5, 7, 9 y 10 (con el 10g) |
 | 2 | `herramientas-dev/VALIDACION_121.md` | `PRUEBA_121.dwg` (copia nueva de `PRUEBA_EVALUACION_BASE.dwg`) | Bordes de calzada con ensanchamientos y el sobreancho de la DG-2018 | 0, 3, 4, 8, 9 y 10 |
 | 3 | `herramientas-dev/VALIDACION_1211.md` | `PRUEBA_1211.dwg` (copia nueva de `PRUEBA_EVALUACION_BASE.dwg`) | Las decisiones del dueño en `verificar_norma` y en la propuesta de radios (sin radio bajo el mínimo sin confirmación) | 0, 2, 3, 4, 5, 6, 7 y 8 |
 | 4 | `herramientas-dev/VALIDACION_1193.md` | `PRUEBA_1193.dwg` (copia nueva de `PRUEBA_112.dwg`) | `crear_secciones`: nombre de grupo que ya usa otro eje y superficie del dibujo de cada sección | 0, 3, 6, 7 y 10 |
@@ -86,24 +92,24 @@ Por qué este orden:
 ## Ajustes de cada parte por ir juntas
 
 - **Parte 1 (`VALIDACION_120.md`)**:
-  - Paso 0: `1.21.1` y 63 herramientas; además de `listar_peralte` y `aplicar_peralte` están `crear_bordes_calzada` y
+  - Paso 0: `1.21.2` y 63 herramientas; además de `listar_peralte` y `aplicar_peralte` están `crear_bordes_calzada` y
     `listar_bordes_calzada`.
   - Paso 2: es el decisivo para la `CORRESPONDENCIA`. Pega `enumerados` **completo** (`tipo_estacion`, `region`,
     `region_transicion`, `segmento` y `tipo_peralte_eje`), sin resumir ni reordenar, y guarda el informe enseguida.
-  - Paso 10d: con `memoria-firma` en `6e8eb54` o después, lo esperado es la **segunda** respuesta del archivo: `ok:
-    false` con «Falta la correspondencia entre la DG-2018 y los nombres de Civil 3D para ...» y `propuesta_norma`. La
+  - Paso 10d: con `memoria-firma` en `6e8eb54` o después, lo esperado es la **tercera** respuesta del archivo (desde la
+    1.21.2): `simulado: true` con `propuesta_norma`. La segunda («Falta la correspondencia ...») ya es un FALLO. La
     primera («La base de la norma no tiene la tabla peralte_figura ...» o la de las tablas de la sesión 6.4) significa
     que `memoria-firma` no está al día: anótalo como FALLO de requisitos.
-  - Paso 10f: el número de comprobaciones de `casos_norma_reales.py` puede no ser 109 con la 1.21.1; lo que decide es
+  - Paso 10f: el número de comprobaciones de `casos_norma_reales.py` puede no ser 109 con la 1.21.2; lo que decide es
     «**0 fallos**» y que los casos 10 a 12 y la sección «Peralte según el radio» salgan con `[OK   ]`.
   - Paso 11 (solo referencia): necesita el archivo XML de criterios del dueño. Si no está a mano, se salta y se anota.
-- **Parte 2 (`VALIDACION_121.md`)**: paso 0 con `1.21.1` (el archivo dice `1.21.0`); el resto, igual.
+- **Parte 2 (`VALIDACION_121.md`)**: paso 0 con `1.21.2` (el archivo dice `1.21.0`); el resto, igual.
 - **Parte 3 (`VALIDACION_1211.md`)**: paso 0 con **63** herramientas (el archivo dice 59 «o el número de la rama
   conjunta»). Si ya corriste `casos_norma_reales.py` en la parte 1 con el mismo commit de `memoria-firma`, córrelo otra
   vez de todos modos: este paso pide sus líneas «Umbrales del código» y «Referencias que cita el código».
-- **Parte 4 (`VALIDACION_1193.md`)**: paso 0 con `1.21.1` y 59 herramientas del plugin (63 en total).
+- **Parte 4 (`VALIDACION_1193.md`)**: paso 0 con `1.21.2` y 59 herramientas del plugin (63 en total).
 - **Parte 5 (`VALIDACION_1192.md`)**:
-  - Paso 0: `1.21.1` y 63 herramientas, también en el `curl.exe` de `/ping`.
+  - Paso 0: `1.21.2` y 63 herramientas, también en el `curl.exe` de `/ping`.
   - Paso 1: la variable ya está en `1` desde los requisitos. Solo anota el valor; no cierres Civil 3D.
   - Paso 10: haz el recuento y `leer_historial`, **no guardes el dibujo** y **no** toques la variable ni cierres Civil
     3D: pasa directamente a la parte 6 con el mismo dibujo.

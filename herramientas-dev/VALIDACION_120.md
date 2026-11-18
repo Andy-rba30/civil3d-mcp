@@ -15,6 +15,13 @@ Copia este texto tal cual en el agente que tiene conectado el MCP de Civil 3D. R
   **Con la rama conjunta `tarea/6.6-bordes-sobreancho` (PR #52), la versión es `1.21.0` y hay 63 herramientas (59 del
   plugin, con `crear_bordes_calzada` y `listar_bordes_calzada`)**: en el paso 0, donde dice `1.20.0` y 61, vale
   `1.21.0` y 63; lo demás de esta validación no cambia.
+- **Corrección 1.21.2 (rama `tarea/ronda-d`, 18/11/2026)**, tras la primera prueba de la ronda D, que paró en el paso 3:
+  Civil 3D 2027 crea con cada eje una curva de peralte **vacía** por curva horizontal (de PC a PT) y las progresivas
+  `BeginAlignment` y `EndAlignment`, y `aplicar_peralte` lo tomaba por peralte. Desde la 1.21.2 eso es un eje **sin
+  peralte**, `aplicar_peralte` añade las progresivas a la curva vacía de cada arco (no crea otra) y el puente ya tiene
+  la correspondencia con los nombres reales, así que el paso 10 **escribe**. En el paso 0 vale `1.21.2` y 63
+  herramientas. Los pasos 2, 3, 4, 7, 10d, 10g (nuevo) y 12 dicen lo que cambia. Empieza con un dibujo **nuevo**
+  (`PRUEBA_120_2.dwg` si `PRUEBA_120.dwg` ya existe).
 - `memoria-firma` al día (`git pull`) en `C:\Proyectos\memoria-firma`, con `MEMORIA_FIRMA_DIR` apuntando ahí (variable
   de usuario) y la base `C:\Proyectos\memoria-firma\normas\tablas\dg2018.sqlite`. Para el paso 10 la base debe traer la
   tabla `peralte_figura` (las Figuras 302.02 a 302.05 digitalizadas, tarea 6.10); si no la trae, el paso 10 lo dirá.
@@ -93,21 +100,28 @@ Reglas:
 
 2. **`listar_peralte` en un eje recién creado (decisivo).** `listar_peralte` con
    `args={"alineamiento":"Eje Peralte","pedido":"muestra el peralte del Eje Peralte"}`. Anota y **pega completos**:
-   - `tiene_peralte`, `numero_curvas`, `numero_estaciones`, `curvas` y `estaciones_del_eje`. Lo esperado es
-     `tiene_peralte: false` y listas vacías; si un eje recién creado ya trae progresivas críticas (por ejemplo, de
-     inicio y fin del eje), anótalas: es un hallazgo y `aplicar_peralte` lo rechazará (paso 3 lo dirá).
+   - `tiene_peralte`, `numero_curvas`, `numero_estaciones`, `curvas` y `estaciones_del_eje`. Lo esperado (desde la
+     1.21.2, con lo que se vio en Civil 3D el 17/11/2026) es `tiene_peralte: false`, `numero_curvas: 2`,
+     `numero_estaciones: 0`; `curvas` con `Curva.1` de 220 a 345.6637 y `Curva.2` de 485.6637 a 611.3274, las dos con
+     `numero_estaciones: 0` (las crea Civil 3D con el eje); y `estaciones_del_eje` con **solo** `BeginAlignment` en 0
+     y `EndAlignment` en 831.3274 (`region: "Out"`, pendientes en 0). Si sale `tiene_peralte: true` o algo más
+     (otras progresivas, curvas que no van de PC a PT), anótalo literal: es un hallazgo.
    - `tipo_peralte`, `usa_archivo_criterios`, `archivo_criterios`, `escala_pendientes` y `avisos`.
    - **`enumerados` completo**: `tipo_estacion`, `region`, `region_transicion`, `segmento` y `tipo_peralte_eje`. Es el
      dato que falta en el catálogo: **sin él no se puede seguir**. Si `enumerados` no sale o alguna lista está vacía,
-     **para aquí**.
+     **para aquí**. Con la 1.21.1 salieron 19 tipos (de `BeginAlignment` a `EndFullCant`), 3 regiones
+     (`AutoAttainmentRegionType`, `BeginingAttainmentRegion`, `EndingAttainmentRegion`), `In` y `Out`, 8 segmentos y
+     `NotSupported`, `Superelevation` y `Cant`: anota si algo cambia.
    - Comprueba en `mcp_log.jsonl` que hay una línea de `listar_peralte` y en el menú Deshacer que **no** hay entrada
      nueva.
 
-3. **Elegir los nombres y simular (decisivo para la correspondencia).** Con las listas del paso 2, elige el nombre de
-   Civil 3D de cada concepto y **anota la tabla en el informe** (concepto → nombre elegido → por qué). Si en Civil 3D
-   tienes a mano el editor tabular de peralte (selecciona un eje → cinta contextual → grupo de modificar → desplegable
-   de peralte → editor tabular), los nombres de sus filas te ayudan a decidir. Si dudas entre dos nombres, anota los
-   dos y usa uno.
+3. **Los nombres y la simulación (decisivo para la correspondencia).** Desde la 1.21.2 la tabla ya está elegida (la
+   de la prueba del 17/11/2026, que es la `CORRESPONDENCIA` del puente): `fin_bombeo_normal` = `EndNormalCrown`,
+   `bombeo_nivelado` = `LevelCrown`, `bombeo_invertido` = `ReverseCrown`, `inicio_peralte_total` = `BeginFullSuper`,
+   `fin_peralte_total` = `EndFullSuper`, `inicio_bombeo_normal` = `BeginNormalCrown`, `entrada` =
+   `BeginingAttainmentRegion`, `salida` = `EndingAttainmentRegion`, `carril_izquierdo` = `LeftOutLaneCrossSlope` y
+   `carril_derecho` = `RightOutLaneCrossSlope`. Úsala tal cual en la llamada de abajo; si al ver el editor tabular
+   (paso 5b) algún nombre te parece equivocado, anótalo como hallazgo, no lo cambies.
 
    | Concepto (norma) | Qué es | Lista de `enumerados` |
    |---|---|---|
@@ -123,7 +137,7 @@ Reglas:
    | `carril_derecho` | el carril a la derecha del eje | `segmento` |
 
    Después, cuenta las líneas de `mcp_log.jsonl` (N3) y las copias de `backups\` (C3) y llama a `aplicar_peralte` con
-   `simular: true` y estas `curvas` (sustituye cada `<concepto>` por el nombre elegido; pendientes en %, valores **de
+   `simular: true` y estas `curvas` (sustituye cada `<concepto>` por el nombre de la tabla; pendientes en %, valores **de
    ejemplo**). La curva del PI 1 gira a la **izquierda**: su carril exterior es el **derecho** (sube) y el interior el
    izquierdo (baja). La del PI 2 gira a la **derecha**: al revés.
 
@@ -153,8 +167,10 @@ Reglas:
 
    Llamada: `aplicar_peralte` con `args={"alineamiento":"Eje Peralte","simular":true,"curvas":"<la lista de arriba en una línea>","pedido":"simula el peralte de ejemplo del Eje Peralte"}`.
    Esperado: `simulado: true`; `accion: "Aplicar peralte en el eje 'Eje Peralte': 2 curvas de peralte (PI 1, 2) con 16
-   progresivas críticas"`; `antes` con `tiene_peralte: false`; `despues` con `tiene_peralte: true`, `numero_curvas: 2`,
-   `numero_estaciones: 16` y `curvas` con el PI 1 (`radio: 80`, `giro: "izquierda"`, `progresiva_pc: 220`) y el PI 2;
+   progresivas críticas"`; `antes` con `tiene_peralte: false` y `numero_curvas: 2` (las vacías); `despues` con
+   `tiene_peralte: true`, `numero_curvas: 2`, `numero_estaciones: 16` y `curvas` con el PI 1 (`nombre: "Curva.1"`,
+   `curva_de_peralte: "existente"`, `radio: 80`, `giro: "izquierda"`, `progresiva_pc: 220`) y el PI 2 (`Curva.2`,
+   `existente`);
    `avisos` vacío o `null`. **N3 + 1** líneas en `mcp_log.jsonl`, **C3** copias y ninguna entrada en Deshacer. Si
    responde que un nombre no existe («'X' no es un tipo de progresiva crítica de Civil 3D ... Valores: ...»), corrige
    la elección con esa lista y repite. Si responde «ya tiene peralte», **para aquí**.
@@ -162,7 +178,8 @@ Reglas:
 4. **Escritura real (decisivo).** Cuenta (N4, C4). La misma llamada **sin** `simular` y con
    `"pedido":"aplica el peralte de ejemplo al Eje Peralte"`. Esperado:
    - `simulado: false`, `copia.ruta` con una copia en `backups\` (o reutilizada), `despues` con `tiene_peralte: true` y
-     `numero_curvas: 2`, `curvas` con los nombres que les puso Civil 3D y sus estaciones.
+     `numero_curvas: 2` (**no 4**: las progresivas van a `Curva.1` y `Curva.2`), `curvas` con sus estaciones y
+     `datos.curvas_de_peralte` con los dos PI en `origen` «existente (la curva vacía que creó Civil 3D con el eje)».
    - `datos.estaciones_del_eje` (anótalo), `datos.escala_pendientes` y `datos.deshacer`.
    - `avisos`: **anótalos todos**. En especial, si sale «El eje tiene progresivas críticas que no se pidieron (Civil 3D
      pudo crearlas al añadir la curva de peralte): ...» (lo que hace `AddUserDefinedCurve`) o
@@ -197,7 +214,8 @@ Reglas:
    `args={"comando":"_.UNDO 1 ","timeout_s":20,"pedido":"deshace el peralte de ejemplo"}` y después `listar_peralte`
    con `args={"alineamiento":"Eje Peralte"}`. Anota `tiene_peralte`, `numero_curvas`, `numero_estaciones` y
    `estaciones_del_eje`.
-   - Si `tiene_peralte: false`: `_.UNDO 1` **quita el peralte** (no hace falta `deshacer_peralte`). Vuelve a aplicarlo:
+   - Si `tiene_peralte: false` (con `numero_curvas: 2` y `numero_estaciones: 0`: vuelven a quedar las curvas vacías):
+     `_.UNDO 1` **quita el peralte** (no hace falta `deshacer_peralte`). Vuelve a aplicarlo:
      la llamada del paso 4 otra vez → `simulado: false`, 2 curvas (también comprueba que un eje sin peralte se puede
      escribir de nuevo).
    - Si sigue con peralte: `_.UNDO 1` **no lo quita** (como los objetivos de corredor). Anota si quitó algo (por
@@ -256,8 +274,8 @@ Reglas:
        `args={"alineamiento":"Eje Norma 120","simular":true,"velocidad_diseno":60,"clasificacion":"Carretera de tercera clase","orografia":"Ondulado","ubicacion":"rural","pavimentada":false,"peralte_maximo":8, DATOS_PERALTE}`
        → `faltan` con `bombeo`, el motivo «La T304.03 da 3.0-3.5 % para 'Afirmado' con <500 mm/año: elige el valor dentro
        del rango (R304.05-2); no se elige solo.» y `valores_validos: [3, 3.5]`; sin llamar a Civil 3D. Después la misma
-       llamada con `"bombeo":3.0` y `"pedido":"simula el peralte de la norma"`. En esta ronda lo esperado es **una** de
-       estas respuestas, sin escribir nada:
+       llamada con `"bombeo":3.0` y `"pedido":"simula el peralte de la norma"`. Lo esperado es **una** de estas
+       respuestas, sin escribir nada (desde la 1.21.2, la tercera):
        - «La base de la norma no tiene la tabla peralte_figura ...» (o la de las tablas de la sesión 6.4):
          `memoria-firma` aún no trae la tarea 6.10 (o no está en `dg2018.sqlite` 1.2). Anótalo y salta al paso 11. Sin
          llamadas nuevas en `mcp_log.jsonl`.
@@ -277,8 +295,13 @@ Reglas:
            simétricas respecto al PT. Con PC 350 en el PI 1: 304,4 / 316,4 / 328,4 / 364,4 y, a la salida, 571,219 /
            607,219 / 619,219 / 631,219. En la curva del PI 1 (gira a la izquierda), el carril derecho sube a +7,5 y el
            izquierdo baja a −7,5; en la del PI 2, al revés.
-         En `mcp_log.jsonl`, **N10 + 2** líneas: `leer_variable` y `listar_pis`, ninguna de `aplicar_peralte`. La
-         correspondencia se rellena con tu tabla del paso 3.
+         En `mcp_log.jsonl`, **N10 + 2** líneas: `leer_variable` y `listar_pis`, ninguna de `aplicar_peralte`. Con la
+         1.21.2 esta respuesta ya **no** debe salir (la correspondencia está completa): si sale, es un FALLO.
+       - **Desde la 1.21.2**: `simulado: true` del plugin con `propuesta_norma` (todo lo de la viñeta anterior: figura,
+         7,549 y 7,5 %, transición y las 8 estaciones de cada curva, con `nombre` el de Civil 3D de la tabla del paso
+         3), `antes.tiene_peralte: false`, `despues.numero_curvas: 2`, `despues.numero_estaciones: 16` y las dos
+         curvas con `curva_de_peralte: "existente"`. **N10 + 3** líneas (`leer_variable`, `listar_pis` y
+         `aplicar_peralte`) y ninguna entrada en Deshacer.
     e. **Valores de control de la figura** (no decisivo; solo si 10d dio `propuesta_norma`). Repite la segunda llamada
        de 10d (con `DATOS_PERALTE` y `"bombeo":3.0`) cambiando lo que dice cada fila y anota `peralte.figura` y
        `peralte.peralte_calculado_pct` de las dos curvas (radio 150):
@@ -298,6 +321,15 @@ Reglas:
        aviso de bombeo en el 12b y 2,0 % por la T304.06 en el 12c); al final, la sección «Peralte según el radio» con
        **6** líneas `[OK   ]`; y la línea «Resultado: ... 0 fallos». Con la base 6e8eb54, en la nube salió «109
        comprobaciones OK, 0 fallos». Pega los casos 10 a 12, la sección y la línea «Resultado:».
+    g. **Escritura real con la norma (decisivo, desde la 1.21.2).** Solo si 10d dio `simulado: true`. Cuenta (N10g,
+       C10g). La segunda llamada de 10d **sin** `simular` y con `"pedido":"aplica el peralte de la norma al Eje Norma 120"`.
+       Esperado: `simulado: false`, una copia en `backups\` (o reutilizada), `despues.tiene_peralte: true`,
+       `numero_curvas: 2`, `numero_estaciones: 16`, `propuesta_norma` y `verificacion` con `verificado: true` y 4
+       `filas` (PI 1 y PI 2, los dos carriles) con `leido_pct` ±7,5 y `cumple: true`. **N10g + 4** líneas
+       (`leer_variable`, `listar_pis`, `aplicar_peralte` y `listar_peralte`) y **una** entrada nueva en Deshacer. Si
+       `verificado` es `false`, pega `verificacion` entera: dice qué carril no cuadra. Después, en el editor tabular de
+       `Eje Norma 120`, anota lo que muestran los carriles en el inicio del peralte total del PI 1 (364,4 si el PC es
+       350): esperado ±7,50 %. Ciérralo sin cambiar nada.
 
 11. **Comparación con el XML de criterios del dueño (solo referencia, no decisivo).** `crear_alineamiento_desde_polilinea`
     con `args={"nombre":"Eje XML 120","capa":"EJE_NORMA_A","radio":150,"pedido":"crea una copia del eje para comparar con el XML"}`.
@@ -309,7 +341,7 @@ Reglas:
     errores conocidos). No pegues el archivo ni su ruta.
 
 12. **Deshacer y copias.** Abre el menú Deshacer: las entradas nuevas de `aplicar_peralte` son solo las de las
-    escrituras reales (paso 4 y, si se repitió, paso 7); **ninguna** de los pasos 2, 3, 5, 6 ni 10. En `backups\`,
+    escrituras reales (paso 4, si se repitió el paso 7, y el 10g); **ninguna** de los pasos 2, 3, 5, 6 ni 10b a 10f. En `backups\`,
     las copias de las escrituras reales (o reutilizadas). No deshagas nada más.
 
 ## Informe
