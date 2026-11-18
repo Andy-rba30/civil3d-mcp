@@ -114,6 +114,23 @@ namespace ArbaMcp
             throw new InvalidOperationException("No se encontró la curva circular del PI " + pi + " (PC en " + TablaPi.Progresiva(pc) + ") en las entidades del eje '" + al.Name + "'. Usa listar_pis.");
         }
 
+        /// <summary>
+        /// La curva de peralte vacía que Civil 3D creó para el arco del PI (1.21.2): la del nombre que eligió
+        /// Peralte.AsignarCurvasExistentes, comprobando otra vez que va de PC a PT y que sigue sin progresivas.
+        /// </summary>
+        private static Civ.SuperelevationCurve CurvaPeralteExistente(CivAlignment al, CurvaPeralte c)
+        {
+            foreach (var curva in al.SuperelevationCurves)
+            {
+                if (!string.Equals(Seguro(() => curva.Name, null), c.CurvaExistente, StringComparison.Ordinal)) continue;
+                if (Peralte.EsCurvaVaciaDelArco(Seguro(() => (double?)curva.StartStation, null), Seguro(() => (double?)curva.EndStation, null),
+                        curva.CriticalStations.Count, c.ProgresivaPc.Value, c.ProgresivaPt.Value))
+                    return curva;
+            }
+            throw new InvalidOperationException("No se encontró la curva de peralte vacía '" + c.CurvaExistente + "' del PI " + c.Pi + " (de " + TablaPi.Progresiva(c.ProgresivaPc.Value)
+                + " a " + TablaPi.Progresiva(c.ProgresivaPt.Value) + ") al escribir. No se reintenta. Míralo con listar_peralte.");
+        }
+
         // ------------------------------------------------------------------ escritura
         /// <summary>
         /// Cuerpo de aplicar_peralte, con el patrón de CambiarSuperficie: simulación con bloqueo de lectura (sin entrada de
@@ -124,6 +141,7 @@ namespace ArbaMcp
         {
             var doc = ctx.Doc;
             Dictionary<string, object> antes, prevision;
+            int curvasAntes;
             var avisosLectura = new HashSet<string>();
             string nombreReal = nombreAl;
             using (ctx.Simular ? BloquearParaLeer(doc) : doc.LockDocument())   // simulación: contexto de aplicación y solo lectura, sin entrada de Deshacer
@@ -135,6 +153,9 @@ namespace ArbaMcp
                 var actual = LeerPeralte(al, avisosLectura);
                 if (actual.TienePeralte) throw new ArgumentException(Peralte.MensajeYaTienePeralte(actual));
                 ctx.Avisos.AddRange(Peralte.ComprobarContraEje(curvas, TablaPiDelEje(al)));
+                // Civil 3D crea con el eje una curva de peralte vacía por curva horizontal: se le añaden las progresivas (1.21.2)
+                Peralte.AsignarCurvasExistentes(curvas, actual);
+                curvasAntes = actual.Curvas.Count;
                 // Los nombres de los enumerados se resuelven ya (también al simular): uno que no exista falla sin tocar nada
                 foreach (var c in curvas)
                     foreach (var e in c.Estaciones)
@@ -147,7 +168,7 @@ namespace ArbaMcp
                     ctx.Avisos.Add("El eje '" + al.Name + "' tiene activado el archivo de criterios de diseño (" + (Seguro(() => al.CriteriaFileName, null) ?? "sin nombre")
                         + "): aplicar_peralte no lo usa; los valores son los pedidos.");
                 antes = Peralte.Estado(actual);
-                prevision = Peralte.Prevision(al.Name, curvas);
+                prevision = Peralte.Prevision(al.Name, curvas, curvasAntes);
                 if (ctx.Simular)
                 {
                     tr.Commit();
@@ -158,11 +179,16 @@ namespace ArbaMcp
                 ctx.EsperarCopia();   // nunca se escribe sin copia terminada
                 foreach (var c in curvas)
                 {
-                    var arco = ArcoEnPc(al, c.ProgresivaPc.Value, c.Pi);
-                    if (arco.SubEntityCount < 1) throw new InvalidOperationException("La curva del PI " + c.Pi + " no tiene subentidades (AlignmentEntity.SubEntityCount = 0): no se puede crear su curva de peralte.");
-                    var sub = arco[0];
-                    var curvaPeralte = al.SuperelevationCurves.AddUserDefinedCurve(sub, sub);
-                    if (curvaPeralte == null) throw new InvalidOperationException("Civil 3D no devolvió la curva de peralte del PI " + c.Pi + " (SuperelevationCurveCollection.AddUserDefinedCurve). No se reintenta.");
+                    Civ.SuperelevationCurve curvaPeralte;
+                    if (c.CurvaExistente != null) curvaPeralte = CurvaPeralteExistente(al, c);
+                    else
+                    {
+                        var arco = ArcoEnPc(al, c.ProgresivaPc.Value, c.Pi);
+                        if (arco.SubEntityCount < 1) throw new InvalidOperationException("La curva del PI " + c.Pi + " no tiene subentidades (AlignmentEntity.SubEntityCount = 0): no se puede crear su curva de peralte.");
+                        var sub = arco[0];
+                        curvaPeralte = al.SuperelevationCurves.AddUserDefinedCurve(sub, sub);
+                        if (curvaPeralte == null) throw new InvalidOperationException("Civil 3D no devolvió la curva de peralte del PI " + c.Pi + " (SuperelevationCurveCollection.AddUserDefinedCurve). No se reintenta.");
+                    }
                     var estaciones = curvaPeralte.CriticalStations;
                     foreach (var e in c.Estaciones)
                     {
@@ -193,8 +219,9 @@ namespace ArbaMcp
             if (diferencias.Count > 0) throw new InvalidOperationException(Peralte.MensajeNoRefleja(nombreReal, diferencias, rutaCopia));
             if (extra.Count > 0)
                 ctx.Avisos.Add("El eje tiene progresivas críticas que no se pidieron (Civil 3D pudo crearlas al añadir la curva de peralte): " + string.Join("; ", extra) + ". Míralas con listar_peralte.");
-            if (leido.EstacionesDelEje.Count != leido.NumeroEstacionesCurvas)
-                ctx.Avisos.Add("Alignment.SuperelevationCriticalStations tiene " + leido.EstacionesDelEje.Count + " progresivas críticas y las curvas de peralte suman " + leido.NumeroEstacionesCurvas + " (dato para VALIDACION_120).");
+            if (leido.NumeroEstacionesDelEjeSinContorno != leido.NumeroEstacionesCurvas)
+                ctx.Avisos.Add("Alignment.SuperelevationCriticalStations tiene " + leido.NumeroEstacionesDelEjeSinContorno + " progresivas críticas (sin las de contorno BeginAlignment y EndAlignment) y las curvas de peralte suman "
+                    + leido.NumeroEstacionesCurvas + " (dato para VALIDACION_120).");
             ctx.Avisos.AddRange(avisosRelectura);
             var datos = new Dictionary<string, object>
             {
@@ -202,7 +229,13 @@ namespace ArbaMcp
                 ["escala_pendientes"] = "% = valor de la API × " + Peralte.FactorApi.ToString(CultureInfo.InvariantCulture) + " (por verificar en Civil 3D)",
                 ["deshacer"] = Peralte.BloqueDeshacer(leido, rutaCopia)
             };
-            return Escritura.Resultado(ctx, antes, despues, Peralte.Esperado(curvas), Peralte.Accion(nombreReal, curvas), datos);
+            datos["curvas_de_peralte"] = curvas.Select(c => (object)new Dictionary<string, object>
+            {
+                ["pi"] = c.Pi,
+                ["curva"] = c.CurvaExistente,
+                ["origen"] = c.CurvaExistente != null ? "existente (la curva vacía que creó Civil 3D con el eje)" : "nueva (AddUserDefinedCurve)"
+            }).ToList();
+            return Escritura.Resultado(ctx, antes, despues, Peralte.Esperado(curvas, curvasAntes), Peralte.Accion(nombreReal, curvas), datos);
         }
 
         // ------------------------------------------------------------------ registro
@@ -247,7 +280,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = HerramientaAplicarPeralte,
-                Descripcion = "Pone el peralte en las curvas circulares de un eje SIN peralte con los valores que se le pasan (sin norma: con 'velocidad_diseno' y los datos del proyecto los calcula el puente con la DG-2018). Por cada curva (identificada por su número de PI de listar_pis) crea una curva de peralte de usuario y añade sus progresivas críticas con su tipo, su región de transición y las pendientes transversales por segmento en % (los nombres de tipo, región y segmento son los de listar_peralte → enumerados). Si el eje ya tiene peralte responde error sin tocar nada: no borra ni reemplaza el que hay. Comprueba que los PI existen y tienen curva y que las progresivas están dentro del eje y no se repiten. Tras escribir relee el peralte y verifica cada progresiva y pendiente pedida. Una sola entrada en el menú Deshacer; copia de seguridad previa. Simula primero (simular=true).",
+                Descripcion = "Pone el peralte en las curvas circulares de un eje SIN peralte con los valores que se le pasan (sin norma: con 'velocidad_diseno' y los datos del proyecto los calcula el puente con la DG-2018). Por cada curva (identificada por su número de PI de listar_pis) usa la curva de peralte vacía que Civil 3D crea con el eje para ese arco (si no la hay, crea una curva de peralte de usuario) y añade sus progresivas críticas con su tipo, su región de transición y las pendientes transversales por segmento en % (los nombres de tipo, región y segmento son los de listar_peralte → enumerados). Si el eje ya tiene peralte (alguna progresiva crítica en sus curvas de peralte, o en el eje aparte de BeginAlignment y EndAlignment) responde error sin tocar nada: no borra ni reemplaza el que hay. Comprueba que los PI existen y tienen curva y que las progresivas están dentro del eje y no se repiten. Tras escribir relee el peralte y verifica cada progresiva y pendiente pedida. Una sola entrada en el menú Deshacer; copia de seguridad previa. Simula primero (simular=true).",
                 Parametros =
                 {
                     P("alineamiento", "string", "Nombre del alineamiento (eje) sin peralte; ver listar_alineamientos", true),

@@ -222,6 +222,109 @@ namespace ArbaMcp.Pruebas
             Assert.Contains("(0 curvas de peralte, 1 progresiva crítica)", Peralte.MensajeYaTienePeralte(soloEje));
         }
 
+        /// <summary>
+        /// Lo que Civil 3D 2027 crea solo con el eje (17/11/2026, VALIDACION_120 paso 2): una curva de peralte vacía por
+        /// curva horizontal, de PC a PT, y las progresivas BeginAlignment y EndAlignment del eje con las pendientes en 0.
+        /// </summary>
+        private static PeralteLeido EjeRecienCreado()
+        {
+            var p = new PeralteLeido { Alineamiento = "Eje 1" };
+            p.Curvas.Add(new CurvaLeida { Nombre = "Curva.1", Inicio = 100, Fin = 150 });
+            p.Curvas.Add(new CurvaLeida { Nombre = "Curva.2", Inicio = 300, Fin = 350 });
+            foreach (var (pk, tipo) in new[] { (0.0, "BeginAlignment"), (400.0, "EndAlignment") })
+            {
+                var e = new EstacionLeida { Progresiva = pk, Tipo = tipo, Region = "Out", Curva = "" };
+                e.Pendientes["LeftOutLaneCrossSlope"] = 0;
+                e.Pendientes["RightOutLaneCrossSlope"] = 0;
+                p.EstacionesDelEje.Add(e);
+            }
+            return p;
+        }
+
+        [Fact]
+        public void EjeRecienCreadoNoTienePeralte()
+        {
+            var p = EjeRecienCreado();
+            Assert.False(p.TienePeralte);
+            Assert.Equal(0, p.NumeroCurvasConEstaciones);
+            Assert.Equal(0, p.NumeroEstacionesDelEjeSinContorno);
+            var estado = Peralte.Estado(p);
+            Assert.Equal(false, estado["tiene_peralte"]);
+            Assert.Equal(2, estado["numero_curvas"]);
+            Assert.Equal(0, estado["numero_estaciones"]);
+        }
+
+        [Fact]
+        public void UnaProgresivaQueNoEsDeContornoSiEsPeralte()
+        {
+            var enCurva = EjeRecienCreado();
+            enCurva.Curvas[0].Estaciones.Add(new EstacionLeida { Progresiva = 80, Tipo = "EndNormalCrown", Curva = "Curva.1" });
+            Assert.True(enCurva.TienePeralte);
+            Assert.Contains("(1 curva de peralte, 1 progresiva crítica)", Peralte.MensajeYaTienePeralte(enCurva));
+
+            var enEje = EjeRecienCreado();
+            enEje.EstacionesDelEje.Add(new EstacionLeida { Progresiva = 80, Tipo = "LevelCrown" });
+            Assert.True(enEje.TienePeralte);
+            Assert.Contains("(0 curvas de peralte, 1 progresiva crítica)", Peralte.MensajeYaTienePeralte(enEje));
+
+            Assert.True(Peralte.EsDeContorno(new EstacionLeida { Tipo = "beginalignment" }));
+            Assert.False(Peralte.EsDeContorno(new EstacionLeida { Tipo = "BeginNormalCrown" }));
+            Assert.False(Peralte.EsDeContorno(null));
+        }
+
+        [Fact]
+        public void UsaLaCurvaVaciaDeCadaArco()
+        {
+            var curvas = Peralte.LeerCurvas(J("[{\"pi\": 1, \"estaciones\": [{\"progresiva\": 90, \"tipo\": \"T\", \"pendientes\": {\"S\": 1}}]},"
+                + "{\"pi\": 4, \"estaciones\": [{\"progresiva\": 320, \"tipo\": \"T\", \"pendientes\": {\"S\": 1}}]}]"));
+            Peralte.ComprobarContraEje(curvas, Tabla());
+            var actual = EjeRecienCreado();
+            actual.Curvas[1].Inicio = 300.0004;   // dentro de 0,001 m
+            Peralte.AsignarCurvasExistentes(curvas, actual);
+            Assert.Equal("Curva.1", curvas[0].CurvaExistente);
+            Assert.Equal("Curva.2", curvas[1].CurvaExistente);
+
+            var prevision = Peralte.Prevision("Eje 1", curvas, actual.Curvas.Count);
+            Assert.Equal(2, prevision["numero_curvas"]);   // no se crean curvas nuevas
+            var c1 = (Dictionary<string, object>)((List<object>)prevision["curvas"])[0];
+            Assert.Equal("Curva.1", c1["nombre"]);
+            Assert.Equal("existente", c1["curva_de_peralte"]);
+            Assert.Equal(2, Peralte.Esperado(curvas, actual.Curvas.Count)["numero_curvas"]);
+        }
+
+        [Fact]
+        public void SinCurvaVaciaDelArcoSeCreaUnaNueva()
+        {
+            var curvas = Peralte.LeerCurvas(J("[{\"pi\": 1, \"estaciones\": [{\"progresiva\": 90, \"tipo\": \"T\", \"pendientes\": {\"S\": 1}}]},"
+                + "{\"pi\": 4, \"estaciones\": [{\"progresiva\": 320, \"tipo\": \"T\", \"pendientes\": {\"S\": 1}}]}]"));
+            Peralte.ComprobarContraEje(curvas, Tabla());
+            var actual = EjeRecienCreado();
+            actual.Curvas[0].Fin = 150.01;   // no acaba en el PT
+            actual.Curvas[1].Estaciones.Add(new EstacionLeida { Progresiva = 320, Tipo = "T" });   // no está vacía
+            Peralte.AsignarCurvasExistentes(curvas, actual);
+            Assert.Null(curvas[0].CurvaExistente);
+            Assert.Null(curvas[1].CurvaExistente);
+            Assert.Equal(4, Peralte.Esperado(curvas, actual.Curvas.Count)["numero_curvas"]);
+            var c1 = (Dictionary<string, object>)((List<object>)Peralte.Prevision("Eje 1", curvas, actual.Curvas.Count)["curvas"])[0];
+            Assert.Equal("(lo pone Civil 3D)", c1["nombre"]);
+            Assert.Equal("nueva", c1["curva_de_peralte"]);
+        }
+
+        [Fact]
+        public void LasProgresivasDeContornoNoSonExtraNiSeAnaden()
+        {
+            var curvas = Peralte.LeerCurvas(J("[{\"pi\": 1, \"estaciones\": [{\"progresiva\": 90, \"tipo\": \"EndNormalCrown\", \"pendientes\": {\"LeftOutLaneCrossSlope\": -2}}]}]"));
+            var leido = EjeRecienCreado();
+            var e = new EstacionLeida { Progresiva = 90, Tipo = "EndNormalCrown", Curva = "Curva.1" };
+            e.Pendientes["LeftOutLaneCrossSlope"] = -2;
+            leido.Curvas[0].Estaciones.Add(e);
+            Assert.Empty(Peralte.Diferencias(curvas, leido, out var extra));
+            Assert.Empty(extra);
+            var anadido = (List<object>)Peralte.BloqueDeshacer(leido, null)["anadido"];
+            Assert.Single(anadido);
+            Assert.Equal("Curva.1", ((Dictionary<string, object>)anadido[0])["curva"]);
+        }
+
         [Fact]
         public void PendientesEnTantoPorUnoParaLaApi()
         {

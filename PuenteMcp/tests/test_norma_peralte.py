@@ -225,11 +225,30 @@ def test_curvas_del_eje_solo_circulares_y_avisa_las_demas():
 
 
 # ---------------------------------------------------------------------------------------------- traducción
-def test_la_correspondencia_esta_vacia_hasta_la_validacion():
-    faltan = npe.correspondencia_incompleta()
+# Sin ningún nombre: el caso de la 1.20.0 a la 1.21.1, antes de leer los enumerados en Civil 3D
+CORRESPONDENCIA_VACIA = {"tipo": {c: None for c in npe.TIPOS}, "region": {c: None for c in npe.REGIONES},
+                         "segmento": {c: None for c in npe.SEGMENTOS}}
+
+
+def test_la_correspondencia_tiene_los_nombres_de_civil3d():
+    """1.21.2: los nombres que dio listar_peralte → enumerados en Civil 3D 2027 (VALIDACION_120, pasos 2 y 3)."""
+    assert npe.correspondencia_incompleta() == []
+    assert npe.CORRESPONDENCIA == {
+        "tipo": {npe.FBN: "EndNormalCrown", npe.BN: "LevelCrown", npe.BI: "ReverseCrown", npe.IPT: "BeginFullSuper",
+                 npe.FPT: "EndFullSuper", npe.IBN: "BeginNormalCrown"},
+        "region": {npe.ENTRADA: "BeginingAttainmentRegion", npe.SALIDA: "EndingAttainmentRegion"},
+        "segmento": {npe.IZQUIERDO: "LeftOutLaneCrossSlope", npe.DERECHO: "RightOutLaneCrossSlope"},
+    }
+    primera = npe.curvas_para_el_plugin([curva_con(1, 100, 180)])[0]["estaciones"][0]
+    assert primera["tipo"] == "EndNormalCrown" and primera["region"] == "BeginingAttainmentRegion"
+    assert set(primera["pendientes"]) == {"LeftOutLaneCrossSlope", "RightOutLaneCrossSlope"}
+
+
+def test_sin_un_nombre_no_se_inventa():
+    faltan = npe.correspondencia_incompleta(CORRESPONDENCIA_VACIA)
     assert len(faltan) == len(npe.TIPOS) + len(npe.REGIONES) + len(npe.SEGMENTOS)
     with pytest.raises(n.ErrorNorma, match="no se inventan"):
-        npe.curvas_para_el_plugin([curva_con(1, 100, 180)])
+        npe.curvas_para_el_plugin([curva_con(1, 100, 180)], CORRESPONDENCIA_VACIA)
 
 
 def test_curvas_para_el_plugin_con_nombres_de_ejemplo():
@@ -490,6 +509,12 @@ def norma_ejemplo(monkeypatch):
 
 
 @pytest.fixture
+def norma_vacia(monkeypatch):
+    """La correspondencia sin nombres (como hasta la 1.21.1): el puente no llama a aplicar_peralte."""
+    monkeypatch.setattr(npe, "CORRESPONDENCIA", CORRESPONDENCIA_VACIA)
+
+
+@pytest.fixture
 def plugin(servidor, puente, memoria):
     p = PluginFalso(servidor)
     ejecutar(puente.sincronizar_herramientas())
@@ -558,7 +583,7 @@ def test_falta_un_dato_del_peralte_no_llama_al_plugin(servidor, puente, plugin, 
     assert r["ok"] is False and r["faltan"][0]["dato"] == "bombeo" and servidor.llamadas == []
 
 
-def test_sin_correspondencia_el_peralte_y_las_progresivas_van_en_la_propuesta(servidor, puente, plugin):
+def test_sin_correspondencia_el_peralte_y_las_progresivas_van_en_la_propuesta(servidor, puente, plugin, norma_vacia):
     r = aplicar(puente, alineamiento="Eje 1", simular=True, **TERCERA_60, **PERALTE_PROYECTO)
     assert herramientas_llamadas(servidor) == ["leer_variable", "listar_pis"]
     assert r["ok"] is False and "Falta la correspondencia" in r["error"]

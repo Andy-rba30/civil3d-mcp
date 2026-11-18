@@ -88,13 +88,16 @@ NOMBRES = {FBN: "Fin del bombeo normal", BN: "Bombeo nivelado", BI: "Bombeo inve
            FPT: "Fin del peralte total", IBN: "Inicio del bombeo normal"}
 
 # Concepto de la norma → nombre del enumerado de Civil 3D (SuperelevationCriticalStationType,
-# SuperelevationAttainmentRegionType, SuperelevationCrossSegmentType). VACÍA a propósito: el catálogo de la API no trae
-# los valores de los enumerados y no se inventan. Se rellena con los nombres que devuelve listar_peralte → enumerados en
-# el paso 1 de herramientas-dev/VALIDACION_120.md (regla 11f: corrección en la misma rama).
+# SuperelevationAttainmentRegionType, SuperelevationCrossSegmentType). El catálogo de la API no trae los valores de los
+# enumerados: estos nombres son los que devolvió listar_peralte → enumerados en Civil 3D 2027 (17/11/2026,
+# VALIDACION_120 pasos 2 y 3, ronda D), con la elección de cada concepto de esa prueba (1.21.2). «BeginingAttainmentRegion»
+# lleva la errata de Autodesk (una sola «n»): es el nombre real. Los carriles «Out» (exteriores) son los de una calzada de
+# dos carriles sin mediana: POR VERIFICAR con el editor tabular de peralte (VALIDACION_120, paso 5b) y la sección (paso 9).
 CORRESPONDENCIA = {
-    "tipo": {c: None for c in TIPOS},
-    "region": {c: None for c in REGIONES},
-    "segmento": {c: None for c in SEGMENTOS},
+    "tipo": {FBN: "EndNormalCrown", BN: "LevelCrown", BI: "ReverseCrown", IPT: "BeginFullSuper", FPT: "EndFullSuper",
+             IBN: "BeginNormalCrown"},
+    "region": {ENTRADA: "BeginingAttainmentRegion", SALIDA: "EndingAttainmentRegion"},
+    "segmento": {IZQUIERDO: "LeftOutLaneCrossSlope", DERECHO: "RightOutLaneCrossSlope"},
 }
 
 

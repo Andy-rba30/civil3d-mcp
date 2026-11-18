@@ -39,6 +39,12 @@ namespace ArbaMcp.Nucleo
         /// <summary>Datos de la curva del eje (los rellena Peralte.ComprobarContraEje con la tabla de PI).</summary>
         public double? Radio, ProgresivaPc, ProgresivaPt;
         public string Giro;
+        /// <summary>
+        /// Nombre de la curva de peralte vacía que Civil 3D ya creó para este arco (de PC a PT), si la hay: aplicar_peralte
+        /// le añade las progresivas en vez de crear otra (1.21.2). Null: se crea con AddUserDefinedCurve. Lo rellena
+        /// Peralte.AsignarCurvasExistentes.
+        /// </summary>
+        public string CurvaExistente;
     }
 
     /// <summary>Una progresiva crítica tal como la lee el plugin del eje (listar_peralte y la relectura de aplicar_peralte).</summary>
@@ -92,7 +98,17 @@ namespace ArbaMcp.Nucleo
         /// <summary>Progresivas críticas de Alignment.SuperelevationCriticalStations (la colección del eje, aparte de las de cada curva).</summary>
         public List<EstacionLeida> EstacionesDelEje = new List<EstacionLeida>();
         public int NumeroEstacionesCurvas => Curvas.Sum(c => c.Estaciones.Count);
-        public bool TienePeralte => Curvas.Count > 0 || EstacionesDelEje.Count > 0;
+        /// <summary>Curvas de peralte con alguna progresiva crítica (las vacías que Civil 3D crea con el eje no cuentan).</summary>
+        public int NumeroCurvasConEstaciones => Curvas.Count(c => c.Estaciones.Count > 0);
+        /// <summary>Progresivas críticas de la colección del eje que no son de contorno (BeginAlignment y EndAlignment).</summary>
+        public int NumeroEstacionesDelEjeSinContorno => EstacionesDelEje.Count(e => !Peralte.EsDeContorno(e));
+        /// <summary>
+        /// El eje tiene peralte si alguna curva de peralte tiene progresivas críticas o si la colección del eje tiene alguna
+        /// que no sea de contorno. Desde 1.21.2: Civil 3D 2027 crea con el eje una curva de peralte vacía por cada curva
+        /// horizontal y las progresivas BeginAlignment y EndAlignment (17/11/2026, VALIDACION_120 paso 2); eso es un eje
+        /// sin peralte. Hasta la 1.21.1 contaba cualquier curva o progresiva, y aplicar_peralte rechazaba todos los ejes.
+        /// </summary>
+        public bool TienePeralte => NumeroEstacionesCurvas > 0 || NumeroEstacionesDelEjeSinContorno > 0;
     }
 
     /// <summary>
@@ -113,8 +129,45 @@ namespace ArbaMcp.Nucleo
         /// 1.10.0). POR VERIFICAR para el peralte: VALIDACION_120 paso 3 compara con el editor tabular de Civil 3D.
         /// </summary>
         public const double FactorApi = 100.0;
+        /// <summary>
+        /// Tipos de progresiva crítica que Civil 3D 2027 pone solo en todo eje, en su inicio y su fin, con las pendientes en
+        /// 0 (SuperelevationCriticalStationType; leídos con listar_peralte el 17/11/2026, VALIDACION_120 paso 2). No son
+        /// peralte.
+        /// </summary>
+        public static readonly string[] TiposDeContorno = { "BeginAlignment", "EndAlignment" };
 
         private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
+
+        public static bool EsDeContorno(EstacionLeida e)
+            => e != null && TiposDeContorno.Any(t => string.Equals(t, (e.Tipo ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>
+        /// La curva de peralte leída es la vacía que Civil 3D creó para el arco de PC a PT: empieza en el PC, acaba en el PT
+        /// (a 0,001 m) y no tiene progresivas críticas.
+        /// </summary>
+        public static bool EsCurvaVaciaDelArco(double? inicio, double? fin, int numeroEstaciones, double pc, double pt)
+            => numeroEstaciones == 0 && inicio.HasValue && fin.HasValue
+               && Math.Abs(inicio.Value - pc) <= ToleranciaProgresiva && Math.Abs(fin.Value - pt) <= ToleranciaProgresiva;
+
+        /// <summary>
+        /// Para cada curva pedida (con PC y PT ya completados por ComprobarContraEje), busca la curva de peralte vacía de su
+        /// arco entre las que tiene el eje y guarda su nombre en CurvaExistente (o null si no la hay). Cada curva del eje se
+        /// usa una sola vez.
+        /// </summary>
+        public static void AsignarCurvasExistentes(IList<CurvaPeralte> curvas, PeralteLeido actual)
+        {
+            var usadas = new HashSet<CurvaLeida>();
+            foreach (var c in curvas)
+            {
+                c.CurvaExistente = null;
+                if (!c.ProgresivaPc.HasValue || !c.ProgresivaPt.HasValue) continue;
+                var l = actual.Curvas.FirstOrDefault(x => !usadas.Contains(x) && !string.IsNullOrEmpty(x.Nombre)
+                    && EsCurvaVaciaDelArco(x.Inicio, x.Fin, x.Estaciones.Count, c.ProgresivaPc.Value, c.ProgresivaPt.Value));
+                if (l == null) continue;
+                usadas.Add(l);
+                c.CurvaExistente = l.Nombre;
+            }
+        }
 
         public static double PendienteApi(double pct) => pct / FactorApi;
         public static double PendientePct(double valorApi) => valorApi * FactorApi;
@@ -231,9 +284,15 @@ namespace ArbaMcp.Nucleo
         /// decisión del plan 6.5).
         /// </summary>
         public static string MensajeYaTienePeralte(PeralteLeido p)
-            => "El eje '" + p.Alineamiento + "' ya tiene peralte (" + p.Curvas.Count + " curva" + (p.Curvas.Count == 1 ? "" : "s") + " de peralte, "
-               + Math.Max(p.NumeroEstacionesCurvas, p.EstacionesDelEje.Count) + " progresiva" + (Math.Max(p.NumeroEstacionesCurvas, p.EstacionesDelEje.Count) == 1 ? "" : "s")
-               + " crítica" + (Math.Max(p.NumeroEstacionesCurvas, p.EstacionesDelEje.Count) == 1 ? "" : "s") + "): aplicar_peralte solo escribe en un eje sin peralte y no borra el que hay. Míralo con listar_peralte.";
+        {
+            // Cuentan las curvas con progresivas y las progresivas de peralte: las curvas vacías y las de contorno
+            // (BeginAlignment, EndAlignment) las crea Civil 3D con el eje (1.21.2).
+            int curvas = p.NumeroCurvasConEstaciones;
+            int estaciones = Math.Max(p.NumeroEstacionesCurvas, p.NumeroEstacionesDelEjeSinContorno);
+            return "El eje '" + p.Alineamiento + "' ya tiene peralte (" + curvas + " curva" + (curvas == 1 ? "" : "s") + " de peralte, "
+               + estaciones + " progresiva" + (estaciones == 1 ? "" : "s") + " crítica" + (estaciones == 1 ? "" : "s")
+               + "): aplicar_peralte solo escribe en un eje sin peralte y no borra el que hay. Míralo con listar_peralte.";
+        }
 
         /// <summary>Estado del peralte del eje para 'antes' y 'despues'.</summary>
         public static Dictionary<string, object> Estado(PeralteLeido p) => new Dictionary<string, object>
@@ -245,17 +304,22 @@ namespace ArbaMcp.Nucleo
             ["curvas"] = p.Curvas.Select(c => c.ComoDiccionario()).ToList()
         };
 
-        /// <summary>Estado previsto (el 'despues' de la simulación): las curvas pedidas, con el nombre que les ponga Civil 3D.</summary>
-        public static Dictionary<string, object> Prevision(string alineamiento, IList<CurvaPeralte> curvas) => new Dictionary<string, object>
+        /// <summary>
+        /// Estado previsto (el 'despues' de la simulación): las curvas pedidas, con el nombre de la curva vacía que se usa o
+        /// el que les ponga Civil 3D. 'curvasAntes' es el número de curvas de peralte que ya tiene el eje (las vacías que
+        /// crea Civil 3D): 'numero_curvas' las suma a las nuevas.
+        /// </summary>
+        public static Dictionary<string, object> Prevision(string alineamiento, IList<CurvaPeralte> curvas, int curvasAntes = 0) => new Dictionary<string, object>
         {
             ["alineamiento"] = alineamiento,
             ["tiene_peralte"] = true,
-            ["numero_curvas"] = curvas.Count,
+            ["numero_curvas"] = NumeroCurvasPrevisto(curvas, curvasAntes),
             ["numero_estaciones"] = curvas.Sum(c => c.Estaciones.Count),
             ["curvas"] = curvas.Select(c => (object)new Dictionary<string, object>
             {
                 ["pi"] = c.Pi,
-                ["nombre"] = "(lo pone Civil 3D)",
+                ["nombre"] = c.CurvaExistente ?? "(lo pone Civil 3D)",
+                ["curva_de_peralte"] = c.CurvaExistente != null ? "existente" : "nueva",
                 ["radio"] = c.Radio.HasValue ? Argumentos.Redondear(c.Radio.Value) : null,
                 ["giro"] = c.Giro,
                 ["progresiva_pc"] = c.ProgresivaPc.HasValue ? Argumentos.Redondear(c.ProgresivaPc.Value) : null,
@@ -265,11 +329,18 @@ namespace ArbaMcp.Nucleo
             }).ToList()
         };
 
-        /// <summary>Campos que 'despues' debe cumplir exactamente: hay peralte y una curva de peralte por curva pedida.</summary>
-        public static Dictionary<string, object> Esperado(IList<CurvaPeralte> curvas) => new Dictionary<string, object>
+        /// <summary>Curvas de peralte que tendrá el eje: las que ya tenía más una nueva por cada curva pedida sin curva vacía.</summary>
+        public static int NumeroCurvasPrevisto(IList<CurvaPeralte> curvas, int curvasAntes)
+            => curvasAntes + curvas.Count(c => c.CurvaExistente == null);
+
+        /// <summary>
+        /// Campos que 'despues' debe cumplir exactamente: hay peralte y las curvas de peralte son las de antes más una por
+        /// cada curva pedida que no reutiliza una curva vacía.
+        /// </summary>
+        public static Dictionary<string, object> Esperado(IList<CurvaPeralte> curvas, int curvasAntes = 0) => new Dictionary<string, object>
         {
             ["tiene_peralte"] = true,
-            ["numero_curvas"] = curvas.Count
+            ["numero_curvas"] = NumeroCurvasPrevisto(curvas, curvasAntes)
         };
 
         /// <summary>
@@ -302,7 +373,8 @@ namespace ArbaMcp.Nucleo
                             dif.Add(donde + ": pendiente de '" + p.Key + "' " + Num(real) + " % en vez de " + Num(p.Value) + " %");
                     }
                 }
-            extra = leidas.Where(x => !usadas.Contains(x)).OrderBy(x => x.Progresiva)
+            // Las de contorno (BeginAlignment, EndAlignment) ya estaban: Civil 3D las pone con el eje (1.21.2)
+            extra = leidas.Where(x => !usadas.Contains(x) && !EsDeContorno(x)).OrderBy(x => x.Progresiva)
                           .Select(x => TablaPi.Progresiva(x.Progresiva) + " (" + (x.Tipo ?? "?") + ", curva '" + (x.Curva ?? "?") + "')").ToList();
             return dif;
         }
@@ -320,7 +392,7 @@ namespace ArbaMcp.Nucleo
         /// <summary>Bloque 'deshacer' de la respuesta real: qué se añadió y cómo volver atrás.</summary>
         public static Dictionary<string, object> BloqueDeshacer(PeralteLeido despues, string rutaCopia) => new Dictionary<string, object>
         {
-            ["anadido"] = despues.Curvas.Select(c => (object)new Dictionary<string, object> { ["curva"] = c.Nombre, ["estaciones"] = c.Estaciones.Count }).ToList(),
+            ["anadido"] = despues.Curvas.Where(c => c.Estaciones.Count > 0).Select(c => (object)new Dictionary<string, object> { ["curva"] = c.Nombre, ["estaciones"] = c.Estaciones.Count }).ToList(),
             ["como"] = "Prueba `_.UNDO 1` sin hacer zoom antes (la entrada de arriba del menú Deshacer debe ser Executefunction) y comprueba con listar_peralte que el eje "
                        + "ya no tiene peralte; está POR VERIFICAR en Civil 3D (VALIDACION_120). Si no lo quita, vuelve a la copia previa"
                        + (rutaCopia != null ? " (" + rutaCopia + ")" : "") + ": aplicar_peralte no borra peralte."
