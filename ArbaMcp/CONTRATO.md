@@ -775,10 +775,12 @@ y no lee la rasante.
   `pagina_pdf`) y `detalle` (`valor_tabla`, `valor_calculado_en_tabla`, `valor_formula`, `formula` con su id y
   páginas, `otra_tabla`, `aviso`, `nota`...).
 - `resumen`: cuántas filas hay de cada resultado. `no_comprobado`: lo que no se pudo comprobar y por qué. `avisos`: los
-  del proyecto (101.05, peralte que no coincide con la tabla...), los de `listar_pis` y, desde 1.21.1, **una sola vez**
-  si alguna curva cumple la T302.11: «302.05.06 podría pedir clotoide aunque el radio supere la T302.11 si el peralte
-  pasa del 3 % (302.05.06, p. 145; PDF 146: «Si R requiere p>3%. Se debe usar curva de transición.») ...» (sin cifra:
-  las figuras de peralte aún no están en la base). `lecturas`: el `id_log` de cada
+  del proyecto (101.05, peralte que no coincide con la tabla...), los de `listar_pis` y, desde la tarea 7.2, **una sola
+  vez** si alguna curva cumple la T302.11 pero la figura de peralte no se pudo leer (falta la tabla `peralte_figura`, o
+  la figura no tiene curva para la velocidad): «302.05.06 pide curva de transición si el radio requiere un peralte de
+  más del 3 % (302.05.06, p. 145; PDF 146: «Si R requiere p>3%. Se debe usar curva de transición.»). No se leyó en la
+  figura de peralte el peralte de las curvas que cumplen la T302.11: <motivo>. ...» (de la 1.21.1 a la 1.21.5 salía
+  siempre, sin cifra). `lecturas`: el `id_log` de cada
   lectura. `tabla`: las filas en markdown, para mostrarlas tal cual.
 
 **Resultados**: `Cumple`; `No cumple`; `Cumple con aviso` (cumple la tabla pero la fórmula pide más, o dos tablas se
@@ -823,7 +825,7 @@ deflexión), la fila de ese dato sale `No verificable` en vez de un error:
 | Tangente máxima | T302.01 L máx (F36), también las tangentes de los extremos | Solo `Aviso` |
 | Relación de radios (tangente ≤ 200 m), en los dos sentidos | T302.07 (grupo 1) o T302.08 (grupo 2), R302.04.05-1 | Fuera de rango, `Sin valor en la norma` |
 | Radio tras una recta de más de 400 m (autopistas) | R302.04.05-3: ≥ 700 m | Solo en una recta **entre dos curvas** y solo para la curva de **salida** (la siguiente en el sentido de la marcha): una fila por curva; nada en la recta inicial ni en la final |
-| Curva de transición | T302.11A (general) o T302.11B (Tercera Clase), las dos «superior» desde 1.21.1 (igual no basta), con la cita de 302.05.07 en `detalle.cita` | `No cumple` si hace falta, con la cita de 302.05.06 «Si R requiere p>3%. Se debe usar curva de transición.»: el plugin solo crea arcos. Si cumple, `Cumple`, y el aviso de 302.05.06 (p > 3 %) va una sola vez en `avisos` |
+| Curva de transición | T302.11A (general) o T302.11B (Tercera Clase), las dos «superior» desde 1.21.1 (igual no basta), con la cita de 302.05.07 en `detalle.cita` | `No cumple` si hace falta, con la cita de 302.05.06 «Si R requiere p>3%. Se debe usar curva de transición.»: el plugin solo crea arcos. Si cumple, `Cumple` y, desde la tarea 7.2, justo debajo la fila **«Peralte para prescindir de la curva de transición»** (referencia 302.05.06, p. 145; PDF 146): el peralte que pide la figura de peralte del proyecto (F302.02 a F302.05, leída como en `aplicar_peralte`, Decisión 6, redondeado a 0,1 %) para ese radio y esa velocidad; si pasa del 3 %, `Aviso` con la cifra (`valor_diseno`), `valor_exigido` 3 y en `detalle` `radio`, `figura`, `lectura_pct`, `error_pct`, `etiqueta` y la cita (por ejemplo, 60 km/h en zona rural, R 215 m: 6,5 %); con 3 % o menos, sin fila. Si la figura no se puede leer, un solo aviso en `avisos` con el motivo |
 | Curva compuesta (tangente 0, mismo sentido) | R302.06.02-1: R mayor ≤ 1,5 R menor | `Cumple con aviso` o `No cumple` |
 | Espirales y otros tipos | — | `No verificable` |
 

@@ -484,6 +484,53 @@ def peralte_de_curva(base: n.BaseNorma, ctx: dict, datos: dict, curva: dict) -> 
                              (datos.get("bombeo") or {}).get("valor_pct"))
 
 
+# ---------------------------------------------------------------------------------------------- 302.05.06 (verificar_norma)
+# verificar_norma (desde la tarea 7.2) lee aquí, con las mismas reglas que aplicar_peralte (Decisión 6), el peralte que
+# pide la figura para cada curva que cumple la T302.11 y avisa si pasa del 3 % (302.05.06: «Si R requiere p>3%. Se debe
+# usar curva de transición.»). No necesita los datos del peralte (bombeo, ancho de carril): solo la figura del proyecto.
+MOTIVO_SIN_FIGURA = ("la base de la norma no tiene la tabla peralte_figura (las Figuras 302.02 a 302.05 de la DG-2018 "
+                     "digitalizadas, tarea 6.10): actualiza memoria-firma (git pull)")
+
+
+def lectura_para_transicion(base: n.BaseNorma, ctx: dict) -> dict:
+    """Lo que hace falta para leer la figura de peralte del proyecto en cada curva: {figura, radio_minimo, t30404,
+    con_t30406, motivo}. Con 'motivo' (un texto) la figura no se puede leer: falta la tabla peralte_figura, la condición
+    de la T304.05 no tiene figura o la figura no tiene curva para la velocidad (no se interpola entre velocidades). La
+    T304.04 y la T304.06 se usan si la base las trae (sesión 6.4), como en aplicar_peralte."""
+    salida = {"figura": None, "radio_minimo": None, "t30404": None, "con_t30406": False, "motivo": None}
+    if not tiene_tabla(base, TABLA_FIGURA):
+        salida["motivo"] = MOTIVO_SIN_FIGURA
+        return salida
+    condicion = condicion_del_proyecto(base, ctx)
+    ref = figura_de_condicion(condicion, base)
+    if ref is None:
+        salida["motivo"] = (f"no se sabe qué figura de peralte (302.02 a 302.05) corresponde a la condición «{condicion}» "
+                            "de la T304.05")
+        return salida
+    velocidades = velocidades_de_figura(base, ref)
+    if ctx["velocidad"] not in velocidades:
+        salida["motivo"] = (f"la {ref} no tiene curva para {ctx['velocidad']} km/h (no se interpola entre velocidades; "
+                            f"tiene {', '.join(str(x) for x in velocidades) or 'ninguna'})")
+        return salida
+    t30404 = None
+    if tiene_tabla(base, "radio_sin_peralte"):
+        try:
+            t30404, _ = t30404_del_proyecto(base, ctx["velocidad"])
+        except n.ErrorNorma:
+            t30404 = None
+    salida.update(figura=ref, radio_minimo=n.radio_minimo_exigido(base, ctx), t30404=t30404,
+                  con_t30406=tiene_tabla(base, "peralte_minimo"))
+    return salida
+
+
+def peralte_para_transicion(base: n.BaseNorma, ctx: dict, lectura: dict, radio: float) -> dict:
+    """El peralte que pide la figura para una curva de radio R (la salida de peralte_de_figura, sin bombeo).
+    'lectura' es la de lectura_para_transicion, sin 'motivo'."""
+    v = ctx["velocidad"]
+    t30406 = t30406_para(base, v, radio) if lectura["con_t30406"] else None
+    return peralte_de_figura(base, lectura["figura"], v, radio, lectura["radio_minimo"], lectura["t30404"], t30406, None)
+
+
 def _proporcion_t30407(base: n.BaseNorma, p: float) -> tuple[float | None, str | None]:
     """Proporción de la T304.07 para el peralte p, leyendo los rangos de texto («p < 4.5%», «4.5% < p < 7%», «p >7%»).
     En los límites (4,5 y 7 %), que la tabla deja fuera, la fila del medio."""
