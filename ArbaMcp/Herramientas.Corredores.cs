@@ -293,6 +293,59 @@ namespace ArbaMcp
             return d;
         }
 
+        /// <summary>
+        /// Ronda E (tarea 7.3): detalle de cada parámetro de un subensamblaje para listar_ensamblajes → parametros_detalle,
+        /// sin cambiar 'parametros': nombre visible, clave interna (ParamBase.Key, que no cambia con el idioma), tipo y
+        /// valor; en los de lista (ParamLong con EnumCount() > 0), la opción actual con su etiqueta y todas las opciones
+        /// (GetEnumData). Cada lectura en su try: lo que no se lee queda en null.
+        /// </summary>
+        private static List<object> ParametrosDetalleSubensamblaje(Civ.Subassembly sub)
+        {
+            var lista = new List<object>();
+            void Volcar(object coleccion, string tipo)
+            {
+                foreach (var p in Seguro(() => Api.Lista(coleccion), new List<object>()))
+                {
+                    var d = new Dictionary<string, object>
+                    {
+                        ["nombre"] = Seguro(() => Api.Leer<string>(p, null, "DisplayName")),
+                        ["clave"] = Seguro(() => Api.Leer<string>(p, null, "Key")),
+                        ["tipo"] = tipo,
+                        ["valor"] = Seguro(() => Api.IntentarLeer(p, out object v, "Value") ? SeccionCorredor.Normalizar(v) : null)
+                    };
+                    if (p is Autodesk.Civil.Runtime.ParamLong pl)
+                    {
+                        uint n = Seguro(() => pl.EnumCount(), 0u);
+                        if (n > 0)
+                        {
+                            int? actual = Seguro<int?>(() => pl.Value);
+                            var opciones = new List<object>();
+                            string etiqueta = null, opcion = null;
+                            for (uint i = 0; i < n; i++)
+                            {
+                                try
+                                {
+                                    pl.GetEnumData(i, out string nombre, out string visible, out int valor);
+                                    opciones.Add(new Dictionary<string, object> { ["nombre"] = nombre, ["etiqueta"] = visible, ["valor"] = valor });
+                                    if (actual == valor) { etiqueta = visible; opcion = nombre; }
+                                }
+                                catch { }
+                            }
+                            d["opcion"] = opcion;
+                            d["etiqueta"] = etiqueta;
+                            d["opciones"] = opciones;
+                        }
+                    }
+                    lista.Add(d);
+                }
+            }
+            Volcar(Seguro<object>(() => sub.ParamsDouble), "double");
+            Volcar(Seguro<object>(() => sub.ParamsLong), "long");
+            Volcar(Seguro<object>(() => sub.ParamsString), "string");
+            Volcar(Seguro<object>(() => sub.ParamsBool), "bool");
+            return lista;
+        }
+
         private static double? Frecuencia(Civ.BaselineRegion reg, string tipo)
         {
             try
@@ -841,7 +894,7 @@ namespace ArbaMcp
             {
                 Nombre = "listar_ensamblajes",
                 Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
-                Descripcion = "Lista los ensamblajes del dibujo con sus grupos, subensamblajes (tipo, lado, parámetros) y dónde se usan (corredor, línea base, región).",
+                Descripcion = "Lista los ensamblajes del dibujo con sus grupos, subensamblajes (tipo, lado, parámetros) y dónde se usan (corredor, línea base, región). En cada subensamblaje, 'parametros_detalle' da por parámetro el nombre visible, la clave interna (no cambia con el idioma), el tipo, el valor y, en los de lista, la opción actual con su etiqueta y todas las opciones.",
                 Ejecutar = a =>
                 {
                     var doc = DocActivo();
@@ -881,7 +934,8 @@ namespace ArbaMcp
                                         // Subassembly no expone nombre de catálogo/tipo de componente en propiedad tipada directa
                                         tipo = Api.Leer<string>(sub, null, "MacroName", "SubassemblyName", "ClassName", "DefaultName") ?? sub.GetType().Name,
                                         lado,
-                                        parametros = ParametrosSubensamblaje(sub)
+                                        parametros = ParametrosSubensamblaje(sub),
+                                        parametros_detalle = ParametrosDetalleSubensamblaje(sub)   // ronda E (tarea 7.3)
                                     });
                                 }
                                 // AssemblyGroup no expone Side tipado en Civil 3D 2027; se deduce de los subensamblajes

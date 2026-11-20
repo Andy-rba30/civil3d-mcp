@@ -487,6 +487,49 @@ namespace Autodesk.Civil.DatabaseServices
         public BaselineRegionCollection BaselineRegions => new BaselineRegionCollection();
         public BaselineFeatureLines MainBaselineFeatureLines => new BaselineFeatureLines();
         public IEnumerable OffsetBaselineFeatureLinesCol => new List<BaselineFeatureLines>();
+        // ronda E (tarea 7.3, seccion_corredor): confirmados en el catálogo (Baseline / BaseBaseline); por verificar
+        public AppliedAssembly GetAppliedAssemblyAtStation(double station) => null;
+        public double[] SortedStations() => new double[0];
+    }
+    // ronda E (tarea 7.3, seccion_corredor): sección aplicada de un corredor; confirmados en el catálogo, por verificar
+    public class AppliedAssembly
+    {
+        public ObjectId AssemblyId => ObjectId.Null;
+        public AppliedSubassemblyCollection GetAppliedSubassemblies() => new AppliedSubassemblyCollection();
+    }
+    public class AppliedSubassemblyCollection : IEnumerable<AppliedSubassembly>
+    {
+        public int Count => 0;
+        public IEnumerator<AppliedSubassembly> GetEnumerator() => new List<AppliedSubassembly>().GetEnumerator();
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+    public interface IAppliedSubassemblyParam
+    {
+        string KeyName { get; } string DisplayName { get; }
+        object ValueAsObject { get; } object DesignValueAsObject { get; } bool IsOverriden { get; }
+    }
+    public class AppliedSubassembly
+    {
+        public ObjectId SubassemblyId => ObjectId.Null;
+        public IAppliedSubassemblyParam[] Parameters => new IAppliedSubassemblyParam[0];
+        public CalculatedPointCollection Points => new CalculatedPointCollection();
+    }
+    public class CorridorCodeCollection : IEnumerable<string>
+    {
+        public int Count => 0;
+        public IEnumerator<string> GetEnumerator() => new List<string>().GetEnumerator();
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+    public class CalculatedPoint
+    {
+        public Point3d StationOffsetElevationToBaseline => new Point3d();
+        public CorridorCodeCollection CorridorCodes => new CorridorCodeCollection();
+    }
+    public class CalculatedPointCollection : IEnumerable<CalculatedPoint>
+    {
+        public int Count => 0;
+        public IEnumerator<CalculatedPoint> GetEnumerator() => new List<CalculatedPoint>().GetEnumerator();
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
     public class BaselineCollection : IEnumerable { public int Count => 0; public IEnumerator GetEnumerator() => new List<Baseline>().GetEnumerator(); }
     public enum CorridorSurfaceBoundaryType { OutsideBoundary, InsideBoundary, RenderOnly }
@@ -531,7 +574,9 @@ namespace Autodesk.Civil.DatabaseServices
         public SubassemblySideType Side => SubassemblySideType.Left;
         public IEnumerable ParamsString => new List<object>(); public IEnumerable ParamsDouble => new List<object>();
         public IEnumerable ParamsLong => new List<object>(); public IEnumerable ParamsBool => new List<object>();
+        public SubassemblyGenerator GeometryGenerator { get; set; }   // ronda E (tarea 7.3, seccion_corredor)
     }
+    public class SubassemblyGenerator { public string MacroOrClassName { get; set; } }   // ronda E (tarea 7.3)
     public class AssemblyGroup { public string Name => ""; public ObjectIdCollection GetSubassemblyIds() => new ObjectIdCollection(); }
     public class AssemblyGroupCollection : IEnumerable { public int Count => 0; public IEnumerator GetEnumerator() => new List<AssemblyGroup>().GetEnumerator(); }
     public class Assembly : Entity { public AssemblyType Type { get; set; } public AssemblyGroupCollection Groups => new AssemblyGroupCollection(); }
@@ -668,5 +713,17 @@ namespace Autodesk.Civil.DatabaseServices.Styles
         public ProfileViewStyleCollection ProfileViewStyles => new ProfileViewStyleCollection();
         public ProfileViewBandSetStyleCollection ProfileViewBandSetStyles => new ProfileViewBandSetStyleCollection();
         public SectionViewStyleCollection SectionViewStyles => new SectionViewStyleCollection();   // 1.13.0
+    }
+}
+
+namespace Autodesk.Civil.Runtime
+{
+    // ronda E (tarea 7.3, listar_ensamblajes → parametros_detalle): parámetro de lista de un subensamblaje. En la DLL
+    // deriva de ParamBase<2,long,long,...>, que declara Key y DisplayName; el plugin lee Key por reflexión
+    public class ParamLong
+    {
+        public string Key => ""; public string DisplayName { get; set; } public int Value { get; set; }
+        public uint EnumCount() => 0;
+        public void GetEnumData(uint index, out string name, out string displayName, out int value) { name = null; displayName = null; value = 0; }
     }
 }
