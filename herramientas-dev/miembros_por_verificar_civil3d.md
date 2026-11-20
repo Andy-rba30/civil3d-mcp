@@ -979,3 +979,15 @@ como texto) para los scripts de `ejecutar_codigo`. Versión: la que fije la inte
 | Tipo | Miembro | Versión | Herramienta que lo usa | Estado |
 |---|---|---|---|---|
 | propiedad | `Drawable.Bounds` (lectura; `Nullable<Extents3d>`, heredada por `DBObject` y `Entity` sin volver a declararla) | 2027 | `ejecutar_codigo` (desde la ronda E compila leer `e.Bounds`, con y sin `solo_lectura`; asignarla, `DrawableType` y el resto de `GraphicsInterface` siguen bloqueados como «ventanas y diálogos») | que la declara solo `Drawable`, confirmado en el catálogo (orquestadora, 17/11/2026) y en Civil 3D por el rechazo de la comprobación C2 del 20/11/2026; que compile y devuelva la caja de la entidad sin entrada en Deshacer ni copia con `solo_lectura=true`, **por verificar** |
+
+## Ronda E (1.22.0, tarea 7.4): el peralte del eje entre progresivas críticas
+
+Escrita el 20/11/2026 sin Civil 3D. En la validación de la ronda D pareció que el corredor no seguía el peralte dentro de
+la curva; el corredor pide la pendiente al eje en cualquier pk, no solo en las progresivas críticas, y nunca se había
+leído en un pk intermedio. `listar_peralte` acepta `progresivas` y `aplicar_peralte` comprueba, tras escribir, el centro
+del peralte total de cada curva (aviso, no error). Firma confirmada en el catálogo de Civil 3D 2027 (`buscar_api
+"GetCrossSlopeAtStation"`, 20/11/2026); el catálogo no describe el tercer parámetro, solo su nombre.
+
+| Tipo | Miembro | Versión | Herramienta que lo usa | Estado |
+|---|---|---|---|---|
+| método | `Alignment.GetCrossSlopeAtStation(double station, SuperelevationCrossSegmentType crossSegmentType, bool applySmoothing)` → `double`, con `applySmoothing` = `true` | 2027 | `listar_peralte` con `progresivas` (los 8 segmentos en cada pk, cada lectura en su `try`), `aplicar_peralte` (comprobación en el centro del peralte total, solo en la escritura real) | por verificar (confirmado en el catálogo). **Escala**: se supone tanto por uno, como `GetSlope` (validado: 0.06 = 6 %); **por verificar** que en una recta dé el bombeo, en el centro de la curva el peralte total escrito y entre progresivas críticas un valor interpolado. **`applySmoothing`**: se supone que `true` aplica el suavizado de las transiciones si la curva lo tiene (lo que construye el corredor); `aplicar_peralte` no define suavizado, así que debería dar lo mismo que `false` |
