@@ -456,7 +456,10 @@ namespace ArbaMcp.Nucleo
                     Bloqueo(n, delReceptor.categoria, Nombre(receptor) + "." + s.Name);
                     return;
                 }
-                if (!TipoPermitido(declarante, n)) return;   // el tipo ya se anotó
+                // Ronda E (H4): leer Entity.Bounds, que solo declara GraphicsInterface.Drawable (CodigoReglas.LecturasPermitidasDe);
+                // el resto de la revisión del miembro sigue igual
+                bool lecturaPermitida = s is IPropertySymbol && CodigoReglas.EsLecturaPermitida(nombreTipo, s.Name, EsEscritura(n));
+                if (!lecturaPermitida && !TipoPermitido(declarante, n)) return;   // el tipo ya se anotó
 
                 if (metodo != null && metodo.MethodKind == MethodKind.BuiltinOperator) return;
                 bool escritura = EsEscritura(n);

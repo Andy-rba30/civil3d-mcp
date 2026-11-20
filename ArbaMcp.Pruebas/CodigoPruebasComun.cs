@@ -80,6 +80,16 @@ namespace Autodesk.AutoCAD.Geometry
     }
     public struct Matrix3d { public static Matrix3d Identity => default(Matrix3d); }
 }
+// Ronda E (H4): Drawable declara Bounds (la caja de una entidad) y DrawableType; DBObject y Entity no los vuelven a declarar
+namespace Autodesk.AutoCAD.GraphicsInterface
+{
+    public enum DrawableType { Geometry = 0 }
+    public abstract class Drawable : Autodesk.AutoCAD.Runtime.RXObject
+    {
+        public virtual Autodesk.AutoCAD.DatabaseServices.Extents3d? Bounds => null;
+        public virtual DrawableType DrawableType => DrawableType.Geometry;
+    }
+}
 namespace Autodesk.AutoCAD.DatabaseServices
 {
     public enum OpenMode { ForRead, ForWrite, ForNotify }
@@ -90,7 +100,8 @@ namespace Autodesk.AutoCAD.DatabaseServices
         public DBObject GetObject(OpenMode modo) => null;
         public DBObject Open(OpenMode modo) => null;
     }
-    public class DBObject : Autodesk.AutoCAD.Runtime.RXObject
+    // Ronda E (H4): como en la API real, DBObject deriva de GraphicsInterface.Drawable
+    public class DBObject : Autodesk.AutoCAD.GraphicsInterface.Drawable
     {
         public ObjectId ObjectId => default(ObjectId);
         public void Erase() { }
@@ -137,6 +148,8 @@ namespace Autodesk.AutoCAD.DatabaseServices
     }
     public struct Extents3d
     {
+        public Autodesk.AutoCAD.Geometry.Point3d MinPoint => default(Autodesk.AutoCAD.Geometry.Point3d);
+        public Autodesk.AutoCAD.Geometry.Point3d MaxPoint => default(Autodesk.AutoCAD.Geometry.Point3d);
         public void AddExtents(Extents3d otra) { }
         public void AddPoint(Autodesk.AutoCAD.Geometry.Point3d p) { }
     }

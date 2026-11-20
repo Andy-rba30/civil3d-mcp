@@ -194,6 +194,24 @@ namespace ArbaMcp.Nucleo
             ["System.UIntPtr"] = (new HashSet<string>(StringComparer.Ordinal) { "Zero", "Equals", "GetHashCode", "ToString", "op_Equality", "op_Inequality" }, Nativo),
         };
 
+        /// <summary>
+        /// Ronda E (hallazgo H4, comprobación C2 del 20/11/2026): propiedades que se pueden LEER aunque las declare un tipo
+        /// de un espacio de nombres bloqueado (nombre completo del tipo que las declara → propiedades). La caja de una
+        /// entidad, Entity.Bounds, solo la declara Autodesk.AutoCAD.GraphicsInterface.Drawable (DBObject y Entity no la
+        /// vuelven a declarar), así que leerla se rechazaba como «ventanas y diálogos». Solo la lectura (el get): una
+        /// asignación, y los demás miembros y tipos de GraphicsInterface, siguen bloqueados. DrawableType también: su valor
+        /// es del tipo GraphicsInterface.DrawableType, que sigue bloqueado, y no hace falta para leer el dibujo.
+        /// </summary>
+        public static readonly Dictionary<string, HashSet<string>> LecturasPermitidasDe = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal)
+        {
+            ["Autodesk.AutoCAD.GraphicsInterface.Drawable"] = new HashSet<string>(StringComparer.Ordinal) { "Bounds" },
+        };
+
+        /// <summary>True si leer la propiedad 'propiedad' que declara 'declarante' está permitido (LecturasPermitidasDe); nunca si se asigna.</summary>
+        public static bool EsLecturaPermitida(string declarante, string propiedad, bool escritura)
+            => !escritura && declarante != null && propiedad != null
+               && LecturasPermitidasDe.TryGetValue(declarante, out var propiedades) && propiedades.Contains(propiedad);
+
         /// <summary>Miembros bloqueados de tipos de System permitidos (nombre completo del tipo → miembros).</summary>
         public static readonly Dictionary<string, (string[] miembros, string categoria)> MiembrosSystemBloqueados = new Dictionary<string, (string[], string)>(StringComparer.Ordinal)
         {
