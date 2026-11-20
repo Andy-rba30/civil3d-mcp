@@ -349,6 +349,77 @@ namespace ArbaMcp
             return lista;
         }
 
+        /// <summary>
+        /// Tarea 7.6: los subensamblajes del ensamblaje con UseSuperelevation = None (carriles que no siguen el peralte del
+        /// eje), con la lectura de parametros_detalle (ParamBase.Key y la opción de GetEnumData; se compara por clave, nunca
+        /// por el nombre visible). Cada lectura en su try: si falla, aviso de que no se pudo comprobar. 'corredor' es el
+        /// nombre que va en los avisos (en crear_corredor, el del corredor nuevo).
+        /// </summary>
+        private static List<CarrilSinPeralte> CarrilesSinPeralteDeEnsamblaje(Transaction tr, ObjectId idEnsamblaje, string corredor, List<string> avisos)
+        {
+            var lista = new List<CarrilSinPeralte>();
+            Civ.Assembly asm;
+            try { asm = (Civ.Assembly)tr.GetObject(idEnsamblaje, OpenMode.ForRead); }
+            catch (Exception ex) { avisos.Add(CarrilesPeralte.AvisoNoComprobado(corredor, "ensamblaje", Raiz(ex).Message)); return lista; }
+            string nombreAsm = Seguro(() => asm.Name, null);
+            try
+            {
+                foreach (Civ.AssemblyGroup g in asm.Groups)
+                    foreach (ObjectId idSub in g.GetSubassemblyIds())
+                    {
+                        string nombreSub = null;
+                        try
+                        {
+                            if (!(tr.GetObject(idSub, OpenMode.ForRead) is Civ.Subassembly sub)) continue;
+                            nombreSub = sub.Name;
+                            if (CarrilesPeralte.TieneSinPeralte(ParametrosDetalleSubensamblaje(sub), out object valor, out string opcion, out int sinClave))
+                                lista.Add(new CarrilSinPeralte
+                                {
+                                    Corredor = corredor, Ensamblaje = nombreAsm, Grupo = Seguro(() => g.Name, null), Subensamblaje = nombreSub,
+                                    Lado = Seguro(() => Lado(sub.Side), null), Valor = valor, Opcion = opcion
+                                });
+                            else if (sinClave > 0)
+                                avisos.Add(CarrilesPeralte.AvisoNoComprobado(corredor, "subensamblaje '" + nombreSub + "', ParamBase.Key", sinClave + " parámetro" + (sinClave == 1 ? "" : "s") + " sin clave legible"));
+                        }
+                        catch (Exception ex) { avisos.Add(CarrilesPeralte.AvisoNoComprobado(corredor, "subensamblaje '" + (nombreSub ?? idSub.Handle.ToString()) + "'", Raiz(ex).Message)); }
+                    }
+            }
+            catch (Exception ex) { avisos.Add(CarrilesPeralte.AvisoNoComprobado(corredor, "grupos del ensamblaje '" + nombreAsm + "'", Raiz(ex).Message)); }
+            return lista;
+        }
+
+        /// <summary>
+        /// Tarea 7.6: los carriles sin peralte de los corredores cuya línea base usa el eje (Baseline.AlignmentId), sin
+        /// repetir un ensamblaje en el mismo corredor. Añade a 'avisos' el aviso de cada carril y los de lo que no se pudo leer.
+        /// </summary>
+        private static List<CarrilSinPeralte> CarrilesSinPeralteDelEje(Transaction tr, ObjectId idAl, List<string> avisos)
+        {
+            var lista = new List<CarrilSinPeralte>();
+            var vistos = new HashSet<(ObjectId, ObjectId)>();
+            try
+            {
+                foreach (ObjectId idCor in CivilApplication.ActiveDocument.CorridorCollection)
+                {
+                    string nombreCor = null;
+                    try
+                    {
+                        if (!(tr.GetObject(idCor, OpenMode.ForRead) is Civ.Corridor cor)) continue;
+                        nombreCor = cor.Name;
+                        foreach (Civ.Baseline bl in cor.Baselines)
+                        {
+                            if (Seguro(() => bl.AlignmentId, ObjectId.Null) != idAl) continue;
+                            foreach (Civ.BaselineRegion reg in bl.BaselineRegions)
+                                if (vistos.Add((idCor, reg.AssemblyId))) lista.AddRange(CarrilesSinPeralteDeEnsamblaje(tr, reg.AssemblyId, nombreCor, avisos));
+                        }
+                    }
+                    catch (Exception ex) { avisos.Add(CarrilesPeralte.AvisoNoComprobado(nombreCor ?? idCor.Handle.ToString(), "líneas base y regiones", Raiz(ex).Message)); }
+                }
+            }
+            catch (Exception ex) { avisos.Add("No se pudo comprobar si los corredores del eje siguen el peralte (CorridorCollection: " + Raiz(ex).Message + "). Míralo con listar_ensamblajes → parametros_detalle (clave " + CarrilesPeralte.ClaveUsarPeralte + ")."); }
+            avisos.AddRange(CarrilesPeralte.Avisos(lista));
+            return lista;
+        }
+
         private static double? Frecuencia(Civ.BaselineRegion reg, string tipo)
         {
             try

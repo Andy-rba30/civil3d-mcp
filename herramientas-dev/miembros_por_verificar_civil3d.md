@@ -1043,3 +1043,30 @@ validación de la ronda E (paso 5.2). Desde esta corrección, un ensanchamiento 
 | Tipo | Miembro | Versión | Herramienta que lo usa | Estado |
 |---|---|---|---|---|
 | comportamiento | `OffsetAlignmentInfo.AddWidening(startStation, endStation, offsetDistance)` **sin** escribir después `TransitionDescription.Length` | 2027 | `crear_bordes_calzada` (desde la 1.22.1 siempre escribe `Length`: 40 m por defecto) | validado el 20/11/2026 (informe de la ronda E, paso 5.2, con la 1.22.0): `AddWidening(60, 140, …)` en una recta dejó las transiciones `LinearTransitionDescription` de **longitud 0** (entrada 60–60, salida 140–140) y la medición dio `longitud_entrada: 0` y `longitud_salida: 0`: el borde da un **salto**. **No usa `SettingsCmdAddWidening`**: los ajustes del comando (`WideningOptions` en `CurveLineCurve`, 25 m) no se aplicaron. Que con 40 m por defecto la entrada quede de 20 a 60 y la salida de 140 a 180, **por verificar** |
+
+## 1.22.1, tarea 7.6 (`aplicar_peralte`: bombeo en los extremos del eje; aviso de carriles que ignoran el peralte): escrita sin Civil 3D
+
+Escrita el 20/11/2026 sin Civil 3D, con lo que salió de la validación de la ronda E en Civil 3D ese mismo día (con la
+1.22.0). **No usa ningún miembro nuevo**: solo los ya listados (`Alignment.SuperelevationCriticalStations`,
+`SuperelevationCriticalStation.StationType`, `Station`, `SetSlope`, `GetSlope`; `CorridorCollection`, `Corridor.Baselines`,
+`Baseline.AlignmentId`, `BaselineRegions`, `BaselineRegion.AssemblyId`, `Assembly.Groups`, `AssemblyGroup.GetSubassemblyIds`,
+`Subassembly.Name`, `Side`, `ParamsLong`; `ParamBase.Key`, `ParamLong.EnumCount` y `GetEnumData` con `ref`, como en
+`parametros_detalle`), así que los sustitutos de `CompilarSinCivil` no cambian. Lo nuevo es **cómo** se usan:
+
+| Tipo | Miembro | Versión | Herramienta que lo usa | Estado |
+|---|---|---|---|---|
+| método | `SuperelevationCriticalStation.SetSlope(segmento, pendiente)` sobre las progresivas de **contorno** (`BeginAlignment` y `EndAlignment`) de `Alignment.SuperelevationCriticalStations`, buscadas por `StationType` y `Station` | 2027 | `aplicar_peralte` (el bombeo normal de la primera `EndNormalCrown` y de la última `BeginNormalCrown` pedidas, en los mismos segmentos) | por verificar. Hasta ahora `SetSlope` solo se había usado en las progresivas de las curvas de peralte. Si lanza, aviso y el resto del peralte se escribe; si no lanza pero la relectura no da el bombeo, error sin reintentar |
+
+**Validados el 20/11/2026** (validación de la ronda E en Civil 3D 2027, con la 1.22.0; datos de `listar_peralte` con
+`progresivas` y de `listar_ensamblajes` → `parametros_detalle`):
+
+- **Progresivas de contorno a 0 %**: Civil 3D crea `BeginAlignment` (pk 0) y `EndAlignment` con las pendientes en **0 %**
+  y no las cambia al añadir las progresivas de las curvas. En `Eje Peralte` (831.3274 m, `EndNormalCrown` en el pk 192 a
+  −2 %), `listar_peralte` con `progresivas` [100] dio **−1.0417 %** en los dos carriles (= −2 × 100 / 192): el eje
+  interpola de 0 a −2 en la recta inicial. Lo corrige la tarea 7.6.
+- **`UseSuperelevation`**: es la **clave** (`ParamBase.Key`) del parámetro de lista de los `LaneSuperelevationAOR` que
+  decide si el carril sigue el peralte del eje. Su opción **`None`** tiene el **valor 6**: con ella el corredor se quedó a
+  −2 % en la curva aunque el eje tenía ±6 %. **`RightLO`** tiene el **valor 2** y **`LeftLO`** el **valor 0**: cambiadas a
+  mano en Propiedades del subensamblaje y tras `reconstruir_corredor`, `seccion_corredor` en la curva dio +6 y −6 %. La
+  `etiqueta` (el nombre visible de `GetEnumData`) salió como un número («12427»), así que se compara por la clave y por el
+  nombre de la opción, nunca por lo visible.
