@@ -7,7 +7,7 @@ prompt.
 
 ---
 
-## 0. Avance (actualizado el 17/11/2026, tras la ronda C con la 1.19.1: Etapas 1 a 5 hechas, salvo la 3.3, mensual)
+## 0. Avance (actualizado el 20/11/2026, tras la ronda D con la 1.21.5: Etapas 1 a 5 hechas, salvo la 3.3, mensual)
 
 Leyenda: ✅ hecho y verificado · 🟡 hecho, falta comprobar algo · ⬜ pendiente · ❓ no se puede comprobar desde
 civil3d-mcp (vive en `memoria-firma` o en la PC).
@@ -44,8 +44,9 @@ civil3d-mcp (vive en `memoria-firma` o en la PC).
 
 **Decisión del dueño (13/11/2026): solo 3 rondas de prueba en la PC** para lo que queda: **A** = Etapa 2 completa
 (1.12.0, 1.13.0, 1.14.0, 1.14.1, receta 2.8 y evaluación 5.2), **B** = Etapa 3 (3.1 y 3.2), **C** = Etapa 4 (4.2 y 4.3;
-la 4.1 no necesita la PC). Las tres rondas están hechas: A y B el 14/11/2026 y C el 17/11/2026. El estado al día de ramas, PR y
-sesiones está en `herramientas-dev/REGISTRO_AVANCE.md`.
+la 4.1 no necesita la PC). Las tres rondas están hechas: A y B el 14/11/2026 y C el 17/11/2026. Después vino la ronda D,
+verificada el 20/11/2026 (ver abajo). El estado al día de ramas, PR y sesiones está en
+`herramientas-dev/REGISTRO_AVANCE.md`.
 
 **Pendientes que no están en la hoja de ruta** (salieron de las validaciones; ver los hechos validados de `CLAUDE.md`).
 Resueltos en la 1.10.1 (validada el 13/11/2026, PR #22): `ejecutar_comando` conserva los espacios finales, un error
@@ -72,23 +73,29 @@ Resueltos después:
   Deshacer ni hace copia (1.17.6, informe 1176_b, paso 7); el aviso de `Entity.StyleId` de `crear_superficie_tin` ya no
   sale (1.17.6, paso 3); y `Curve.Extend` sobre un objeto abierto para lectura, que cerró Civil 3D con la 1.19.0, ya no
   compila con `solo_lectura` (1.19.1, paso 9).
+- **Ronda D** (20/11/2026, PR #56, hallazgos en la tarea 6.11): `ejecutar_codigo` **sin** `solo_lectura` ya no compila un
+  cambio sobre un objeto abierto para lectura (6.1, 1.19.2; parte 5 de la validación con la 1.21.2), y las comprobaciones
+  C1 a C3 de `herramientas-dev/COMPROBACIONES_RONDA_D.md` se hicieron en la misma validación.
 
 Siguen abiertos:
 
-- `ejecutar_codigo` **sin** `solo_lectura`: un script que cambie un objeto abierto para lectura (sin `F.Abrir(id, true)`)
-  puede cerrar Civil 3D, como `Curve.Extend` en la ronda C. Valorar una protección también para ese modo.
-- `ejecutar_codigo` (revisión previa del 15/11/2026, H4): confirmado en Civil 3D en la comprobación C2 del 20/11/2026
-  (`e.Bounds` se rechazaba como «ventanas y diálogos»); desde la ronda E (tarea 7.1) se permite leer `Bounds`, **por
+- `ejecutar_codigo` (revisión previa del 15/11/2026, H4): **comprobado el 20/11/2026** (C2 de la ronda D): la lista
+  blanca rechazaba al compilar la lectura de `Bounds`, que solo declara `GraphicsInterface.Drawable`; las propiedades
+  que `DBObject` vuelve a declarar (`Id`) sí compilan. Desde la ronda E (tarea 7.1) se permite leer `Bounds`, **por
   verificar** en Civil 3D. `DrawableType` y el resto de `GraphicsInterface` siguen bloqueados.
 - La evaluación marca OK comprobaciones manuales que no hace (curvas de la tarea 1, cálculo manual de la 8, informe de
   Civil 3D de la 9): aclararlo en `tareas.yaml` o en el prompt de evaluación.
 
 El resto de propuestas sueltas está en `herramientas-dev/REGISTRO_AVANCE.md`, sección «Propuestas pendientes».
 
-**Ronda D (en curso)**: 6.1 protección de `ejecutar_codigo` sin `solo_lectura` (1.19.2) · 6.2 documentos pendientes
-(guion de la 111, plantilla del PR y comprobaciones para la PC en `herramientas-dev/COMPROBACIONES_RONDA_D.md`) ·
-6.3 `crear_secciones` (1.19.3) · 6.4 tablas DG-2018 de peralte y sobreancho (`memoria-firma`) · 6.5 peralte (1.20.0) ·
-6.6 bordes de calzada con sobreancho (1.21.0) · 6.7 evaluación (`memoria-firma`).
+**Ronda D (hecha: verificada en Civil 3D el 20/11/2026, PR #56, de la 1.19.1 a la 1.21.5)**: 6.1 protección de
+`ejecutar_codigo` sin `solo_lectura` (1.19.2) · 6.2 documentos pendientes (guion de la 111, plantilla del PR y
+comprobaciones para la PC en `herramientas-dev/COMPROBACIONES_RONDA_D.md`) · 6.3 `crear_secciones` (1.19.3) · 6.4 tablas
+DG-2018 de peralte y sobreancho (`memoria-firma`) · 6.5 peralte (1.20.0) · 6.6 bordes de calzada con sobreancho (1.21.0) ·
+6.7 evaluación (`memoria-firma`) · 6.8 XML de criterios DG-2018 corregido (`memoria-firma`) · 6.9 decisiones de la norma
+(1.21.1) · 6.10 figuras de peralte digitalizadas (`memoria-firma`) · correcciones tras la prueba en Civil 3D (1.21.2 a
+1.21.5) · 6.11 hallazgos de la ronda D (`tarea/6.11-hallazgos-ronda-d`, se fusiona después del #56). El detalle está en
+`herramientas-dev/REGISTRO_AVANCE.md`, «Estado actual».
 
 ---
 
