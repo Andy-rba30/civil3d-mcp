@@ -18,8 +18,10 @@ Reglas de la herramienta (decisiones del dueño, 17/11/2026):
 
 Decisiones del dueño sobre los criterios que estaban pendientes (17/11/2026, tarea 6.9, 1.21.1):
 - Curva de transición: «No cumple» si el radio no supera el de la T302.11 (la A también estricta, como la B: 302.05.07
-  dice «superior»); en Tercera Clase manda la B. Un solo aviso en la respuesta: 302.05.06 podría pedir clotoide aunque
-  el radio supere la T302.11 si el peralte pasa del 3 % (sin cifra: las figuras de peralte aún no están en la base).
+  dice «superior»); en Tercera Clase manda la B. 302.05.06 pide además curva de transición si el radio requiere un
+  peralte de más del 3 %: desde la tarea 7.2, en cada curva que cumple la T302.11 se lee ese peralte en la figura de
+  peralte (norma_peralte, Decisión 6, como aplicar_peralte) y, si pasa del 3 %, una fila «Aviso» con la cifra; si la
+  figura no se puede leer (por ejemplo, la base no tiene peralte_figura), un solo aviso genérico con el motivo.
 - PI sin curva fuera del cuadro de deflexión sin curva (más de 80 km/h): «No cumple»; con Δ < 59′, pide quitar el PI.
 - Deflexión menor de 0°59′ (302.02): «No cumple» si el PI tiene curva y aviso si va sin curva.
 - Tangente del mismo sentido de 500 m y de 400 m: solo aviso.
@@ -158,10 +160,12 @@ def texto_cita(c: dict) -> str:
     return f"{c['seccion']}, p. {c['pagina_impresa']}; PDF {c['pagina_pdf']}: «{c['cita']}»"
 
 
-AVISO_TRANSICION_PERALTE = (
-    "302.05.06 podría pedir clotoide aunque el radio supere la T302.11 si el peralte pasa del 3 % ("
-    + texto_cita(CITA_302_05_06_PERALTE) + "). El peralte de diseño no se lee del dibujo y las figuras de peralte aún "
-    "no están en la base: revisa a mano el peralte de cada curva que cumple la T302.11.")
+def aviso_transicion_sin_lectura(motivo: str) -> str:
+    """El aviso genérico de 302.05.06 cuando no se pudo leer la figura de peralte (motivo: por qué)."""
+    return ("302.05.06 pide curva de transición si el radio requiere un peralte de más del 3 % ("
+            + texto_cita(CITA_302_05_06_PERALTE) + "). No se leyó en la figura de peralte el peralte de las curvas que "
+            "cumplen la T302.11: " + motivo + ". Revisa a mano el peralte de cada una en la figura de peralte de la "
+            "DG-2018 (Figuras 302.02 a 302.05).")
 
 # Todo lo que el código cita por id (tablas y cuadros de `referencias`, reglas de `reglas` y fórmulas de `formulas`).
 # casos_norma_reales.py comprueba que existen en la base real.
@@ -1114,8 +1118,8 @@ COMPROBACION_TRANSICION = "Radio para prescindir de la curva de transición"
 def comprobar_transicion(base: BaseNorma, ctx: dict, radio: float, elemento: str = "Curva", progresiva=None) -> dict:
     """T302.11 (302.05.07): se prescinde de la curva de transición con un radio superior al de la tabla, en la A y en la
     B (igual no basta; decisión del dueño del 17/11/2026). En Tercera Clase manda la B. El plugin solo crea arcos, así
-    que si hace falta transición es «No cumple». El aviso de 302.05.06 (p > 3 %) va una sola vez en la respuesta
-    (AVISO_TRANSICION_PERALTE), no en cada fila."""
+    que si hace falta transición es «No cumple». Si cumple, el peralte de 302.05.06 (p > 3 %) lo mira
+    comprobar_peralte_transicion en una fila aparte."""
     ident = "T302.11B" if ctx["tercera_clase"] else "T302.11A"
     ref = base.referencia(ident)
     r = base.radio_sin_transicion(ident, ctx["velocidad"])
@@ -1131,6 +1135,58 @@ def comprobar_transicion(base: BaseNorma, ctx: dict, radio: float, elemento: str
                 f"{texto_cita(CITA_302_05_06_PERALTE)}. El plugin solo crea arcos.")
     return fila(elemento, comprobacion, radio, r["radio_m"], "m", MAYOR_ESTRICTO, CUMPLE if ok else NO_CUMPLE, ref,
                 progresiva, cita=cita["cita"], nota=nota)
+
+
+COMPROBACION_PERALTE_TRANSICION = "Peralte para prescindir de la curva de transición"
+
+
+def lectura_transicion(base: BaseNorma, ctx: dict) -> dict:
+    """La figura de peralte del proyecto para comprobar_peralte_transicion (norma_peralte.lectura_para_transicion):
+    {figura, radio_minimo, t30404, con_t30406, motivo}; con 'motivo', no se puede leer."""
+    import norma_peralte   # aquí y no arriba: norma_peralte importa este módulo
+    return norma_peralte.lectura_para_transicion(base, ctx)
+
+
+def comprobar_peralte_transicion(base: BaseNorma, ctx: dict, lectura: dict, radio: float, elemento: str = "Curva",
+                                 progresiva=None) -> dict | None:
+    """302.05.06 («Si R requiere p>3%. Se debe usar curva de transición.») en una curva que cumple la T302.11: el
+    peralte que pide la figura de peralte para su radio y la velocidad de diseño, leído como en aplicar_peralte
+    (norma_peralte.peralte_de_figura, Decisión 6) y redondeado a 0,1 %. Más del 3 %: fila «Aviso» con la cifra, la
+    figura y la cita. Es un aviso, no un «No cumple», porque así lo decidió el dueño para este criterio (17/11/2026,
+    tarea 6.9); la orquestadora pidió que fuera curva a curva y con cifra en cuanto las figuras estuvieran en la base.
+    3 % o menos, curva sin peralte (T304.04) o radio bajo el mínimo (ya lo dice su fila): None, como las demás
+    comprobaciones que solo avisan (deflexión menor de 0°59′ sin curva, pendiente mínima). Si la figura no da valor
+    (radio más allá del extremo inferior de la curva) y su último nodo pasa del 3 %: «No verificable»."""
+    if lectura.get("motivo"):
+        return None
+    import norma_peralte as npe
+    pf = npe.peralte_para_transicion(base, ctx, lectura, radio)
+    ref = referencia_seccion(CITA_302_05_06_PERALTE["seccion"], CITA_302_05_06_PERALTE["pagina_pdf"],
+                             CITA_302_05_06_PERALTE["pagina_impresa"])
+    figura = texto_referencia(base.referencia(pf["figura"]))
+    nombre = f"{figura}, {pf['figura_nombre']}," if pf.get("figura_nombre") else figura
+    v = ctx["velocidad"]
+    if pf["resultado"] == SIN_VALOR:
+        ultimo = pf["nodos"][0].get("peralte_pct") if pf["nodos"] else None
+        if ultimo is not None and cumple(ultimo, PERALTE_CON_TRANSICION_PCT, MAXIMO):
+            return None
+        return fila(elemento, COMPROBACION_PERALTE_TRANSICION, None, PERALTE_CON_TRANSICION_PCT, "%", MAXIMO,
+                    NO_VERIFICABLE, ref, progresiva, figura=figura, cita=CITA_302_05_06_PERALTE["cita"],
+                    nota=f"La {nombre} no da valor para R = {_limpio(radio)} m a {v} km/h (más allá del extremo inferior "
+                         "de su curva): revisa a mano si el peralte pasa del 3 % (302.05.06).")
+    p = pf["peralte_pct"]
+    if p is None or cumple(p, PERALTE_CON_TRANSICION_PCT, MAXIMO):
+        return None
+    error = f", error ±{_limpio(pf['error_pct'])} %" if pf.get("error_pct") is not None else ""
+    confirmar = (" Con este radio la figura da su peralte máximo (Decisión 6, A CONFIRMAR por Jose)."
+                 if pf.get("a_confirmar") else "")
+    return fila(elemento, COMPROBACION_PERALTE_TRANSICION, p, PERALTE_CON_TRANSICION_PCT, "%", MAXIMO, AVISO, ref,
+                progresiva, radio=radio, figura=figura, lectura_pct=pf.get("peralte_calculado_pct"),
+                error_pct=pf.get("error_pct"), etiqueta=pf.get("etiqueta"), cita=CITA_302_05_06_PERALTE["cita"],
+                nota=f"Solo aviso: con R = {_limpio(radio)} m a {v} km/h la {nombre} pide un peralte de {_limpio(p)} % "
+                     f"({pf.get('etiqueta') or 'lectura de la figura'}{error}), más del 3 %: "
+                     f"{texto_cita(CITA_302_05_06_PERALTE)}. El radio supera el de la T302.11, pero el plugin solo "
+                     f"crea arcos: valora una clotoide o un radio mayor.{confirmar}")
 
 
 # ---------------------------------------------------------------------------------------------- E8: compuestas
@@ -1539,8 +1595,9 @@ def _filas_entre_curvas(base: BaseNorma, ctx: dict, antes: dict, despues: dict, 
     return filas
 
 
-def _filas_de_curva(base: BaseNorma, ctx: dict, pi: dict, elemento: str, prog) -> list[dict]:
-    """Radio mínimo, longitudes, transición y deflexión mínima de una curva; «No verificable» si falta un dato."""
+def _filas_de_curva(base: BaseNorma, ctx: dict, pi: dict, elemento: str, prog, lectura: dict | None = None) -> list[dict]:
+    """Radio mínimo, longitudes, transición (con el peralte de 302.05.06 si cumple la T302.11 y hay 'lectura' de la
+    figura) y deflexión mínima de una curva; «No verificable» si falta un dato."""
     filas = []
     radio, longitud, deflexion = pi.get("radio"), pi.get("longitud_curva"), pi.get("deflexion_grados")
     if _finito(radio):
@@ -1555,7 +1612,12 @@ def _filas_de_curva(base: BaseNorma, ctx: dict, pi: dict, elemento: str, prog) -
         filas.append(fila(elemento, "Longitud de la curva", None, None, "m", CONDICION, NO_VERIFICABLE, None, prog,
                           nota="listar_pis no dio la longitud de esta curva: no se verifican las longitudes mínimas."))
     if _finito(radio):
-        filas.append(comprobar_transicion(base, ctx, float(radio), elemento, prog))
+        transicion = comprobar_transicion(base, ctx, float(radio), elemento, prog)
+        filas.append(transicion)
+        if lectura is not None and transicion["resultado"] == CUMPLE:
+            peralte = comprobar_peralte_transicion(base, ctx, lectura, float(radio), elemento, prog)
+            if peralte:
+                filas.append(peralte)
     if _finito(deflexion):
         minima = comprobar_deflexion_minima(base, ctx, float(deflexion), elemento, prog, con_curva=True)
         if minima:
@@ -1563,9 +1625,12 @@ def _filas_de_curva(base: BaseNorma, ctx: dict, pi: dict, elemento: str, prog) -
     return filas
 
 
-def verificar_alineamiento(base: BaseNorma, ctx: dict, tabla_pis: dict) -> tuple[list, list]:
-    """Filas (en el orden del eje) y lista de lo no comprobado para un eje leído con listar_pis."""
+def verificar_alineamiento(base: BaseNorma, ctx: dict, tabla_pis: dict, lectura: dict | None = None) -> tuple[list, list]:
+    """Filas (en el orden del eje) y lista de lo no comprobado para un eje leído con listar_pis. 'lectura': la de
+    lectura_transicion (si no se pasa, se calcula)."""
     no_comprobado = [dict(x) for x in NO_COMPROBADO_ALINEAMIENTO]
+    if lectura is None:
+        lectura = lectura_transicion(base, ctx)
     pis = tabla_pis.get("pis") or []
 
     # Puntos del eje: inicio → (PC, PT) de cada curva / PI sin curva → fin. Una tangente junto a un tipo no soportado
@@ -1593,7 +1658,7 @@ def verificar_alineamiento(base: BaseNorma, ctx: dict, tabla_pis: dict) -> tuple
         prog = pi.get("progresiva_texto") or (progresiva_texto(pi.get("progresiva")) if _finito(pi.get("progresiva")) else None)
         deflexion = pi.get("deflexion_grados")
         if tipo == "curva":
-            filas.extend(_filas_de_curva(base, ctx, pi, f"Curva {_etiqueta(pi)}", prog))
+            filas.extend(_filas_de_curva(base, ctx, pi, f"Curva {_etiqueta(pi)}", prog, lectura))
         elif tipo == "sin_curva":
             elemento = f"{_etiqueta(pi)} (sin curva)"
             if not _finito(deflexion):
@@ -1717,11 +1782,13 @@ def verificar_rasante(base: BaseNorma, ctx: dict, pvis: list, tabla_pis: dict | 
 
 
 # ---------------------------------------------------------------------------------------------- resultado
-def aviso_transicion(filas: list) -> str | None:
-    """El aviso de 302.05.06 (p > 3 %), una sola vez en la respuesta, si alguna curva cumple la T302.11 (decisión de la
-    orquestadora del 17/11/2026: curva a curva y con cifra cuando las figuras de peralte estén en la base)."""
-    if any(f["comprobacion"] == COMPROBACION_TRANSICION and f["resultado"] == CUMPLE for f in filas):
-        return AVISO_TRANSICION_PERALTE
+def aviso_transicion(filas: list, lectura: dict | None) -> str | None:
+    """El aviso genérico de 302.05.06 (p > 3 %), una sola vez en la respuesta, solo si alguna curva cumple la T302.11
+    y la figura de peralte no se pudo leer ('motivo' de lectura_transicion). Si se pudo, cada curva lleva su fila
+    (comprobar_peralte_transicion; decisión de la orquestadora del 17/11/2026: curva a curva y con cifra)."""
+    motivo = (lectura or {}).get("motivo")
+    if motivo and any(f["comprobacion"] == COMPROBACION_TRANSICION and f["resultado"] == CUMPLE for f in filas):
+        return aviso_transicion_sin_lectura(motivo)
     return None
 
 
@@ -1819,13 +1886,15 @@ def verificar(preparada: dict, tabla_pis: dict, pvis: list | None = None, lectur
     motivo = unidades_no_validas(tabla_pis)
     if motivo:
         return {**cabecera, "verificado": False, "motivo": motivo, "lecturas": lecturas or {}}
+    lectura = None
     if preparada["tipo_elemento"] == "alineamiento":
-        filas, no_comprobado = verificar_alineamiento(base, ctx, tabla_pis)
+        lectura = lectura_transicion(base, ctx)
+        filas, no_comprobado = verificar_alineamiento(base, ctx, tabla_pis, lectura)
     else:
         filas, no_comprobado = verificar_rasante(base, ctx, pvis or [], tabla_pis)
     avisos = list(ctx["avisos"])
     avisos.extend(f"listar_pis: {a}" for a in (tabla_pis.get("avisos") or []))
-    aviso = aviso_transicion(filas)
+    aviso = aviso_transicion(filas, lectura)
     if aviso:
         avisos.append(aviso)
     return {

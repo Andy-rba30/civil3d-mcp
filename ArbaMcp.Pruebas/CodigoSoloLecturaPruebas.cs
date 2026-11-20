@@ -68,6 +68,41 @@ namespace ArbaMcp.Pruebas
             Assert.Empty(normal.Escrituras);
         }
 
+        // ------------------------------------------------------------------ ronda E (hallazgo H4)
+        [Fact]
+        public void BoundsDeUnaEntidadEsLecturaYCompilaConYSinSoloLectura()
+        {
+            Permitido("Entity e = null;\nvar b = e.Bounds;\nreturn b.HasValue ? b.Value.MinPoint.X : 0;");
+            // El script de la comprobación C2 (20/11/2026), con la Fachada de firmas reales
+            const string c2 = @"var r = new List<object>();
+foreach (var id in F.EspacioModelo())
+{
+  var e = F.Abrir<Entity>(id);
+  var b = e.Bounds;
+  if (b.HasValue) r.Add(new { min_x = b.Value.MinPoint.X, max_x = b.Value.MaxPoint.X });
+}
+return r;";
+            var conSoloLectura = Scripts.CompilarConFachadaReal(c2, soloLectura: true);
+            Assert.True(conSoloLectura.Ok, conSoloLectura.Mensaje);
+            Assert.Empty(conSoloLectura.Escrituras);
+            var sinSoloLectura = Scripts.CompilarConFachadaReal(c2);
+            Assert.True(sinSoloLectura.Ok, sinSoloLectura.Mensaje);
+            Assert.Empty(sinSoloLectura.Escrituras);
+            // El paso C2c tal cual (COMPROBACIONES_RONDA_D.md): en Civil 3D se rechazó en la línea 4, columna 15
+            const string c2c = "foreach (var id in F.EspacioModelo())\n{\n    var e = F.Abrir<Entity>(id);\n    var c = e.Bounds;\n    return new { tipo = e.GetType().Name, limites = \"\" + c };\n}\nreturn \"sin entidades\";";
+            var paso = Scripts.CompilarConFachadaReal(c2c, soloLectura: true);
+            Assert.True(paso.Ok, paso.Mensaje);
+            Assert.Empty(paso.Escrituras);
+        }
+
+        [Fact]
+        public void DrawableTypeSigueBloqueadoConSoloLectura()
+        {
+            var r = SoloLectura("Entity e = null;\nreturn e.DrawableType.ToString();");
+            Assert.False(r.Ok);
+            Assert.Contains("[bloqueado: ventanas y diálogos] Autodesk.AutoCAD.GraphicsInterface.Drawable", r.Mensaje);
+        }
+
         // ------------------------------------------------------------------ la Fachada
         [Fact]
         public void Fachada_AgregarYEscribirTextoNoCompilan()

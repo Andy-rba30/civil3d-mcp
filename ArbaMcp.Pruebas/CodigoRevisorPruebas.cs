@@ -228,6 +228,50 @@ return v;");
             Scripts.Bloqueado("return new Autodesk.AutoCAD.Windows.OpenFileDialog();", CodigoReglas.Interfaz);
         }
 
+        // Ronda E (hallazgo H4, comprobación C2 del 20/11/2026): Entity.Bounds solo lo declara GraphicsInterface.Drawable
+        private const string TextoInterfazDrawable = "[bloqueado: ventanas y diálogos] Autodesk.AutoCAD.GraphicsInterface.Drawable: ejecutar_codigo no admite ventanas, diálogos ni entrada interactiva";
+
+        [Fact]
+        public void Interfaz_LeerBoundsDeUnaEntidadCompila()
+        {
+            var r = Scripts.CompilarBien(@"Entity e = null;
+var b = e.Bounds;
+Civ.Alignment eje = null;
+var caja = eje.Bounds;
+if (!b.HasValue) return null;
+var min = b.Value.MinPoint;
+return new { x0 = min.X, y0 = min.Y, x1 = e.Bounds.Value.MaxPoint.X, con = e?.Bounds?.MaxPoint.Y, eje = caja.HasValue };");
+            Assert.Empty(r.Escrituras);
+        }
+
+        [Fact]
+        public void Interfaz_ElRestoDeGraphicsInterfaceSigueBloqueadoConElMismoTexto()
+        {
+            // DrawableType también lo declara Drawable, pero no se abre (CodigoReglas.LecturasPermitidasDe)
+            var p = Scripts.Bloqueado("Entity e = null;\nvar t = e.DrawableType;\nreturn t.ToString();", CodigoReglas.Interfaz);
+            Assert.Equal(2, p.Linea);
+            Assert.Contains(TextoInterfazDrawable, Scripts.Compilar("Entity e = null;\nvar t = e.DrawableType;\nreturn t.ToString();").Mensaje);
+            // El tipo Drawable, el enumerado DrawableType y el using del espacio de nombres, como antes
+            Scripts.Bloqueado("Autodesk.AutoCAD.GraphicsInterface.Drawable d = null; return d;", CodigoReglas.Interfaz);
+            Scripts.Bloqueado("Entity e = null; var d = (Autodesk.AutoCAD.GraphicsInterface.Drawable)e; return d.Bounds;", CodigoReglas.Interfaz);
+            Scripts.Bloqueado("return Autodesk.AutoCAD.GraphicsInterface.DrawableType.Geometry;", CodigoReglas.Interfaz);
+            Scripts.Bloqueado("using Autodesk.AutoCAD.GraphicsInterface;\nreturn 1;", CodigoReglas.Interfaz);
+        }
+
+        [Fact]
+        public void Interfaz_LaLecturaPermitidaEsSoloElGetDeBoundsEnDrawable()
+        {
+            Assert.True(CodigoReglas.EsLecturaPermitida("Autodesk.AutoCAD.GraphicsInterface.Drawable", "Bounds", false));
+            Assert.False(CodigoReglas.EsLecturaPermitida("Autodesk.AutoCAD.GraphicsInterface.Drawable", "Bounds", true));
+            Assert.False(CodigoReglas.EsLecturaPermitida("Autodesk.AutoCAD.GraphicsInterface.Drawable", "DrawableType", false));
+            Assert.False(CodigoReglas.EsLecturaPermitida("Autodesk.AutoCAD.GraphicsInterface.Drawable", "bounds", false));
+            Assert.False(CodigoReglas.EsLecturaPermitida("Autodesk.AutoCAD.GraphicsInterface.TransientManager", "Bounds", false));
+            Assert.False(CodigoReglas.EsLecturaPermitida(null, "Bounds", false));
+            // El espacio de nombres sigue bloqueado entero
+            Assert.Equal(CodigoReglas.Interfaz, CodigoReglas.CategoriaEspacio("Autodesk.AutoCAD.GraphicsInterface"));
+            Assert.Equal(CodigoReglas.Interfaz, CodigoReglas.CategoriaTipo("Autodesk.AutoCAD.GraphicsInterface", "Drawable"));
+        }
+
         [Fact]
         public void Sistema_CambiarVariablesDeSistemaODelDibujo()
         {

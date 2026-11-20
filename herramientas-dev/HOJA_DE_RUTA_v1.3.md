@@ -80,8 +80,9 @@ Resueltos después:
 Siguen abiertos:
 
 - `ejecutar_codigo` (revisión previa del 15/11/2026, H4): **comprobado el 20/11/2026** (C2 de la ronda D): la lista
-  blanca rechaza al compilar la lectura de `Bounds`, que solo declara `GraphicsInterface.Drawable`; las propiedades
-  que `DBObject` vuelve a declarar (`Id`) sí compilan. Queda decidir, en otra sesión, si se permite leer `Bounds`.
+  blanca rechazaba al compilar la lectura de `Bounds`, que solo declara `GraphicsInterface.Drawable`; las propiedades
+  que `DBObject` vuelve a declarar (`Id`) sí compilan. Desde la ronda E (tarea 7.1) se permite leer `Bounds`, **por
+  verificar** en Civil 3D. `DrawableType` y el resto de `GraphicsInterface` siguen bloqueados.
 - La evaluación marca OK comprobaciones manuales que no hace (curvas de la tarea 1, cálculo manual de la 8, informe de
   Civil 3D de la 9): aclararlo en `tareas.yaml` o en el prompt de evaluación.
 

@@ -10,6 +10,7 @@ import pytest
 
 import norma as n
 import norma_alineamiento as ne
+import norma_peralte as npe
 from base_norma_ejemplo import SEGUNDA, TERCERA, crear_base
 from conftest import ejecutar
 
@@ -290,7 +291,9 @@ def test_tercera_clase_propone_el_radio_sin_transicion_y_verifica_la_simulacion(
     assert v["resumen"]["No cumple"] == 0 and v["lecturas"] == {"simulacion": "id-crear-2"}
     assert filas(v, "Curva PI 1", "Radio para prescindir")[0]["resultado"] == "Cumple"
     assert filas(v, "Tangente PI 1–PI 2", "Tangente mínima")[0]["valor_diseno"] == 270
-    assert v["avisos"].count(n.AVISO_TRANSICION_PERALTE) == 1, "a) el aviso de 302.05.06, una sola vez"
+    # a) el aviso de 302.05.06, una sola vez. La base de ejemplo no trae peralte_figura: desde la tarea 7.2 el aviso
+    # dice ese motivo (con la figura, cada curva lleva su fila con la cifra; ver test_norma.py)
+    assert v["avisos"].count(n.aviso_transicion_sin_lectura(npe.MOTIVO_SIN_FIGURA)) == 1
 
 
 def test_escritura_real_adjunta_la_verificacion_con_listar_pis(servidor, puente, plugin):

@@ -195,7 +195,9 @@ def test_el_termino_de_velocidad_es_el_de_la_norma():
     assert f["termino_velocidad"] != pytest.approx(0.05 * 30 / math.sqrt(25))
 
 
-def test_dos_curvas_en_el_borde_interior_con_factor(servidor, puente, plugin):
+def test_dos_curvas_en_el_borde_interior_sin_factor_por_defecto(servidor, puente, plugin):
+    """P5, opción F (decidida por el dueño el 20/11/2026): sin reduccion_t30220 se aplica Sa entero, aunque la calzada
+    sea de 7,20 m y el radio esté en la T302.20. Antes (opción A) se aplicaba el factor por defecto: cambio pedido."""
     r = crear(puente, eje="Eje 1", simular=True, pedido="bordes con sobreancho", **PROYECTO)
     assert llamadas(servidor) == ["listar_pis", HERRAMIENTA]
     args, ens = enviados(servidor)
@@ -203,11 +205,11 @@ def test_dos_curvas_en_el_borde_interior_con_factor(servidor, puente, plugin):
     assert args["simular"] is True and args["pedido"] == "bordes con sobreancho"
     for campo in ns.CAMPOS_PROYECTO:
         assert campo not in args
-    esperado = round(sa(2, 80, L_B2, 60) * 0.5, 4)   # factor de EJEMPLO 0,5 para R = 80
+    entero = round(sa(2, 80, L_B2, 60), 4)
     assert ens == [
-        {"borde": "izquierdo", "progresiva_inicial": 220, "progresiva_final": 345.6637, "sobreancho": esperado,
+        {"borde": "izquierdo", "progresiva_inicial": 220, "progresiva_final": 345.6637, "sobreancho": entero,
          "longitud_transicion": 40},
-        {"borde": "derecho", "progresiva_inicial": 485.6637, "progresiva_final": 611.3274, "sobreancho": esperado,
+        {"borde": "derecho", "progresiva_inicial": 485.6637, "progresiva_final": 611.3274, "sobreancho": entero,
          "longitud_transicion": 40},
     ]
     p = r["propuesta_norma"]
@@ -218,28 +220,57 @@ def test_dos_curvas_en_el_borde_interior_con_factor(servidor, puente, plugin):
     assert p["proyecto"]["l_m"] == L_B2 and p["proyecto"]["vehiculo_diseno"] == "B2"
     assert p["proyecto"]["vehiculo_nombre"] == "Ómnibus de dos ejes (B2)"
     assert p["proyecto"]["referencia_vehiculo"].startswith("T202.01")
+    assert p["proyecto"]["reduccion_t30220"] is False
     c1 = p["curvas"][0]
     assert c1["borde"] == "izquierdo" and c1["se_aplica"] is True
-    assert c1["sobreancho_sin_factor"] == round(sa(2, 80, L_B2, 60), 4)
-    assert c1["sobreancho_con_factor"] == c1["sobreancho"] == esperado
+    assert c1["sobreancho_sin_factor"] == c1["sobreancho"] == entero
+    # El factor se informa (calzada de 7,20 m y V ≤ 80), pero no se aplica: la respuesta da Sa con factor para comparar.
     assert c1["factor_reduccion"]["valor"] == 0.5 and c1["factor_reduccion"]["referencia"].startswith("T302.20")
-    assert c1["factor_reduccion"]["a_confirmar"] is True
-    assert "× factor 0.5 de la T302.20" in c1["manda"] and "(a confirmar, P5)" in c1["manda"]
+    assert c1["factor_reduccion"]["como"] == "fila de 80 m"
+    assert c1["sobreancho_con_factor"] == round(sa(2, 80, L_B2, 60) * 0.5, 4)   # factor de EJEMPLO 0,5 para R = 80
+    assert c1["reduccion_aplicada"] is False and c1["piso_0_40"] is False
+    assert "Sa entero, sin factor: P5, opción F" in c1["manda"] and "× factor" not in c1["manda"]
+    assert "Sin reducción (por defecto, P5 opción F)" in c1["nota_factor"]
     assert c1["ensanchamiento"]["pis"] == [1]
     assert p["curvas"][1]["borde"] == "derecho"
     pendientes = p["pendiente_de_decision"]
     assert [x["id"] for x in pendientes] == ["P4", "P5", "P6", "P7", "P8"]
-    assert all(x["a_confirmar"] is True and x["opcion_usada"] for x in pendientes)
-    assert pendientes[1]["referencia"].startswith("T302.20") and pendientes[3]["referencia"].startswith("R302.09.03-2")
+    assert all(x["opcion_usada"] for x in pendientes)
+    assert all(x["a_confirmar"] is True for x in pendientes if x["id"] != "P5")
+    p5 = pendientes[1]
+    assert p5["a_confirmar"] is False and p5["opcion"] == "F" and p5["decidida"] == "por el dueño el 20/11/2026"
+    assert [(x["punto"], x["a_confirmar"]) for x in p5["puntos_a_confirmar"]] == [("a", True), ("b", True)]
+    assert "opcional" in p5["puntos_a_confirmar"][0]["texto"] and "0,40 m" in p5["puntos_a_confirmar"][1]["texto"]
+    assert p5["referencia"].startswith("T302.20") and pendientes[3]["referencia"].startswith("R302.09.03-2")
     assert "Sin redondear" in p["nota_redondeo"]
     assert p["lecturas"] == {"listar_pis": "id-listar-pis"}
 
 
+def test_dos_curvas_con_la_reduccion_pedida(servidor, puente, plugin):
+    """Con reduccion_t30220 = true, calzada de 7,20 m y V ≤ 80: Sa × factor de la T302.20 (fila exacta de 80 m)."""
+    r = crear(puente, eje="Eje 1", simular=True, reduccion_t30220=True, **PROYECTO)
+    args, ens = enviados(servidor)
+    assert "reduccion_t30220" not in args
+    reducido = round(sa(2, 80, L_B2, 60) * 0.5, 4)
+    assert [e["sobreancho"] for e in ens] == [reducido, reducido]
+    p = r["propuesta_norma"]
+    assert p["proyecto"]["reduccion_t30220"] is True
+    c1 = p["curvas"][0]
+    assert c1["sobreancho_sin_factor"] == round(sa(2, 80, L_B2, 60), 4)
+    assert c1["sobreancho_con_factor"] == c1["sobreancho"] == reducido
+    assert c1["reduccion_aplicada"] is True and c1["piso_0_40"] is False and "nota_factor" not in c1
+    assert "× factor 0.5 de la T302.20" in c1["manda"] and "(reduccion_t30220, P5 opción F)" in c1["manda"]
+    assert not any("Pediste reduccion_t30220" in a for a in p["avisos"])
+
+
+@pytest.mark.parametrize("reduccion", [False, True])
 @pytest.mark.parametrize("velocidad", [30, 40])
-def test_baja_velocidad_con_curvas_cerradas(servidor, puente, plugin, velocidad):
+def test_baja_velocidad_con_curvas_cerradas(servidor, puente, plugin, velocidad, reduccion):
     """30 y 40 km/h con R = 25 y 30 m (B2): la F46 con V / (10 √R), dentro del rango de la figura 302.18B (sin aviso
-    de velocidad) y el factor de EJEMPLO de la T302.20 solo donde el radio está en la tabla."""
-    r = crear(puente, eje="Eje cerrado", simular=True, **{**PROYECTO, "velocidad_diseno": velocidad})
+    de velocidad). Por defecto Sa entero (P5, opción F); con la reducción, R = 25 usa su fila (EJEMPLO 0,75) y R = 30,
+    entre las filas de 25 y 80 m, el factor mayor de las dos (0,75), sin interpolar."""
+    r = crear(puente, eje="Eje cerrado", simular=True, reduccion_t30220=reduccion,
+              **{**PROYECTO, "velocidad_diseno": velocidad})
     _, ens = enviados(servidor)
     p = r["propuesta_norma"]
     assert not any("figura 302.18B" in a for a in p["avisos"])
@@ -247,29 +278,135 @@ def test_baja_velocidad_con_curvas_cerradas(servidor, puente, plugin, velocidad)
     assert c25["termino_velocidad"] == round(velocidad / (10 * math.sqrt(25)), 4)
     assert c25["termino_geometrico"] == round(2 * (25 - math.sqrt(25 * 25 - L_B2 ** 2)), 4)
     assert c25["sobreancho_sin_factor"] == round(sa(2, 25, L_B2, velocidad), 4)
-    assert c25["factor_reduccion"]["valor"] == 0.75 and c25["sobreancho"] == round(sa(2, 25, L_B2, velocidad) * 0.75, 4)
-    assert c30["factor_reduccion"] is None and c30["sobreancho_con_factor"] is None
-    assert c30["sobreancho"] == round(sa(2, 30, L_B2, velocidad), 4)
+    assert c25["factor_reduccion"]["valor"] == 0.75 and c25["factor_reduccion"]["como"] == "fila de 25 m"
+    assert c30["factor_reduccion"]["valor"] == 0.75 and c30["factor_reduccion"]["radio_tabla"] == 25
+    assert c30["factor_reduccion"]["como"].startswith("entre las filas de 25 y 80 m: el factor mayor")
+    for c, radio in ((c25, 25), (c30, 30)):
+        assert c["sobreancho_con_factor"] == round(sa(2, radio, L_B2, velocidad) * 0.75, 4)
+        assert c["reduccion_aplicada"] is reduccion
+        assert c["sobreancho"] == round(sa(2, radio, L_B2, velocidad) * (0.75 if reduccion else 1), 4)
     if velocidad == 30:
-        assert round(c25["sobreancho_sin_factor"], 2) == 5.27 and round(c30["sobreancho"], 2) == 4.38   # control de la 6.4
+        assert round(c25["sobreancho_sin_factor"], 2) == 5.27 and round(c30["sobreancho_sin_factor"], 2) == 4.38   # 6.4
     assert [(e["borde"], e["progresiva_inicial"], e["progresiva_final"], e["sobreancho"]) for e in ens] == [
         ("izquierdo", 200, 239.2699, c25["sobreancho"]), ("derecho", 400, 447.1239, c30["sobreancho"])]
     assert all(e["longitud_transicion"] == 40 for e in ens)
 
 
 def test_control_a_60_kmh_con_r_400_y_700(servidor, puente, plugin):
-    """R = 400: Sa = 0,58 sin factor; con el factor 0,07 de la T302.20 (fila real, posible errata) quedaría en 0,04 y no
-    se aplicaría (criterio a confirmar, P5). R = 700: Sa = 0,39 < 0,40, no se aplica y se avisa (P7)."""
+    """Por defecto (P5, opción F): R = 400 da Sa = 0,58 entero y se aplica; el factor 0,07 de la T302.20 (fila real,
+    posible errata) se informa: Sa × 0,07 = 0,04, que con el piso queda en 0,40. R = 700: Sa = 0,39 < 0,40, no se
+    aplica y se avisa (P7). Antes (opción A) R = 400 se reducía por defecto y no se aplicaba: cambio pedido."""
     r = crear(puente, eje="Eje control", simular=True, **PROYECTO)
     _, ens = enviados(servidor)
-    assert ens == []
+    assert [(e["borde"], round(e["sobreancho"], 2)) for e in ens] == [("izquierdo", 0.58)]
     c400, c700 = r["propuesta_norma"]["curvas"]
-    assert round(c400["sobreancho_sin_factor"], 2) == 0.58
+    assert round(c400["sobreancho_sin_factor"], 2) == 0.58 and c400["sobreancho"] == round(sa(2, 400, L_B2, 60), 4)
     assert c400["factor_reduccion"]["valor"] == 0.07 and "Posible errata" in c400["factor_reduccion"]["nota"]
-    assert c400["sobreancho"] == round(sa(2, 400, L_B2, 60) * 0.07, 4) and c400["se_aplica"] is False
-    assert round(c700["sobreancho"], 2) == 0.39 and c700["se_aplica"] is False and c700["factor_reduccion"] is None
+    assert c400["factor_reduccion"]["producto"] == round(sa(2, 400, L_B2, 60) * 0.07, 4)
+    assert c400["sobreancho_con_factor"] == 0.4 and c400["se_aplica"] is True and c400["reduccion_aplicada"] is False
+    assert round(c700["sobreancho"], 2) == 0.39 and c700["se_aplica"] is False
+    # 700 m pasa de la última fila de la tabla de ejemplo (450 m, real): su factor, 0,08, con el aviso de posible errata
+    assert c700["factor_reduccion"]["valor"] == 0.08 and "por encima de la última fila" in c700["factor_reduccion"]["como"]
+    assert "Posible errata" in c700["factor_reduccion"]["nota"] and "nota_factor" not in c700
     assert "menor de 0,40 m" in c700["motivo"] and "a confirmar, P7" in c700["motivo"]
     assert any("PI 2: Sa = " in a and "menor de 0,40 m" in a for a in r["propuesta_norma"]["avisos"])
+
+
+def test_control_a_60_kmh_con_la_reduccion_y_el_piso(servidor, puente, plugin):
+    """Con reduccion_t30220: R = 400 da Sa × 0,07 = 0,04 y sube al piso de 0,40 m (Sa ≥ 0,40; punto b a confirmar).
+    R = 700 sigue sin aplicarse: Sa = 0,39 < 0,40, el piso no lo sube (P7)."""
+    r = crear(puente, eje="Eje control", simular=True, reduccion_t30220=True, **PROYECTO)
+    _, ens = enviados(servidor)
+    assert [(e["borde"], e["sobreancho"]) for e in ens] == [("izquierdo", 0.4)]
+    c400, c700 = r["propuesta_norma"]["curvas"]
+    assert c400["sobreancho"] == c400["sobreancho_con_factor"] == 0.4
+    assert c400["reduccion_aplicada"] is True and c400["piso_0_40"] is True
+    assert "con el piso de 0,40 m" in c400["manda"]
+    assert c700["se_aplica"] is False and c700["reduccion_aplicada"] is False and c700["piso_0_40"] is False
+    assert c700["sobreancho"] == round(sa(2, 700, L_B2, 60), 4) < 0.4
+
+
+@pytest.mark.parametrize("cambio, motivo", [({"velocidad_diseno": 90}, "V = 90 km/h pasa de 80"),
+                                            ({"ancho_calzada": 6.6}, "la calzada en tangente es de 6.6 m")])
+def test_reduccion_pedida_que_no_vale_aplica_sa_entero_y_avisa(servidor, puente, plugin, cambio, motivo):
+    """P5, opción F, punto 3: con la reducción pedida a más de 80 km/h o con una calzada distinta de 7,20 m no se reduce:
+    se aplica Sa entero y se avisa por qué."""
+    r = crear(puente, eje="Eje 1", simular=True, reduccion_t30220=True, **{**PROYECTO, **cambio})
+    _, ens = enviados(servidor)
+    v = cambio.get("velocidad_diseno", 60)
+    assert [e["sobreancho"] for e in ens] == [round(sa(2, 80, L_B2, v), 4)] * 2
+    p = r["propuesta_norma"]
+    assert any(a.startswith("Pediste reduccion_t30220, pero " + motivo) and "se aplica el sobreancho entero" in a
+               for a in p["avisos"])
+    for c in p["curvas"]:
+        assert c["factor_reduccion"] is None and c["sobreancho_con_factor"] is None and c["reduccion_aplicada"] is False
+        assert c["sobreancho"] == c["sobreancho_sin_factor"] and c["nota_factor"]
+
+
+# Filas de la T302.20 (DG-2018, pág. 162) que necesitan los valores de control del dueño (tarea 7.5); la tabla entera
+# está en la base de memoria-firma y casos_norma_reales.py repite estos controles contra ella.
+FILAS_CONTROL = [{"radio_m": r, "factor_reduccion": f, "ref": "T302.20"} for r, f in (
+    (25, 0.86), (30, 0.83), (120, 0.54), (130, 0.52), (150, 0.47), (200, 0.38), (400, 0.07), (450, 0.08), (500, 0.05))]
+
+
+def aplicado(velocidad, radio, reduccion, filas=FILAS_CONTROL):
+    """El sobreancho que se aplica (0 si no se aplica) con B2, n = 2 y calzada de 7,20 m."""
+    s = ns.sobreancho_formula(2, radio, L_B2, velocidad)["sobreancho"]
+    factor = ns.factor_de_tabla(filas, radio)["valor"] if velocidad <= 80 else None
+    return ns.decidir(s, factor, reduccion)["sobreancho"]
+
+
+@pytest.mark.parametrize("velocidad, radio, sin_reduccion, con_reduccion", [
+    (30, 25, 5.27, 4.53), (30, 30, 4.38, 3.64), (60, 125, 1.43, 0.77), (60, 150, 1.23, 0.58), (60, 200, 0.98, 0.40),
+    (60, 400, 0.58, 0.40), (60, 500, 0.49, 0.40), (60, 600, 0.43, 0.40), (80, 600, 0.51, 0.40), (80, 700, 0.46, 0.40),
+    (30, 500, 0, 0)])
+def test_valores_de_control_de_la_opcion_f(velocidad, radio, sin_reduccion, con_reduccion):
+    """Valores de control del dueño (P5, opción F; B2, n = 2, calzada de 7,20 m), en m."""
+    assert round(aplicado(velocidad, radio, False), 2) == sin_reduccion
+    assert round(aplicado(velocidad, radio, True), 2) == con_reduccion
+
+
+def test_factor_de_la_tabla_sin_interpolar():
+    """Fila exacta; entre dos filas, el factor mayor de las dos; por debajo de la primera, la primera; por encima de la
+    última (500 m), la última; la fila de 450 m tal como está (0,08)."""
+    def factor(radio):
+        return ns.factor_de_tabla(FILAS_CONTROL, radio)["valor"]
+    assert factor(25) == 0.86 and factor(30) == 0.83 and factor(27) == 0.86
+    assert factor(125) == 0.54 and factor(130) == 0.52 and factor(175) == 0.47
+    assert factor(20) == 0.86 and factor(500) == 0.05 and factor(600) == 0.05 and factor(5000) == 0.05
+    assert factor(400) == 0.07 and factor(425) == 0.08 and factor(450) == 0.08 and factor(475) == 0.08
+    assert ns.factor_de_tabla([], 100) is None
+    assert ns.factor_de_tabla(FILAS_CONTROL, 125)["filas_usadas"] == [120, 130]
+
+
+def test_piso_de_0_40_solo_si_sa_llega():
+    assert ns.reducir(0.58, 0.07) == {"producto": pytest.approx(0.0406), "con_factor": 0.4, "piso": True}
+    assert ns.reducir(2.0, 0.5) == {"producto": 1.0, "con_factor": 1.0, "piso": False}
+    assert ns.reducir(0.39, 0.5)["con_factor"] == pytest.approx(0.195)   # Sa < 0,40: sin piso (y no se aplica, P7)
+    assert ns.decidir(0.39, 0.5, True) == {"se_aplica": False, "reducido": ns.reducir(0.39, 0.5),
+                                           "reduccion_aplicada": False, "sobreancho": 0.0}
+    assert ns.decidir(0.58, None, True)["sobreancho"] == 0.58 and ns.decidir(0.58, 0.07, False)["sobreancho"] == 0.58
+
+
+@pytest.mark.parametrize("reduccion", [False, True])
+@pytest.mark.parametrize("velocidad", [30, 50, 60, 80])
+def test_el_sobreancho_aplicado_nunca_sube_al_crecer_el_radio(velocidad, reduccion):
+    """Barrido de radios de 11 a 1000 m cada 0,5 m (y los radios de la tabla): el sobreancho aplicado no sube."""
+    radios = sorted({11 + 0.5 * i for i in range(1979)} | {f["radio_m"] for f in FILAS_CONTROL})
+    valores = [aplicado(velocidad, r, reduccion) for r in radios]
+    subidas = [(radios[i], valores[i], radios[i + 1], valores[i + 1]) for i in range(len(radios) - 1)
+               if valores[i + 1] > valores[i] + 1e-9]
+    assert subidas == []
+    assert valores[-1] == 0.0 and valores[0] > 0.40
+
+
+def test_resolver_lee_la_reduccion(memoria):
+    with n.BaseNorma(n.localizar_base(str(memoria))) as base:
+        sin, _ = ns.resolver(base, PROYECTO)
+        con, _ = ns.resolver(base, {**PROYECTO, "reduccion_t30220": "sí"})
+        _, faltan = ns.resolver(base, {**PROYECTO, "reduccion_t30220": "quizá"})
+    assert sin["reduccion_t30220"] is False and con["reduccion_t30220"] is True
+    assert [f["dato"] for f in faltan] == ["reduccion_t30220"] and faltan[0]["valores_validos"] == [True, False]
 
 
 def test_control_a_60_kmh_sin_factor_con_otro_ancho(servidor, puente, plugin):
@@ -287,7 +424,10 @@ def test_menos_de_40_cm_no_se_aplica_y_se_crean_los_bordes(servidor, puente, plu
     c = r["propuesta_norma"]["curvas"][0]
     assert c["se_aplica"] is False and c["sobreancho"] == round(sa(2, 300, L_VL, 30), 4)
     assert "menor de 0,40 m" in c["motivo"] and c["ensanchamiento"] is None
-    assert "no está en la T302.20" in c["nota_factor"]
+    # P5, opción F: 300 m está entre las filas de 150 y 400 m (EJEMPLO 0,25 y real 0,07): el mayor, sin interpolar. Antes
+    # (opción A) solo valía el radio exacto y la nota decía «no está en la T302.20»: cambio pedido.
+    assert c["factor_reduccion"]["valor"] == 0.25 and c["factor_reduccion"]["como"].startswith("entre las filas de 150 y 400")
+    assert c["reduccion_aplicada"] is False and "nota_factor" not in c
 
 
 def test_velocidad_mayor_de_80_sin_factor(servidor, puente, plugin):
@@ -318,8 +458,8 @@ def test_zonas_del_mismo_borde_que_se_tocan_se_unen(servidor, puente, plugin):
     assert len(ens) == 1
     e = ens[0]
     assert (e["borde"], e["progresiva_inicial"], e["progresiva_final"]) == ("izquierdo", 200, 450)
-    # el mayor de los dos: R = 80 con el factor de ejemplo 0,5 y R = 100 sin factor (no está en la tabla de ejemplo)
-    assert e["sobreancho"] == round(sa(2, 100, L_B2, 60), 4) > round(sa(2, 80, L_B2, 60) * 0.5, 4)
+    # el mayor de los dos, ambos sin factor (P5, opción F; antes R = 80 se reducía con el factor de ejemplo 0,5): R = 80
+    assert e["sobreancho"] == round(sa(2, 80, L_B2, 60), 4) > round(sa(2, 100, L_B2, 60), 4)
     assert any("se tocan: se unen" in a for a in r["propuesta_norma"]["avisos"])
     assert r["propuesta_norma"]["curvas"][1]["ensanchamiento"]["pis"] == [1, 2]
 

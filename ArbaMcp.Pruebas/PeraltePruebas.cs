@@ -344,5 +344,160 @@ namespace ArbaMcp.Pruebas
             Assert.Contains("POR VERIFICAR", (string)d["como"]);
             Assert.Equal("Aplicar peralte en el eje 'Eje 1': 1 curva de peralte (PI 1) con 2 progresivas críticas", Peralte.Accion("Eje 1", Peralte.LeerCurvas(J(UnaCurva))));
         }
+
+        // ------------------------------------------------------------------ peralte entre progresivas críticas (tarea 7.4)
+        /// <summary>Curva del PI 1 con la transición completa: bombeo normal, nivelado, invertido, peralte total de 120 a 140 y vuelta.</summary>
+        private const string CurvaCompleta = "[{\"pi\": 1, \"estaciones\": ["
+            + "{\"progresiva\": 60, \"tipo\": \"EndNormalCrown\", \"pendientes\": {\"Izq\": -2, \"Der\": -2}},"
+            + "{\"progresiva\": 75, \"tipo\": \"LevelCrown\", \"pendientes\": {\"Izq\": 0, \"Der\": -2}},"
+            + "{\"progresiva\": 90, \"tipo\": \"ReverseCrown\", \"pendientes\": {\"Izq\": 2, \"Der\": -2}},"
+            + "{\"progresiva\": 120, \"tipo\": \"BeginFullSuper\", \"pendientes\": {\"Izq\": 6, \"Der\": -6}},"
+            + "{\"progresiva\": 140, \"tipo\": \"EndFullSuper\", \"pendientes\": {\"Izq\": 6, \"Der\": -6}},"
+            + "{\"progresiva\": 170, \"tipo\": \"BeginNormalCrown\", \"pendientes\": {\"Izq\": -2, \"Der\": -2}}]}]";
+
+        [Fact]
+        public void LeeProgresivasOpcionalesEnOrdenYConComa()
+        {
+            Assert.Null(Peralte.LeerProgresivas(default));
+            Assert.Null(Peralte.LeerProgresivas(J("null")));
+            Assert.Equal(new[] { 550.0, 100, 280.5 }, Peralte.LeerProgresivas(J("[550, 100, \"280,5\"]")));
+        }
+
+        [Theory]
+        [InlineData("100", "debe ser una lista JSON")]
+        [InlineData("[]", "está vacía")]
+        [InlineData("[100, \"x\"]", "La progresiva 2 de 'progresivas' debe ser un número")]
+        [InlineData("[100, \"NaN\"]", "número finito")]
+        public void RechazaProgresivasMalFormadasSinLeerElDibujo(string json, string mensaje)
+        {
+            var ex = Assert.Throws<ArgumentException>(() => Peralte.LeerProgresivas(J(json)));
+            Assert.Contains(mensaje, ex.Message);
+        }
+
+        [Fact]
+        public void RechazaMasProgresivasDelMaximo()
+        {
+            string json = "[" + string.Join(",", Enumerable.Range(1, Peralte.MaximoProgresivas + 1)) + "]";
+            var ex = Assert.Throws<ArgumentException>(() => Peralte.LeerProgresivas(J(json)));
+            Assert.Contains("el máximo es " + Peralte.MaximoProgresivas, ex.Message);
+        }
+
+        [Fact]
+        public void PendientesEnProgresivasEnPorcentajeConErroresEnSuLugar()
+        {
+            var filas = Peralte.PendientesEnProgresivas(new[] { 100.0, 280, 900 }, 0, 831.3274, new[] { "Izq", "Der", "Malo", "Infinito" }, (pk, seg) =>
+            {
+                if (seg == "Malo") throw new InvalidOperationException("envoltorio", new ArgumentException("eInvalidInput"));
+                if (seg == "Infinito") return double.NaN;
+                return pk == 280 ? (seg == "Izq" ? 0.06 : -0.06) : -0.02;
+            });
+            Assert.Equal(3, filas.Count);
+            var recta = (Dictionary<string, object>)filas[0]["pendientes"];
+            Assert.Equal(-2.0, (double?)recta["Izq"]);
+            Assert.Equal("error: ArgumentException: eInvalidInput", recta["Malo"]);
+            Assert.StartsWith("error: Civil 3D devolvió un valor no finito", (string)recta["Infinito"]);
+            Assert.False(filas[0].ContainsKey("error"));
+            var curva = (Dictionary<string, object>)filas[1]["pendientes"];
+            Assert.Equal(6.0, (double?)curva["Izq"]);
+            Assert.Equal(-6.0, (double?)curva["Der"]);
+            Assert.Equal("0+280.000", filas[1]["progresiva_texto"]);
+            // Fuera del eje: no se lee
+            Assert.Empty((Dictionary<string, object>)filas[2]["pendientes"]);
+            Assert.StartsWith("Fuera del eje (de 0+000.000 a 0+831.327)", (string)filas[2]["error"]);
+        }
+
+        [Fact]
+        public void PuntoDeComprobacionEnElCentroDelPeralteTotal()
+        {
+            var puntos = Peralte.PuntosEntreProgresivas(Peralte.LeerCurvas(J(CurvaCompleta)));
+            var p = Assert.Single(puntos);
+            Assert.Equal(1, p.Pi);
+            Assert.Equal(130.0, p.Progresiva);
+            Assert.Null(p.Motivo);
+            Assert.Contains("BeginFullSuper", p.Criterio);
+            Assert.Equal(new[] { "Izq", "Der" }, p.Escrito.Select(x => x.Key));
+            Assert.Equal(new[] { 6.0, -6.0 }, p.Escrito.Select(x => x.Value));
+        }
+
+        [Fact]
+        public void SinPeralteTotalUsaElTramoDePendientesIgualesMasInclinado()
+        {
+            // Sin BeginFullSuper ni EndFullSuper: dos tramos de pendientes iguales (bombeo -2 de 0 a 10 y 5 % de 50 a 70)
+            const string json = "[{\"pi\": 1, \"estaciones\": ["
+                + "{\"progresiva\": 0, \"tipo\": \"A\", \"pendientes\": {\"Izq\": -2, \"Der\": -2}},"
+                + "{\"progresiva\": 10, \"tipo\": \"B\", \"pendientes\": {\"Izq\": -2, \"Der\": -2}},"
+                + "{\"progresiva\": 50, \"tipo\": \"C\", \"pendientes\": {\"Izq\": 5, \"Der\": -5}},"
+                + "{\"progresiva\": 70, \"tipo\": \"D\", \"pendientes\": {\"izq\": 5, \"Der\": -5}}]}]";
+            var p = Assert.Single(Peralte.PuntosEntreProgresivas(Peralte.LeerCurvas(J(json))));
+            Assert.Equal(60.0, p.Progresiva);
+            Assert.Contains("entre C y D", p.Criterio);
+            Assert.Equal(new[] { 5.0, -5.0 }, p.Escrito.Select(x => x.Value));
+        }
+
+        [Fact]
+        public void BeginYEndFullSuperDistintosSeComparanConLaMedia()
+        {
+            const string json = "[{\"pi\": 1, \"estaciones\": ["
+                + "{\"progresiva\": 100, \"tipo\": \"beginfullsuper\", \"pendientes\": {\"Izq\": 4, \"Der\": -4, \"Solo\": 1}},"
+                + "{\"progresiva\": 110, \"tipo\": \"EndFullSuper\", \"pendientes\": {\"Izq\": 6, \"Der\": -6}}]}]";
+            var p = Assert.Single(Peralte.PuntosEntreProgresivas(Peralte.LeerCurvas(J(json))));
+            Assert.Equal(105.0, p.Progresiva);
+            Assert.Equal(new[] { "Izq", "Der" }, p.Escrito.Select(x => x.Key));   // 'Solo' no está en las dos
+            Assert.Equal(new[] { 5.0, -5.0 }, p.Escrito.Select(x => x.Value));
+        }
+
+        [Fact]
+        public void SinTramoNoSeComprueba()
+        {
+            const string json = "[{\"pi\": 1, \"estaciones\": ["
+                + "{\"progresiva\": 100, \"tipo\": \"A\", \"pendientes\": {\"Izq\": -2}},"
+                + "{\"progresiva\": 110, \"tipo\": \"B\", \"pendientes\": {\"Izq\": 6}}]}]";
+            var p = Assert.Single(Peralte.PuntosEntreProgresivas(Peralte.LeerCurvas(J(json))));
+            Assert.Null(p.Progresiva);
+            Assert.Contains("no tiene BeginFullSuper y EndFullSuper", p.Motivo);
+            var filas = Peralte.ComprobarEntreProgresivas(new[] { p }, (pk, s) => throw new InvalidOperationException("no debe leer"), out var avisos);
+            Assert.Null(Assert.Single(filas)["coincide"]);
+            Assert.Equal(p.Motivo, Assert.Single(avisos));
+        }
+
+        [Fact]
+        public void ComprobacionCoincideSinAvisos()
+        {
+            var puntos = Peralte.PuntosEntreProgresivas(Peralte.LeerCurvas(J(CurvaCompleta)));
+            var leidos = new List<double>();
+            var filas = Peralte.ComprobarEntreProgresivas(puntos, (pk, s) => { leidos.Add(pk); return s == "Izq" ? 0.0603 : -0.06; }, out var avisos);
+            Assert.Empty(avisos);
+            Assert.Equal(new[] { 130.0, 130.0 }, leidos);
+            Assert.Equal(2, filas.Count);
+            Assert.All(filas, f => Assert.Equal(true, f["coincide"]));
+            Assert.Equal(6.03, (double?)filas[0]["leido"]);
+            Assert.Equal(0.03, (double)filas[0]["diferencia"], 9);
+        }
+
+        [Fact]
+        public void ComprobacionQueNoCoincideDaAvisoNoError()
+        {
+            var puntos = Peralte.PuntosEntreProgresivas(Peralte.LeerCurvas(J(CurvaCompleta)));
+            // El eje devuelve el bombeo normal en el centro de la curva: lo que pasaría si no interpola entre progresivas
+            var filas = Peralte.ComprobarEntreProgresivas(puntos, (pk, s) => s == "Izq" ? -0.02 : throw new Exception("eNotApplicable"), out var avisos);
+            Assert.Equal(false, filas[0]["coincide"]);
+            Assert.Equal(6.0, (double?)filas[0]["escrito"]);
+            Assert.Equal(-2.0, (double?)filas[0]["leido"]);
+            Assert.Null(filas[1]["coincide"]);
+            Assert.Equal("error: Exception: eNotApplicable", filas[1]["error"]);
+            Assert.Equal(2, avisos.Count);
+            Assert.Equal("El eje no devuelve el peralte escrito en el pk 0+130.000 (PI 1; segmento Izq: leído -2 %, escrito 6 %): el corredor podría no seguirlo. "
+                + "Mira listar_peralte con progresivas.", avisos[0]);
+            Assert.StartsWith("No se pudo leer el peralte en el pk 0+130.000 (PI 1) con Alignment.GetCrossSlopeAtStation (segmento Der: error: Exception: eNotApplicable)", avisos[1]);
+        }
+
+        [Fact]
+        public void ToleranciaDeLaComprobacionEsDeCincoCentesimas()
+        {
+            var puntos = Peralte.PuntosEntreProgresivas(Peralte.LeerCurvas(J(CurvaCompleta)));
+            Peralte.ComprobarEntreProgresivas(puntos, (pk, s) => s == "Izq" ? 0.0606 : -0.06, out var avisos);
+            Assert.Single(avisos);   // 6,06 frente a 6: 0,06 puntos > 0,05
+            Assert.Contains("leído 6.06 %, escrito 6 %", avisos[0]);
+        }
     }
 }

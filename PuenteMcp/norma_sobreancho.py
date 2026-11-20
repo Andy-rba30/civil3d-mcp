@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """crear_bordes_calzada con la norma (1.21.0): sobreancho de cada curva según la DG-2018 (sección 302.09).
 
-El puente amplía la herramienta del plugin con cinco parámetros opcionales: velocidad_diseno, numero_carriles,
-ancho_calzada, vehiculo_diseno y longitud_transicion. Con alguno de ellos, el puente:
+El puente amplía la herramienta del plugin con seis parámetros opcionales: velocidad_diseno, numero_carriles,
+ancho_calzada, vehiculo_diseno, longitud_transicion y reduccion_t30220. Con alguno de ellos, el puente:
 
 1. valida los datos del proyecto; si falta alguno, responde 'faltan' sin llamar a Civil 3D;
 2. lee las curvas del eje con listar_pis (y comprueba que el dibujo está en metros);
 3. calcula el sobreancho de cada curva circular con la F46 de la 302.09, Sa = n (R − √(R² − L²)) + V / (10 √R), con
-   L la del vehículo de diseño (T202.01), y el factor de reducción de la T302.20 cuando aplica (criterio a confirmar);
+   L la del vehículo de diseño (T202.01); el factor de reducción de la T302.20 solo si se pide (P5, opción F);
 4. lo pone solo en el borde INTERIOR de la curva (giro a la izquierda → borde izquierdo), en el tramo del PC al PT,
    con un desarrollo lineal (F47) de 40 m que termina en el PC y empieza en el PT (o longitud_transicion);
 5. llama al plugin con esos ensanchamientos y devuelve su respuesta más 'propuesta_norma'.
@@ -20,10 +20,16 @@ Base: dg2018.sqlite de memoria-firma, versión 1.2 de la tarea 6.4 (commit 13776
 sobreancho_reduccion (T302.20: radio_m y factor_reduccion, para calzadas de 7,20 m en tangente), las fórmulas F46 a F49
 y las reglas R302.09.02-1 a -4 y R302.09.03-1 a -4. sobreancho_holguras (T302.19) es solo informativa: la F46 no la usa.
 
-Decisiones pendientes del dueño (P4 a P8 de la 6.4): se usa la opción recomendada y la respuesta la marca a_confirmar.
+Decisiones del dueño (P4 a P8 de la 6.4): P4, P6, P7 y P8 usan la opción recomendada y la respuesta las marca
+a_confirmar; P5 la decidió el dueño el 20/11/2026 (opción F), con dos puntos que Jose debe confirmar.
 - P4 (R302.09.03-1): el segundo término, V / (10 √R), lo evalúa el diseñador; se incluye siempre (la F46 entera).
-- P5 (T302.20): el factor se aplica solo con calzada de 7,20 m, V ≤ 80 km/h y el radio exacto de la tabla; la
-  respuesta da Sa con y sin factor.
+- P5 (T302.20), opción F: por defecto se aplica Sa entero, sin factor, en cualquier calzada y velocidad. La reducción
+  solo si se pide (reduccion_t30220 = true, por defecto false) y solo con calzada en tangente de 7,20 m y V ≤ 80 km/h:
+  Sa reducido = Sa × factor; entre dos filas de la tabla, el factor mayor de las dos (sin interpolar); por debajo de la
+  primera fila, el de la primera; por encima de la última (500 m), el de la última; el reducido no baja de 0,40 m
+  mientras Sa ≥ 0,40 m. La fila de 450 m se usa como está (posible errata, con aviso). Si se pide con V > 80 km/h o con
+  otra calzada, no se reduce y se avisa. La respuesta da Sa sin y con factor y cuál se aplicó. A confirmar por Jose:
+  (a) que la reducción sea opcional y no automática en 7,20 m; (b) que con reducción el piso sea 0,40 m.
 - P6 (T202.01): los articulados no tienen L; si el usuario elige uno, 'faltan' con los vehículos que sí la tienen.
 - P7 (R302.09.03-2): «un valor mínimo de 0.40 m de sobreancho para justificar su adopción»: si Sa < 0,40 m no se
   aplica y se avisa; no se sube a 0,40.
@@ -31,7 +37,7 @@ Decisiones pendientes del dueño (P4 a P8 de la 6.4): se usa la opción recomend
 Además: con V > 80 km/h, «el valor del sobreancho será calculado para cada caso» (R302.09.03-4): fórmula sin factor y
 aviso; velocidades fuera de 30 a 80 km/h (figura 302.18B): fórmula y aviso. Sin redondeo: el valor exacto.
 Ningún valor de la norma está escrito en este archivo, salvo los umbrales que cita el texto (0,40 m, 40 m, 7,20 m, 30 y
-80 km/h).
+80 km/h) y los radios de la posible errata de la T302.20.
 """
 import json
 import math
@@ -44,12 +50,17 @@ CAMPOS_PROYECTO = {
                                 "(numero_carriles, ancho_calzada, vehiculo_diseno) el puente calcula el sobreancho de "
                                 "cada curva con la DG-2018 (302.09)"),
     "numero_carriles": (int, "Número de carriles de la calzada (n de la fórmula del sobreancho, F46 de la 302.09)"),
-    "ancho_calzada": (float, "Ancho de la calzada en tangente, en m (decide el factor de reducción de la T302.20 y, si "
-                             "no pasas 'desplazamiento', la media calzada = ancho_calzada / 2)"),
+    "ancho_calzada": (float, "Ancho de la calzada en tangente, en m (la reducción de la T302.20 solo vale con 7,20 m; y, "
+                             "si no pasas 'desplazamiento', la media calzada = ancho_calzada / 2)"),
     "vehiculo_diseno": (str, "Vehículo de diseño de la T202.01 por su código (VL, B2...) o su nombre: da L, la distancia "
                              "del frente al eje trasero. Si no está o es articulado (sin L), 'faltan' trae los válidos"),
     "longitud_transicion": (float, "Longitud (m) del desarrollo lineal del sobreancho, antes del PC y después del PT. "
                                    "Por defecto 40 m (302.09)"),
+    "reduccion_t30220": (bool, "Reducir el sobreancho con el factor de la Tabla 302.20 (DG-2018). Por defecto false: se "
+                               "aplica el sobreancho entero de la fórmula (decisión P5 del dueño, opción F). Con true, y "
+                               "solo con ancho_calzada de 7,20 m y velocidad_diseno ≤ 80 km/h: sobreancho × factor (entre "
+                               "dos radios de la tabla, el factor mayor; sin bajar de 0,40 m). Con otra calzada o más de "
+                               "80 km/h no se reduce y se avisa. Úsalo solo si el usuario lo pide"),
 }
 OBLIGATORIOS = ("velocidad_diseno", "numero_carriles", "ancho_calzada", "vehiculo_diseno")
 # Lo que el plugin tiene que publicar para que el puente amplíe la herramienta.
@@ -61,14 +72,16 @@ DESCRIPCION = (
     "\n\nCON LA NORMA DG-2018 (puente, desde 1.21.0): con 'velocidad_diseno', 'numero_carriles', 'ancho_calzada' y "
     "'vehiculo_diseno' (código de la T202.01: VL, B2...) dentro de 'args' (y 'longitud_transicion' opcional), el puente "
     "lee las curvas del eje con listar_pis, calcula el sobreancho de cada curva con la F46 de la 302.09, Sa = "
-    "n(R − √(R² − L²)) + V/(10√R), y el factor de reducción de la T302.20 cuando aplica, y lo pone solo en el borde "
-    "INTERIOR de la curva, del PC al PT, con un desarrollo lineal de 40 m (o longitud_transicion) antes del PC y después "
-    "del PT. Un sobreancho menor de 0,40 m no se aplica. No pases 'ensanchamientos' (los calcula el puente) ni "
+    "n(R − √(R² − L²)) + V/(10√R), entero (sin el factor de la T302.20: decisión P5 del dueño), y lo pone solo en el "
+    "borde INTERIOR de la curva, del PC al PT, con un desarrollo lineal de 40 m (o longitud_transicion) antes del PC y "
+    "después del PT. Un sobreancho menor de 0,40 m no se aplica. Solo si el usuario pide la reducción de la T302.20, "
+    "pasa 'reduccion_t30220': true (vale con calzada de 7,20 m y V ≤ 80 km/h; el reducido no baja de 0,40 m; si no "
+    "vale, se aplica el entero y se avisa). No pases 'ensanchamientos' (los calcula el puente) ni "
     "'desplazamiento' salvo que el usuario lo pida (por defecto ancho_calzada / 2). Si falta un dato responde 'faltan' "
     "sin llamar a Civil 3D: pregúntalo al usuario, no lo supongas. Devuelve la respuesta del plugin más "
-    "'propuesta_norma' (por curva: R, V, n, L, los términos de la fórmula, Sa sin y con factor, si se aplica, el borde y "
-    "las progresivas; qué manda; y 'pendiente_de_decision', las decisiones del dueño que se tomaron a_confirmar: "
-    "díselas). Simula primero (simular=true). Necesita MEMORIA_FIRMA_DIR."
+    "'propuesta_norma' (por curva: R, V, n, L, los términos de la fórmula, Sa sin y con factor, cuál se aplicó, si se "
+    "aplica, el borde y las progresivas; qué manda; y 'pendiente_de_decision', las decisiones del dueño, con lo que "
+    "queda a_confirmar: díselo). Simula primero (simular=true). Necesita MEMORIA_FIRMA_DIR."
 )
 DESCRIPCION_DESPLAZAMIENTO = " Con 'velocidad_diseno' no hace falta: por defecto ancho_calzada / 2."
 # Para main._crear_handler (forma común de las herramientas ampliadas con la norma, 1.20.0): los parámetros que se
@@ -80,6 +93,7 @@ SECCION = "302.09"
 PAGINAS_IMPRESAS = "159 a 162"
 REF_VEHICULOS = "T202.01"
 REF_REDUCCION = "T302.20"
+CAMPO_REDUCCION = "reduccion_t30220"
 FORMULA_SA = "F46"
 FORMULA_DESARROLLO = "F47"
 REGLA_DESARROLLO = "R302.09.02-1"
@@ -106,19 +120,30 @@ POSIBLE_ERRATA_RADIOS_M = (400.0, 450.0)
 FORMULA = "Sa = n (R − √(R² − L²)) + V / (10 √R)"
 CRITERIO = (
     "Por curva circular: Sa = n (R − √(R² − L²)) + V / (10 √R) (F46, 302.09), con L la del vehículo de diseño "
-    "(T202.01), por el factor de reducción de la T302.20 si la calzada en tangente es de 7,20 m, V no pasa de 80 km/h y "
-    "el radio está en la tabla (a confirmar, P5). Sin redondear. Si Sa < 0,40 m no se aplica (P7). Solo en el borde "
+    "(T202.01), entera: sin el factor de la T302.20 (P5, opción F, decidida por el dueño el 20/11/2026). Solo con "
+    "reduccion_t30220 = true, calzada en tangente de 7,20 m y V ≤ 80 km/h, Sa × factor de la T302.20 (entre dos radios "
+    "de la tabla, el factor mayor; por debajo de la primera fila, el de la primera; por encima de la última, el de la "
+    "última), sin bajar de 0,40 m. Sin redondear. Si Sa < 0,40 m no se aplica (P7). Solo en el borde "
     "interior (giro a la izquierda → borde izquierdo), sobreancho pleno del PC al PT y desarrollo lineal (F47) de 40 m "
     "(o longitud_transicion) que termina en el PC y empieza en el PT, recortado si no cabe en el eje (P8). Si las zonas "
     "de dos curvas del mismo borde se tocan, se unen con el mayor sobreancho."
 )
-# Decisiones pendientes del dueño (6.4): la opción usada es la recomendada, siempre a_confirmar.
+# Decisiones del dueño (6.4): P4, P6, P7 y P8 con la opción recomendada, a_confirmar; P5 decidida (opción F, 20/11/2026),
+# con dos puntos a_confirmar.
 PENDIENTES = [
     {"id": "P4", "tema": "El segundo término de la F46, V / (10 √R), que «lo evalúa el diseñador»",
      "referencia": REGLA_SEGUNDO_TERMINO, "opcion_usada": "Se incluye siempre: la F46 entera.", "a_confirmar": True},
     {"id": "P5", "tema": "Cómo se aplica el factor de reducción de la T302.20",
-     "referencia": REF_REDUCCION, "opcion_usada": "Solo con calzada de 7,20 m en tangente, V ≤ 80 km/h y el radio exacto "
-     "de la tabla; la respuesta da Sa sin y con factor.", "a_confirmar": True},
+     "referencia": REF_REDUCCION, "opcion": "F", "decidida": "por el dueño el 20/11/2026",
+     "opcion_usada": "Por defecto se aplica Sa entero, sin factor, en cualquier calzada y velocidad. La reducción solo si "
+     "se pide (reduccion_t30220 = true) y solo con calzada de 7,20 m en tangente y V ≤ 80 km/h: Sa × factor (entre dos "
+     "radios de la tabla, el factor mayor de los dos; por encima de 500 m, el último), sin bajar de 0,40 m mientras "
+     "Sa ≥ 0,40 m. La respuesta da Sa sin y con factor y cuál se aplicó.", "a_confirmar": False,
+     "puntos_a_confirmar": [
+         {"punto": "a", "texto": "Que la reducción de la T302.20 sea opcional (reduccion_t30220) y no automática en las "
+                                 "calzadas de 7,20 m.", "a_confirmar": True},
+         {"punto": "b", "texto": "Que, con la reducción, el sobreancho reducido no baje de 0,40 m (el piso de la "
+                                 "R302.09.03-2).", "a_confirmar": True}]},
     {"id": "P6", "tema": "L de los vehículos articulados (NULL en la T202.01)",
      "referencia": REF_VEHICULOS, "opcion_usada": "No se inventa: si el usuario elige un articulado, 'faltan' con los "
      "vehículos que sí tienen L.", "a_confirmar": True},
@@ -204,6 +229,22 @@ def _numero(valor):
     return v if math.isfinite(v) else None
 
 
+def _booleano(valor):
+    """True/False (también 'true', 'sí', '1'...); None si no se entiende. Sin valor: False (por defecto, P5)."""
+    if valor is None:
+        return False
+    if isinstance(valor, bool):
+        return valor
+    if isinstance(valor, (int, float)) and valor in (0, 1):
+        return bool(valor)
+    texto = n.normalizar(valor)
+    if texto in ("true", "si", "1", "verdadero"):
+        return True
+    if texto in ("false", "no", "0", "falso"):
+        return False
+    return None
+
+
 def _texto_vehiculo(v: dict) -> str:
     return f"{v['codigo']} ({v['tipo_vehiculo']}, L = {n._limpio(v['l_m'])} m)" if v.get("tipo_vehiculo") else v["codigo"]
 
@@ -251,6 +292,10 @@ def resolver(base: n.BaseNorma, proyecto: dict) -> tuple[dict | None, list]:
     if proyecto.get("longitud_transicion") is not None and (lt is None or lt <= 0):
         faltan.append(n._falta("longitud_transicion", "Longitud del desarrollo del sobreancho en m (> 0); sin ella, 40 m "
                                                       "(302.09)."))
+    reducir = _booleano(proyecto.get(CAMPO_REDUCCION))
+    if reducir is None:
+        faltan.append(n._falta(CAMPO_REDUCCION, f"true o false: reducir el sobreancho con el factor de la {REF_REDUCCION} "
+                                                "(por defecto false, P5).", [True, False]))
     if faltan:
         return None, faltan
     return {
@@ -263,6 +308,7 @@ def resolver(base: n.BaseNorma, proyecto: dict) -> tuple[dict | None, list]:
         "referencia_vehiculo": _cita(base, elegido.get("ref") or REF_VEHICULOS),
         "longitud_transicion": lt if lt is not None else LONGITUD_TRANSICION_M,
         "longitud_transicion_origen": "usuario" if lt is not None else "por defecto, 40 m (302.09, P8)",
+        "reduccion_t30220": reducir,
     }, []
 
 
@@ -276,26 +322,74 @@ def sobreancho_formula(carriles: int, radio: float, l_m: float, v_kmh: float) ->
     return {"termino_geometrico": geometrico, "termino_velocidad": velocidad, "sobreancho": geometrico + velocidad}
 
 
+def factor_de_tabla(filas: list[dict], radio: float) -> dict | None:
+    """Factor de la T302.20 para un radio (P5, opción F), sin interpolar: la fila exacta; entre dos filas, el factor
+    MAYOR de las dos vecinas; por debajo de la primera fila, el de la primera; por encima de la última, el de la última.
+    Devuelve {valor, texto_pdf, radio_tabla, ref, como, filas_usadas} o None si la tabla está vacía."""
+    orden = sorted(filas, key=lambda f: float(f["radio_m"]))
+    if not orden:
+        return None
+
+    def salida(fila, como, usadas):
+        return {"valor": float(fila["factor_reduccion"]), "texto_pdf": fila.get("factor_texto_pdf"),
+                "radio_tabla": float(fila["radio_m"]), "ref": fila.get("ref"), "como": como,
+                "filas_usadas": [float(f["radio_m"]) for f in usadas]}
+
+    exacta = next((f for f in orden if abs(float(f["radio_m"]) - radio) <= n.TOLERANCIA), None)
+    if exacta is not None:
+        return salida(exacta, f"fila de {n._limpio(exacta['radio_m'])} m", [exacta])
+    primera, ultima = orden[0], orden[-1]
+    if radio < float(primera["radio_m"]):
+        return salida(primera, f"radio por debajo de la primera fila ({n._limpio(primera['radio_m'])} m): su factor",
+                      [primera])
+    if radio > float(ultima["radio_m"]):
+        return salida(ultima, f"radio por encima de la última fila ({n._limpio(ultima['radio_m'])} m): su factor", [ultima])
+    for antes, despues in zip(orden, orden[1:]):
+        if float(antes["radio_m"]) < radio < float(despues["radio_m"]):
+            mayor = antes if float(antes["factor_reduccion"]) >= float(despues["factor_reduccion"]) else despues
+            return salida(mayor, f"entre las filas de {n._limpio(antes['radio_m'])} y {n._limpio(despues['radio_m'])} m: "
+                                 "el factor mayor de las dos, sin interpolar", [antes, despues])
+    return None
+
+
+def reducir(sobreancho: float, factor: float) -> dict:
+    """Sa × factor (P5, opción F). Mientras Sa ≥ 0,40 m, el reducido no baja de 0,40 m (punto b, a confirmar).
+    Devuelve {producto, con_factor, piso}."""
+    producto = sobreancho * factor
+    llega = n.cumple(sobreancho, SOBREANCHO_MINIMO_M, n.MINIMO)
+    con_factor = max(producto, SOBREANCHO_MINIMO_M) if llega else producto
+    return {"producto": producto, "con_factor": con_factor, "piso": llega and producto < SOBREANCHO_MINIMO_M}
+
+
+def decidir(sobreancho: float, factor: float | None, pide_reduccion: bool) -> dict:
+    """Lo que se aplica en una curva (P5, opción F, y P7). Sin reducción pedida, o sin factor (calzada distinta de
+    7,20 m o V > 80 km/h), Sa entero; con reducción pedida y factor, Sa × factor con el piso de 0,40 m. Si Sa < 0,40 m,
+    nada. Devuelve {se_aplica, reducido (o None), reduccion_aplicada, sobreancho (el aplicado, 0 si no se aplica)}."""
+    llega = n.cumple(sobreancho, SOBREANCHO_MINIMO_M, n.MINIMO)
+    reducido = reducir(sobreancho, factor) if factor is not None else None
+    aplica_reduccion = bool(pide_reduccion) and reducido is not None and llega
+    valor = (reducido["con_factor"] if aplica_reduccion else sobreancho) if llega else 0.0
+    return {"se_aplica": llega, "reducido": reducido, "reduccion_aplicada": aplica_reduccion, "sobreancho": valor}
+
+
 def factor_reduccion(base: n.BaseNorma, ctx: dict, radio: float) -> tuple[dict | None, str | None]:
-    """(factor, motivo por el que no se aplica). Criterio a confirmar (P5): calzada de 7,20 m, V ≤ 80 y el radio exacto
-    de la T302.20."""
+    """(factor de la T302.20 para el radio, motivo por el que la tabla no vale). La tabla vale con calzada de 7,20 m en
+    tangente y V ≤ 80 km/h (P5, opción F); el factor se da aunque no se pida la reducción, para comparar."""
     if ctx["velocidad"] > V_MAX_FACTOR_KMH + n.TOLERANCIA:
         return None, (f"V = {n._limpio(ctx['velocidad'])} km/h pasa de 80: «el valor del sobreancho será calculado para cada "
                       f"caso» ({_cita(base, REGLA_MAS_DE_80)}), así que se usa la fórmula sin el factor de la "
                       f"{REF_REDUCCION}.")
     if abs(ctx["ancho_calzada"] - ANCHO_TABLA_REDUCCION_M) > n.TOLERANCIA:
         return None, (f"La {REF_REDUCCION} es para calzadas de 7,20 m en tangente y la del proyecto es de "
-                      f"{n._limpio(ctx['ancho_calzada'])} m: no se aplica factor (criterio a confirmar, P5).")
-    fila = next((f for f in factores_reduccion(base) if abs(float(f["radio_m"]) - radio) <= n.TOLERANCIA), None)
-    if fila is None:
-        return None, (f"El radio {n._limpio(radio)} m no está en la {REF_REDUCCION}: no se aplica factor (criterio a "
-                      "confirmar, P5: no se interpola).")
-    factor = {"valor": float(fila["factor_reduccion"]), "texto_pdf": fila.get("factor_texto_pdf"),
-              "radio_tabla": float(fila["radio_m"]), "referencia": _cita(base, fila.get("ref") or REF_REDUCCION),
-              "a_confirmar": True}
-    if any(abs(radio - r) <= n.TOLERANCIA for r in POSIBLE_ERRATA_RADIOS_M):
+                      f"{n._limpio(ctx['ancho_calzada'])} m: no hay factor (P5, opción F).")
+    elegido = factor_de_tabla(factores_reduccion(base), radio)
+    if elegido is None:
+        return None, f"La {REF_REDUCCION} de la base no tiene filas: no hay factor."
+    factor = {"valor": elegido["valor"], "texto_pdf": elegido["texto_pdf"], "radio_tabla": elegido["radio_tabla"],
+              "como": elegido["como"], "referencia": _cita(base, elegido.get("ref") or REF_REDUCCION)}
+    if any(abs(r - e) <= n.TOLERANCIA for r in elegido["filas_usadas"] for e in POSIBLE_ERRATA_RADIOS_M):
         factor["nota"] = (f"Posible errata en la {REF_REDUCCION}: 400 m da 0,07 y 450 m da 0,08 (el factor debería bajar "
-                          "al subir el radio). Revisa el PDF.")
+                          "al subir el radio). Se usa la fila tal como está; revisa el PDF.")
     return factor, None
 
 
@@ -326,6 +420,17 @@ def proponer(base: n.BaseNorma, ctx: dict, tabla_pis: dict) -> dict:
     if v > V_MAX_FACTOR_KMH + n.TOLERANCIA:
         avisos.append(f"Con V > 80 km/h «el valor del sobreancho será calculado para cada caso» ({_cita(base, REGLA_MAS_DE_80)}): "
                       "revisa cada curva; el sobreancho propuesto es el de la fórmula, en el borde interior.")
+    pide_reduccion = bool(ctx.get(CAMPO_REDUCCION))
+    if pide_reduccion:
+        motivo_no = None
+        if v > V_MAX_FACTOR_KMH + n.TOLERANCIA:
+            motivo_no = f"V = {n._limpio(v)} km/h pasa de 80"
+        elif abs(ctx["ancho_calzada"] - ANCHO_TABLA_REDUCCION_M) > n.TOLERANCIA:
+            motivo_no = (f"la calzada en tangente es de {n._limpio(ctx['ancho_calzada'])} m y la {REF_REDUCCION} es para "
+                         "7,20 m")
+        if motivo_no:
+            avisos.append(f"Pediste {CAMPO_REDUCCION}, pero {motivo_no}: no se reduce, se aplica el sobreancho entero de la "
+                          f"fórmula (P5, opción F).")
     cita_formula = _cita(base, FORMULA_SA)
     filas, zonas = [], []
     for p in curvas:
@@ -336,7 +441,8 @@ def proponer(base: n.BaseNorma, ctx: dict, tabla_pis: dict) -> dict:
                 "progresiva_pc": n._limpio(pc), "progresiva_pt": n._limpio(pt),
                 "datos": {"n": ctx["numero_carriles"], "R": n._limpio(radio), "L": n._limpio(ctx["l_m"]), "V": n._limpio(v)},
                 "termino_geometrico": None, "termino_velocidad": None, "sobreancho_sin_factor": None,
-                "factor_reduccion": None, "sobreancho_con_factor": None, "sobreancho": None, "se_aplica": False,
+                "factor_reduccion": None, "sobreancho_con_factor": None, "reduccion_aplicada": False,
+                "piso_0_40": False, "sobreancho": None, "se_aplica": False,
                 "manda": None, "motivo": None, "ensanchamiento": None}
         filas.append(fila)
         if borde is None:
@@ -350,21 +456,29 @@ def proponer(base: n.BaseNorma, ctx: dict, tabla_pis: dict) -> dict:
             avisos.append(fila["motivo"])
             continue
         factor, sin_factor = factor_reduccion(base, ctx, radio)
-        con_factor = f["sobreancho"] * factor["valor"] if factor else None
-        sa = con_factor if factor else f["sobreancho"]
+        decision = decidir(f["sobreancho"], factor["valor"] if factor else None, pide_reduccion)
+        reducido, llega, aplica_reduccion = decision["reducido"], decision["se_aplica"], decision["reduccion_aplicada"]
+        sa = decision["sobreancho"] if llega else f["sobreancho"]   # si no se aplica, se informa el de la fórmula
+        if factor:
+            factor["producto"] = round(reducido["producto"], 4)
         fila.update({"termino_geometrico": round(f["termino_geometrico"], 4), "termino_velocidad": round(f["termino_velocidad"], 4),
                      "sobreancho_sin_factor": round(f["sobreancho"], 4), "factor_reduccion": factor,
-                     "sobreancho_con_factor": round(con_factor, 4) if con_factor is not None else None,
+                     "sobreancho_con_factor": round(reducido["con_factor"], 4) if reducido else None,
+                     "reduccion_aplicada": aplica_reduccion, "piso_0_40": bool(aplica_reduccion and reducido["piso"]),
                      "sobreancho": round(sa, 4),
-                     "manda": f"Fórmula {cita_formula}: {FORMULA}" + (f" × factor {n._limpio(factor['valor'])} de la "
-                                                                      f"{factor['referencia']} (a confirmar, P5)"
-                                                                      if factor else "")})
+                     "manda": f"Fórmula {cita_formula}: {FORMULA}" + (
+                         f" × factor {n._limpio(factor['valor'])} de la {factor['referencia']} ({CAMPO_REDUCCION}, P5 "
+                         "opción F)" + (", con el piso de 0,40 m" if reducido["piso"] else "")
+                         if aplica_reduccion else " (Sa entero, sin factor: P5, opción F)")})
         if sin_factor:
             fila["nota_factor"] = sin_factor
-        if not n.cumple(sa, SOBREANCHO_MINIMO_M, n.MINIMO):
-            fila["motivo"] = (f"Sa = {round(sa, 4)} m es menor de 0,40 m: «Se considera apropiado un valor mínimo de 0.40 m "
-                              f"de sobreancho para justificar su adopción» ({_cita(base, REGLA_MINIMO)}). No se aplica "
-                              "(a confirmar, P7).")
+        elif factor and not pide_reduccion and llega:
+            fila["nota_factor"] = (f"Sin reducción (por defecto, P5 opción F): se aplica Sa entero. Con {CAMPO_REDUCCION} = "
+                                   f"true sería {round(reducido['con_factor'], 4)} m.")
+        if not llega:
+            fila["motivo"] = (f"Sa = {round(f['sobreancho'], 4)} m es menor de 0,40 m: «Se considera apropiado un valor "
+                              f"mínimo de 0.40 m de sobreancho para justificar su adopción» ({_cita(base, REGLA_MINIMO)}). "
+                              "No se aplica (a confirmar, P7).")
             avisos.append(f"PI {p.get('numero')}: {fila['motivo']}")
             continue
         fila["se_aplica"] = True
@@ -432,7 +546,8 @@ def bloque_propuesta(base: n.BaseNorma, ctx: dict, propuesta: dict, d: float, or
         "proyecto": {"velocidad_diseno": n._limpio(ctx["velocidad"]), "numero_carriles": ctx["numero_carriles"],
                      "ancho_calzada": n._limpio(ctx["ancho_calzada"]), "vehiculo_diseno": ctx["vehiculo"],
                      "vehiculo_nombre": ctx["vehiculo_nombre"], "l_m": n._limpio(ctx["l_m"]),
-                     "referencia_vehiculo": ctx["referencia_vehiculo"]},
+                     "referencia_vehiculo": ctx["referencia_vehiculo"],
+                     CAMPO_REDUCCION: bool(ctx.get(CAMPO_REDUCCION))},
         "desplazamiento": n._limpio(d),
         "desplazamiento_origen": origen_d,
         "longitud_transicion": n._limpio(ctx["longitud_transicion"]),

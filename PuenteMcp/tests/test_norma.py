@@ -15,8 +15,10 @@ import pytest
 
 import casos_norma_reales
 import norma as n
+import norma_peralte as npe
 from base_norma_ejemplo import SEGUNDA, TERCERA, crear_base
 from conftest import ejecutar
+from test_norma_peralte import agregar_figuras
 
 TERCERA_ONDULADO = {"clasificacion": "Carretera de Tercera Clase", "orografia": "Ondulado", "ubicacion": "rural",
                     "pavimentada": False, "peralte_maximo": 8}
@@ -439,16 +441,86 @@ def test_errores_de_la_memoria(tmp_path, monkeypatch):
         n.BaseNorma(n.localizar_base(str(tmp_path / "rota")))
 
 
-def test_aviso_de_302_05_06_una_sola_vez(base):
-    """a) Decisión de la orquestadora (17/11/2026): el aviso de 302.05.06 (p > 3 %) va una sola vez en la respuesta,
-    no en cada curva, y la fila de la transición que cumple sigue en «Cumple»."""
+def test_aviso_de_302_05_06_una_sola_vez_sin_la_tabla_de_figuras(base):
+    """a) Sin la tabla peralte_figura en la base (la de ejemplo no la trae), el aviso de 302.05.06 (p > 3 %) va una sola
+    vez en la respuesta, no en cada curva, y la fila de la transición que cumple sigue en «Cumple». Desde la tarea 7.2
+    (cambio pedido) el texto dice el motivo real, que falta la tabla, en vez de «las figuras de peralte aún no están en
+    la base», que dejó de ser cierto con la 1.20.0."""
     tercera = contexto(base, velocidad_diseno=60, **TERCERA_ONDULADO)
+    lectura = n.lectura_transicion(base, tercera)
+    assert lectura["motivo"] == npe.MOTIVO_SIN_FIGURA and lectura["figura"] is None
     cumple = n.comprobar_transicion(base, tercera, 215)
     assert cumple["resultado"] == n.CUMPLE and "aviso" not in cumple["detalle"]
-    assert n.aviso_transicion([cumple, cumple]) == n.AVISO_TRANSICION_PERALTE
-    assert n.aviso_transicion([n.comprobar_transicion(base, tercera, 200)]) is None
-    assert "302.05.06 podría pedir clotoide aunque el radio supere la T302.11 si el peralte pasa del 3 %" in \
-        n.AVISO_TRANSICION_PERALTE and "PDF 146" in n.AVISO_TRANSICION_PERALTE
+    aviso = n.aviso_transicion([cumple, cumple], lectura)
+    assert aviso == n.aviso_transicion_sin_lectura(npe.MOTIVO_SIN_FIGURA)
+    assert n.aviso_transicion([n.comprobar_transicion(base, tercera, 200)], lectura) is None
+    assert aviso.startswith("302.05.06 pide curva de transición si el radio requiere un peralte de más del 3 % "
+                            "(302.05.06, p. 145; PDF 146: «Si R requiere p>3%. Se debe usar curva de transición.»)")
+    assert "no tiene la tabla peralte_figura" in aviso and "git pull" in aviso
+    assert "aún no están en la base" not in aviso
+    assert n.comprobar_peralte_transicion(base, tercera, lectura, 215) is None, "sin figura, sin fila"
+    filas, _ = n.verificar_alineamiento(base, tercera, TABLA_DOS_CURVAS)
+    assert not [f for f in filas if f["comprobacion"] == n.COMPROBACION_PERALTE_TRANSICION]
+
+
+# Un eje con dos curvas que cumplen la T302.11B a 60 km/h (210 m): 250 m (la figura de ejemplo da 5,4 %) y 600 m (2,8 %)
+TABLA_DOS_CURVAS = {
+    "unidades": "Meters", "inicio": {"progresiva": 0}, "fin": {"progresiva": 1800},
+    "pis": [{"numero": 1, "tipo": "curva", "tiene_curva": True, "radio": 250, "longitud_curva": 200,
+             "deflexion_grados": 45.8, "progresiva": 500, "progresiva_pc": 400, "progresiva_pt": 600, "giro": "derecha"},
+            {"numero": 2, "tipo": "curva", "tiene_curva": True, "radio": 600, "longitud_curva": 200,
+             "deflexion_grados": 19.1, "progresiva": 1200, "progresiva_pc": 1100, "progresiva_pt": 1300,
+             "giro": "izquierda"}],
+}
+
+
+@pytest.fixture
+def base_figura(tmp_path):
+    """La base de ejemplo con la tabla peralte_figura de las pruebas de aplicar_peralte (nodos «ejemplo»)."""
+    with n.BaseNorma(agregar_figuras(crear_base(str(tmp_path / "con-figuras")))) as b:
+        yield b
+
+
+def test_302_05_06_curva_a_curva_con_cifra(base_figura):
+    """Tarea 7.2 (decisión de la orquestadora del 17/11/2026: curva a curva y con cifra): con la figura en la base, cada
+    curva que cumple la T302.11 lee su peralte en la figura (como aplicar_peralte) y, si pasa del 3 %, lleva una fila
+    «Aviso» con la cifra, la figura y la cita; con 3 % o menos, ninguna fila. Ya no va el aviso genérico."""
+    ctx = contexto(base_figura, velocidad_diseno=60, **TERCERA_ONDULADO)
+    lectura = n.lectura_transicion(base_figura, ctx)
+    assert lectura["motivo"] is None and lectura["figura"] == "F302.03"
+    f = n.comprobar_peralte_transicion(base_figura, ctx, lectura, 250, "Curva PI 1", "0+500.000")
+    # F302.03 de ejemplo a 60 km/h: 200 m → 6 %, 400 m → 4 %; en log10(R), 250 m da 5.356 % → 5.4 %
+    assert f["resultado"] == n.AVISO and f["comprobacion"] == "Peralte para prescindir de la curva de transición"
+    assert f["valor_diseno"] == 5.4 and f["valor_exigido"] == 3 and f["unidad"] == "%" and f["criterio"] == n.MAXIMO
+    assert (f["referencia"]["id"], f["referencia"]["pagina_impresa"], f["referencia"]["pagina_pdf"]) == \
+        ("302.05.06", "145", "146")
+    d = f["detalle"]
+    assert d["radio"] == 250 and d["lectura_pct"] == pytest.approx(5.356, abs=0.001) and d["etiqueta"] == "lectura gráfica"
+    assert d["figura"].startswith("F302.03") and d["cita"] == "Si R requiere p>3%. Se debe usar curva de transición."
+    assert "con R = 250 m a 60 km/h la F302.03" in d["nota"] and "pide un peralte de 5.4 %" in d["nota"]
+    assert "más del 3 %: 302.05.06, p. 145; PDF 146" in d["nota"] and "Solo aviso" in d["nota"]
+    # 600 m: entre 400 m (4 %) y 800 m (2 %) da 2.830 % → 2.8 %, sin fila; 3000 m sale de la curva (último nodo 1.5 %)
+    assert n.comprobar_peralte_transicion(base_figura, ctx, lectura, 600) is None
+    assert n.comprobar_peralte_transicion(base_figura, ctx, lectura, 3000) is None
+
+    filas, _ = n.verificar_alineamiento(base_figura, ctx, TABLA_DOS_CURVAS)
+    peraltes = [f for f in filas if f["comprobacion"] == n.COMPROBACION_PERALTE_TRANSICION]
+    assert [(f["elemento"], f["valor_diseno"], f["resultado"]) for f in peraltes] == [("Curva PI 1", 5.4, n.AVISO)]
+    i = filas.index(peraltes[0])
+    assert filas[i - 1]["comprobacion"] == n.COMPROBACION_TRANSICION and filas[i - 1]["resultado"] == n.CUMPLE, \
+        "va justo después de la fila de la T302.11"
+    assert n.aviso_transicion(filas, lectura) is None, "con cifra, sin el aviso genérico"
+
+
+def test_302_05_06_sin_curva_de_la_velocidad_en_la_figura(base_figura):
+    """Tarea 7.2: si la figura no tiene curva para la velocidad (no se interpola entre velocidades), el aviso genérico
+    dice ese motivo y no que falte la tabla."""
+    ctx = contexto(base_figura, velocidad_diseno=40, **TERCERA_ONDULADO)
+    lectura = n.lectura_transicion(base_figura, ctx)
+    assert lectura["motivo"] == "la F302.03 no tiene curva para 40 km/h (no se interpola entre velocidades; tiene 30, 50, 60)"
+    cumple = n.comprobar_transicion(base_figura, contexto(base_figura, velocidad_diseno=60, **TERCERA_ONDULADO), 250)
+    aviso = n.aviso_transicion([cumple], lectura)
+    assert "la F302.03 no tiene curva para 40 km/h" in aviso and "peralte_figura" not in aviso
 
 
 def test_citas_literales_con_pagina():

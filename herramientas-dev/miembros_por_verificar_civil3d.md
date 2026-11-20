@@ -981,3 +981,54 @@ detalle de cada fila está en su sección (1.19.2, 1.19.3, 1.20.0, 1.21.0 y 1.21
 | comportamiento | Peralte del eje (1.20.0 y 1.21.2): enumerados, `Alignment.SuperelevationCurves`, `SuperelevationCriticalStations`, `CriticalStations.Add` y `GetCriticalStationAt` sobre la curva vacía que crea Civil 3D, `GetSlope`/`SetSlope` en tanto por uno y `_.UNDO 1` sin zoom | 2027 | `listar_peralte`, `aplicar_peralte` | **ejecutado en Civil 3D 2027 el 20/11/2026** (informe 120): eje recién creado sin peralte con 2 curvas vacías y 2 estaciones, y `enumerados` completo (paso 2); 16 progresivas simuladas y escritas sobre las 2 curvas existentes, 18 estaciones sin avisos (pasos 3 y 4); pendientes releídas ±6 % y ±2 % con escala tanto por uno (paso 5); un eje con peralte se rechaza (paso 6); un `_.UNDO 1` quita el peralte (paso 7); con la norma DG-2018, 16 estaciones y verificación 4 de 4 con ±7.5 % (paso 10g). Por verificar: `AddUserDefinedCurve` (no se llamó), el **signo** de las pendientes en el corredor (paso 9: el ensamblaje mantuvo el bombeo), `SuperelevationCurveName`, `TransitionDescription`, `UseDesignCriteriaFile` y `CriteriaFileName` |
 | comportamiento | Bordes de calzada (1.21.0 a 1.21.4): `Alignment.CreateOffsetAlignment`, `OffsetAlignmentInfo` y sus regiones, `AddWidening` con el total sin signo y el rango adelantado una transición | 2027 | `crear_bordes_calzada`, `listar_bordes_calzada` | ver la sección 1.21.0: **negativo = izquierda**; `AddWidening` exige `offsetDistance` > 0 (con −4.2 falló con la 1.21.2) y Civil 3D le pone el signo del borde; la transición de entrada queda dentro del rango y la de salida después (1.21.3). El resultado con la 1.21.4 (sobreancho medido 0.6 en los dos bordes, un `_.UNDO 1` quita los dos) está en los hechos validados de `CLAUDE.md` (informes 1213 y 1214) |
 | propiedad | `SubassemblyTargetInfo.TargetToOption` = `Nearest` con **un solo** objetivo de desplazamiento | 2027 | `asignar_objetivo(s)`, `deshacer_objetivos` | ver la fila del estado de partida: falla al escribir con «The count of TargetIds should be greater or equal to 2.» (`VALIDACION_121`, paso 7d, con la 1.21.4; la simulación no lo detecta). Desde la 1.21.5 la opción solo se escribe con dos o más objetivos |
+
+## Ronda E, tarea 7.1 (`ejecutar_codigo`: leer `Bounds` de una entidad): escrita sin Civil 3D
+
+Escrita el 20/11/2026 sin Civil 3D y probada en la nube (`dotnet test ArbaMcp.Pruebas`, con `Drawable` añadido a la
+biblioteca falsa de las pruebas). Sale del hallazgo H4, confirmado en Civil 3D en la comprobación C2 del 20/11/2026
+(`COMPROBACIONES_RONDA_D.md`): `e.Bounds` se rechazaba al compilar con «[bloqueado: ventanas y diálogos]
+Autodesk.AutoCAD.GraphicsInterface.Drawable», porque `Bounds` solo la declara `Drawable` y todo
+`Autodesk.AutoCAD.GraphicsInterface` está bloqueado. **Ningún miembro nuevo en el plugin ni sustituto nuevo** en
+`CompilarSinCivil`: solo una excepción de la lista blanca (`CodigoReglas.LecturasPermitidasDe`, nombres comparados
+como texto) para los scripts de `ejecutar_codigo`. Versión: la que fije la integración de la ronda E.
+
+| Tipo | Miembro | Versión | Herramienta que lo usa | Estado |
+|---|---|---|---|---|
+| propiedad | `Drawable.Bounds` (lectura; `Nullable<Extents3d>`, heredada por `DBObject` y `Entity` sin volver a declararla) | 2027 | `ejecutar_codigo` (desde la ronda E compila leer `e.Bounds`, con y sin `solo_lectura`; asignarla, `DrawableType` y el resto de `GraphicsInterface` siguen bloqueados como «ventanas y diálogos») | que la declara solo `Drawable`, confirmado en el catálogo (orquestadora, 17/11/2026) y en Civil 3D por el rechazo de la comprobación C2 del 20/11/2026; que compile y devuelva la caja de la entidad sin entrada en Deshacer ni copia con `solo_lectura=true`, **por verificar** |
+
+## Ronda E (1.22.0, tarea 7.4): el peralte del eje entre progresivas críticas
+
+Escrita el 20/11/2026 sin Civil 3D. En la validación de la ronda D pareció que el corredor no seguía el peralte dentro de
+la curva; el corredor pide la pendiente al eje en cualquier pk, no solo en las progresivas críticas, y nunca se había
+leído en un pk intermedio. `listar_peralte` acepta `progresivas` y `aplicar_peralte` comprueba, tras escribir, el centro
+del peralte total de cada curva (aviso, no error). Firma confirmada en el catálogo de Civil 3D 2027 (`buscar_api
+"GetCrossSlopeAtStation"`, 20/11/2026); el catálogo no describe el tercer parámetro, solo su nombre.
+
+| Tipo | Miembro | Versión | Herramienta que lo usa | Estado |
+|---|---|---|---|---|
+| método | `Alignment.GetCrossSlopeAtStation(double station, SuperelevationCrossSegmentType crossSegmentType, bool applySmoothing)` → `double`, con `applySmoothing` = `true` | 2027 | `listar_peralte` con `progresivas` (los 8 segmentos en cada pk, cada lectura en su `try`), `aplicar_peralte` (comprobación en el centro del peralte total, solo en la escritura real) | por verificar (confirmado en el catálogo). **Escala**: se supone tanto por uno, como `GetSlope` (validado: 0.06 = 6 %); **por verificar** que en una recta dé el bombeo, en el centro de la curva el peralte total escrito y entre progresivas críticas un valor interpolado. **`applySmoothing`**: se supone que `true` aplica el suavizado de las transiciones si la curva lo tiene (lo que construye el corredor); `aplicar_peralte` no define suavizado, así que debería dar lo mismo que `false` |
+
+
+## Ronda E (1.22.0, tarea 7.3): `seccion_corredor` y `parametros_detalle` de `listar_ensamblajes`: escrita sin Civil 3D
+
+Escrita el 20/11/2026 sin Civil 3D. Cada miembro se **confirmó en el catálogo** de `memoria-firma` en la misma sesión
+(nombre, tipo, firma y si la colección se puede recorrer con `foreach`). Nadie los ha ejecutado: todos están **por
+verificar**. La herramienta los lee cada uno en su `try`: si uno falla, sale en `avisos` con el texto `No se pudo leer
+<miembro>: <mensaje>` y la respuesta sigue. Los ya validados que se reutilizan (`CorridorCollection`, `Corridor.Baselines`,
+`Baseline.Name`, `AlignmentId`, `ProfileId`, `StartStation`, `EndStation`, `BaselineRegions`, `BaselineRegion.Name`,
+`StartStation`, `EndStation`, `AssemblyId`, `Corridor.IsOutOfDate`, `Subassembly.Name`, `Side`, `ParamsDouble/Long/String/Bool`)
+no se repiten.
+
+| Tipo | Miembro | Versión | Herramienta que lo usa | Estado |
+|---|---|---|---|---|
+| método | `Baseline.GetAppliedAssemblyAtStation(double station)` → `AppliedAssembly` | 2027 | `seccion_corredor` (en la progresiva pedida y, si lanza o da `null`, en la calculada más cercana) | por verificar (confirmado en el catálogo). **No se sabe** qué hace en una progresiva que no es de las calculadas por la frecuencia: ¿lanza, da `null` o interpola? Lo dice la validación |
+| método | `BaseBaseline.SortedStations()` → `double[]` | 2027 | `seccion_corredor` (`estacion_anterior`, `estacion_siguiente` y la progresiva calculada más cercana) | por verificar (confirmado en el catálogo, declarado en `BaseBaseline`) |
+| propiedad | `AppliedAssembly.AssemblyId` (`ObjectId`) | 2027 | `seccion_corredor` (ensamblaje si la progresiva no cae en una región; grupo de cada subensamblaje) | por verificar (confirmado en el catálogo) |
+| método | `AppliedAssembly.GetAppliedSubassemblies()` → `AppliedSubassemblyCollection` (`Count`, `Item`, `GetEnumerator()` → `IEnumerator<AppliedSubassembly>`) | 2027 | `seccion_corredor` | por verificar (confirmado en el catálogo; se recorre con `foreach`) |
+| propiedad | `AppliedSubassembly.SubassemblyId` (`ObjectId`), `.Parameters` (`IAppliedSubassemblyParam[]`, un arreglo), `.Points` (`CalculatedPointCollection`: `Count`, `Item`, `GetEnumerator()` → `IEnumerator<CalculatedPoint>`) | 2027 | `seccion_corredor` | por verificar (confirmados en el catálogo) |
+| propiedad | `IAppliedSubassemblyParam.KeyName`, `.DisplayName` (string), `.ValueAsObject`, `.DesignValueAsObject` (object), `.IsOverriden` (bool, sic: con una sola «d») | 2027 | `seccion_corredor` (`parametros[]`) | por verificar (confirmados en el catálogo; interfaz de `Autodesk.Civil.DatabaseServices`). No se usan `ValueType`, `Comment` ni `ClearOverride()` |
+| propiedad | `CalculatedPoint.StationOffsetElevationToBaseline` (`Point3d`) | 2027 | `seccion_corredor` (`puntos[]`, tramos y carriles) | por verificar (confirmado en el catálogo). **Supuesto por verificar**: X = progresiva, Y = desplazamiento (negativo a la izquierda), Z = cota. Si la X de algún punto difiere más de 0,01 de la progresiva usada, la herramienta lo avisa. No se usan `XYZ`, `StationOffsetElevationToSubassembly` ni las normales |
+| propiedad | `CalculatedSubentity.CorridorCodes` (`CorridorCodeCollection`: `Count`, `Item` → string, `GetEnumerator()` → `IEnumerator<string>`), heredada por `CalculatedPoint` | 2027 | `seccion_corredor` (`codigos` de cada punto; `Crown` y `ETW` para la pendiente del carril) | por verificar (confirmado en el catálogo) |
+| propiedad | `Subassembly.GeometryGenerator` (`SubassemblyGenerator`) → `.MacroOrClassName` (string) | 2027 | `seccion_corredor` (`clase`) | por verificar (confirmados en el catálogo; solo se leen) |
+| propiedad | `ParamBase<...>.Key` (string, solo lectura), declarada en la plantilla `ParamBase` de la que derivan `ParamDouble`, `ParamLong`, `ParamString` y `ParamBool` (`Autodesk.Civil.Runtime`) | 2027 | `listar_ensamblajes` (`parametros_detalle[].clave`) | por verificar (confirmado en el catálogo en cada instancia de `ParamBase`; se lee **por reflexión**, como `DisplayName` y `Value`) |
+| método | `ParamLong.EnumCount()` → `uint` y `ParamLong.GetEnumData(uint index, ref string name, ref string displayName, ref int value)` (**`ref`, no `out`**: el catálogo da `String&` sin distinguir; con `out` la compilación con las DLL reales dio `CS1620` «El argumento 2 se debe pasar con la palabra clave 'ref'», 20/11/2026) | 2027 | `listar_ensamblajes` (`opciones[]`, `opcion` y `etiqueta` de los parámetros de lista) | por verificar (confirmados en el catálogo; enlace directo a `Autodesk.Civil.Runtime.ParamLong`). `ParamLong.Value` es `int` en el catálogo; la opción actual es la de `GetEnumData` cuyo `value` coincide |
