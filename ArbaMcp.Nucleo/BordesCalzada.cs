@@ -20,8 +20,17 @@ namespace ArbaMcp.Nucleo
         public double ProgresivaInicial, ProgresivaFinal;
         /// <summary>Lo que se añade al desplazamiento nominal (m, &gt; 0).</summary>
         public double Sobreancho;
-        /// <summary>Longitud de la transición de entrada y de salida (m, ≥ 0) o null si la decide Civil 3D.</summary>
+        /// <summary>
+        /// Longitud de la transición de entrada y de salida (m, ≥ 0). Desde la 1.22.1 (tarea 7.6) BordesCalzada.Leer la
+        /// deja siempre con valor: si el pedido no la trae, BordesCalzada.LongitudTransicionPorDefecto (40 m) y
+        /// TransicionPorDefecto = true. Sigue siendo nullable para comparar pedidos construidos a mano.
+        /// </summary>
         public double? LongitudTransicion;
+        /// <summary>
+        /// true si el pedido no traía 'longitud_transicion' y Leer puso los 40 m por defecto (1.22.1): en Civil 3D 2027,
+        /// AddWidening sin TransitionDescription.Length deja la transición en 0 m y el borde da un salto (20/11/2026).
+        /// </summary>
+        public bool TransicionPorDefecto;
 
         /// <summary>Lo que el pedido ocupa contando la transición (si se pidió); sin ella, el propio tramo.</summary>
         public double InicioOcupado => ProgresivaInicial - (LongitudTransicion ?? 0);
@@ -33,8 +42,8 @@ namespace ArbaMcp.Nucleo
         /// curva) y la de SALIDA justo después del final (345.6637–385.6637). Dentro de la curva la transición lineal
         /// salió deformada (sobreancho medido 1.05 en vez de 0.6); en la recta, bien. Para que el tramo pleno sea el
         /// pedido y las dos transiciones queden fuera (antes del PC y después del PT, como pide la DG-2018), el rango
-        /// empieza 'longitud_transicion' antes: de InicioOcupado a ProgresivaFinal. Sin longitud_transicion, el rango
-        /// pedido tal cual (la transición la decide Civil 3D y la entrada caerá dentro del rango).
+        /// empieza 'longitud_transicion' antes: de InicioOcupado a ProgresivaFinal. Desde la 1.22.1 Leer pone 40 m si
+        /// no se pasó, así que el rango siempre se adelanta (con 0 explícito, el rango pedido tal cual).
         /// </summary>
         public double InicioAddWidening => ProgresivaInicial - (LongitudTransicion ?? 0);
         public double FinAddWidening => ProgresivaFinal;
@@ -51,6 +60,7 @@ namespace ArbaMcp.Nucleo
                 ["sobreancho"] = Argumentos.Redondear(Sobreancho),
                 ["desplazamiento_total"] = Argumentos.Redondear(Math.Abs(desplazamientoNominal) + Sobreancho),
                 ["longitud_transicion"] = LongitudTransicion.HasValue ? Argumentos.Redondear(LongitudTransicion.Value) : null,
+                ["longitud_transicion_por_defecto"] = TransicionPorDefecto,
                 ["rango_add_widening"] = new[] { Argumentos.Redondear(InicioAddWidening), Argumentos.Redondear(FinAddWidening) }
             };
             if (LongitudTransicion.HasValue)
@@ -63,6 +73,21 @@ namespace ArbaMcp.Nucleo
             else
                 d["transicion_prevista"] = "La decide Civil 3D (AddWidening): se mide al crear.";
             return d;
+        }
+
+        /// <summary>
+        /// Aviso sobre la transición del pedido (1.22.1), o null: los 40 m puestos por defecto, o la transición nula
+        /// pedida a propósito (el borde dará un salto). Lo añade crear_bordes_calzada en la simulación y en la real.
+        /// </summary>
+        public string AvisoTransicion()
+        {
+            if (TransicionPorDefecto)
+                return "El ensanchamiento " + Numero + " no tiene 'longitud_transicion': se usan " + BordesCalzada.Texto(BordesCalzada.LongitudTransicionPorDefecto)
+                    + " m (DG-2018, 302.09.02: «Normalmente la longitud para desarrollar el sobreancho será de 40 m»). Sin ella, Civil 3D deja la transición en 0 m y el borde da un salto (validado el 20/11/2026).";
+            if (LongitudTransicion.HasValue && LongitudTransicion.Value == 0)
+                return "El ensanchamiento " + Numero + " tiene 'longitud_transicion' = 0: sin transición, el borde dará un salto en " + BordesCalzada.Texto(ProgresivaInicial)
+                    + " y en " + BordesCalzada.Texto(ProgresivaFinal) + " (la DG-2018, 302.09.02, pide desarrollar el sobreancho gradualmente, normalmente en 40 m). Si no lo querías, quita 'longitud_transicion' para usar 40 m o pasa otra longitud.";
+            return null;
         }
     }
 
@@ -205,6 +230,13 @@ namespace ArbaMcp.Nucleo
         /// <summary>Muestras como mucho por borde: el paso es max(1 m, longitud / 2000).</summary>
         public const int MaximoMuestras = 2000;
 
+        /// <summary>
+        /// Longitud de transición (m) que se usa si un ensanchamiento no trae 'longitud_transicion' (1.22.1): DG-2018,
+        /// 302.09.02, «Normalmente la longitud para desarrollar el sobreancho será de 40 m». Sin ella, AddWidening deja
+        /// la transición en 0 m (validación de la ronda E, 20/11/2026, paso 5.2).
+        /// </summary>
+        public const double LongitudTransicionPorDefecto = 40.0;
+
         public const string SupuestoTransicion = "El rango pedido es el tramo pleno y las transiciones quedan fuera de él. Como Civil 3D pone la transición de entrada al principio del rango que recibe AddWidening y la de salida después del final (validación del 20/11/2026), se le pasa el rango empezando 'longitud_transicion' antes (rango_add_widening); al crear se mide y se avisa si Civil 3D la puso de otra forma.";
 
         private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
@@ -240,8 +272,9 @@ namespace ArbaMcp.Nucleo
         /// <summary>
         /// Lee 'ensanchamientos' (lista JSON de objetos con borde, progresiva_inicial, progresiva_final, sobreancho y
         /// longitud_transicion opcional) y lo valida contra el rango del eje: inicial &lt; final, dentro del eje contando la
-        /// transición, sobreancho &gt; 0 y sin solapes en el mismo borde (contando las transiciones pedidas). Lista vacía si
-        /// no se pasó. Lanza ArgumentException con un mensaje claro.
+        /// transición, sobreancho &gt; 0 y sin solapes en el mismo borde (contando las transiciones). Sin
+        /// longitud_transicion, pone LongitudTransicionPorDefecto (40 m) y marca TransicionPorDefecto (1.22.1). Lista vacía
+        /// si no se pasó. Lanza ArgumentException con un mensaje claro.
         /// </summary>
         public static List<Ensanchamiento> Leer(JsonElement json, double inicioEje, double finEje)
         {
@@ -269,16 +302,26 @@ namespace ArbaMcp.Nucleo
                     Sobreancho = Numero(e, "sobreancho", donde, true).Value,
                     LongitudTransicion = Numero(e, "longitud_transicion", donde, false)
                 };
+                if (!x.LongitudTransicion.HasValue)
+                {
+                    // 1.22.1: sin longitud_transicion, AddWidening deja la transición en 0 m (validado el 20/11/2026)
+                    x.LongitudTransicion = LongitudTransicionPorDefecto;
+                    x.TransicionPorDefecto = true;
+                }
                 if (x.Sobreancho <= 0)
                     throw new ArgumentException(donde + " tiene 'sobreancho' = " + Texto(x.Sobreancho) + ": debe ser mayor que 0 (lo que se añade a la media calzada, en m).");
                 if (x.LongitudTransicion.HasValue && x.LongitudTransicion.Value < 0)
-                    throw new ArgumentException(donde + " tiene 'longitud_transicion' negativa: debe ser 0 o más (m), o no pasarla para que la decida Civil 3D.");
+                    throw new ArgumentException(donde + " tiene 'longitud_transicion' negativa: debe ser 0 o más (m), o no pasarla para usar " + Texto(LongitudTransicionPorDefecto) + " m (DG-2018, 302.09.02).");
                 if (x.ProgresivaFinal <= x.ProgresivaInicial)
                     throw new ArgumentException(donde + " va de " + Texto(x.ProgresivaInicial) + " a " + Texto(x.ProgresivaFinal) + ": la progresiva final debe ser mayor que la inicial.");
                 if (x.InicioOcupado < inicioEje - ToleranciaNominal || x.FinOcupado > finEje + ToleranciaNominal)
                     throw new ArgumentException(donde + " ocupa de " + Texto(x.InicioOcupado) + " a " + Texto(x.FinOcupado)
-                        + (x.LongitudTransicion.HasValue ? " contando la transición de " + Texto(x.LongitudTransicion.Value) + " m" : "")
-                        + " y el eje va de " + Texto(inicioEje) + " a " + Texto(finEje) + ". Acorta el tramo o la transición (ver listar_pis).");
+                        + (x.LongitudTransicion.Value > 0 ? " contando la transición de " + Texto(x.LongitudTransicion.Value) + " m" : "")
+                        + (x.TransicionPorDefecto ? " (por defecto, porque no se pasó 'longitud_transicion'; DG-2018, 302.09.02)" : "")
+                        + " y el eje va de " + Texto(inicioEje) + " a " + Texto(finEje) + ". "
+                        + (x.TransicionPorDefecto
+                            ? "Acorta el tramo o pasa 'longitud_transicion' menor (0 si no quieres transición: el borde dará un salto) (ver listar_pis)."
+                            : "Acorta el tramo o la transición (ver listar_pis)."));
                 lista.Add(x);
                 if (lista.Count > MaximoEnsanchamientos)
                     throw new ArgumentException("'ensanchamientos' tiene más de " + MaximoEnsanchamientos + " elementos.");
@@ -290,7 +333,10 @@ namespace ArbaMcp.Nucleo
                     if (orden[i].InicioOcupado < orden[i - 1].FinOcupado - ToleranciaNominal)
                         throw new ArgumentException("Los ensanchamientos " + orden[i - 1].Numero + " y " + orden[i].Numero + " del borde " + grupo.Key
                             + " se solapan (contando las transiciones): " + Texto(orden[i - 1].InicioOcupado) + "–" + Texto(orden[i - 1].FinOcupado)
-                            + " y " + Texto(orden[i].InicioOcupado) + "–" + Texto(orden[i].FinOcupado) + ". Únelos en uno o sepáralos.");
+                            + " y " + Texto(orden[i].InicioOcupado) + "–" + Texto(orden[i].FinOcupado) + ". Únelos en uno o sepáralos."
+                            + (orden[i - 1].TransicionPorDefecto || orden[i].TransicionPorDefecto
+                                ? " Sin 'longitud_transicion' se usan " + Texto(LongitudTransicionPorDefecto) + " m por defecto (DG-2018, 302.09.02): pasa 'longitud_transicion' menor si hace falta."
+                                : ""));
             }
             return lista;
         }
@@ -310,7 +356,7 @@ namespace ArbaMcp.Nucleo
             return r;
         }
 
-        private static string Texto(double v) => Math.Round(v, 4).ToString("0.####", Inv);
+        internal static string Texto(double v) => Math.Round(v, 4).ToString("0.####", Inv);
 
         /// <summary>Progresivas y longitudes medidas: la bisección las da con ±0,005 m, así que se escriben con 2 decimales.</summary>
         private static string Medido(double v) => Math.Round(v, 2).ToString("0.##", Inv);

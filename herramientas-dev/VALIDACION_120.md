@@ -87,9 +87,9 @@ Reglas:
    Si la versión no es exactamente `1.20.0` o faltan las dos herramientas, **para aquí**.
 
 1. **Preparar el dibujo** (no decisivo; cada creación deja su entrada en Deshacer, es normal).
-   - `ejecutar_comando` con `args={"comando":"_.-LAYER _M EJE_PERALTE  ","timeout_s":20,"pedido":"crea la capa EJE_PERALTE"}`
+   - `ejecutar_comando` con `args={"comando":"_.-LAYER _M EJE_PERALTE\n\n","timeout_s":20,"pedido":"crea la capa EJE_PERALTE"}`
      y con `args={"comando":"_.PLINE 1000,2000 1300,2000 1300,2300 1600,2300  ","timeout_s":20,"pedido":"dibuja la polilínea del eje"}`
-     (**dos espacios** al final de cada texto): los dos → `"result": "terminado"`.
+     (la capa con `\n\n` y la polilínea con **dos espacios** al final (`-LAYER` no toma el espacio como Enter: comprobación C1 del 20/11/2026)): los dos → `"result": "terminado"`.
    - `crear_superficie_tin` con `args={"nombre":"Terreno","archivo":"C:\\Proyectos\\dibujos_prueba\\terreno_corredor.csv","pedido":"crea la superficie Terreno"}`
      → `puntos: 9`.
    - `crear_alineamiento_desde_polilinea` con `args={"nombre":"Eje Peralte","capa":"EJE_PERALTE","radio":80,"pedido":"crea el eje Eje Peralte con radio 80"}`.
@@ -257,7 +257,7 @@ Reglas:
    y describe la inclinación de los carriles.
 
 10. **Peralte con la norma en el puente (decisivo).** Sobre un eje nuevo sin peralte con curvas de 150 m:
-    a. `ejecutar_comando` con `args={"comando":"_.-LAYER _M EJE_NORMA_A  ","timeout_s":20,"pedido":"crea la capa EJE_NORMA_A"}`
+    a. `ejecutar_comando` con `args={"comando":"_.-LAYER _M EJE_NORMA_A\n\n","timeout_s":20,"pedido":"crea la capa EJE_NORMA_A"}`
        y `args={"comando":"_.PLINE 1000,2000 1500,2000 1500,2700 2100,2700  ","timeout_s":20,"pedido":"dibuja la polilínea A"}`
        (dos espacios al final; la de `VALIDACION_119.md`), y `crear_alineamiento_desde_polilinea` con
        `args={"nombre":"Eje Norma 120","capa":"EJE_NORMA_A","radio":150,"pedido":"crea el eje Eje Norma 120 con radio 150"}`

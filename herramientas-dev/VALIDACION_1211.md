@@ -89,19 +89,19 @@ Reglas:
      espacio al final) y vuelve a leerla; si sigue sin ser `"6"`, **para aquí**.
    Si la versión no es `1.21.1`, `casos_norma_reales.py` da algún fallo o la base no está, **para aquí**.
 
-1. **Polilíneas de prueba.** `ejecutar_comando`, en este orden y con **dos espacios** al final de cada texto, antes de
-   la comilla (cada uno → `"result": "terminado"`):
-   - `args={"comando":"_.-LAYER _M EJE_NORMA_A  ","timeout_s":20,"pedido":"crea la capa EJE_NORMA_A"}`
+1. **Polilíneas de prueba.** `ejecutar_comando`, en este orden: las capas con `\n\n` al final y las polilíneas con **dos espacios** antes de
+   la comilla (`-LAYER` no toma el espacio como Enter: comprobación C1 del 20/11/2026; cada uno → `"result": "terminado"`):
+   - `args={"comando":"_.-LAYER _M EJE_NORMA_A\n\n","timeout_s":20,"pedido":"crea la capa EJE_NORMA_A"}`
    - `args={"comando":"_.PLINE 1000,2000 1500,2000 1500,2700 2100,2700  ","timeout_s":20,"pedido":"dibuja la polilínea A"}`
-   - `args={"comando":"_.-LAYER _M EJE_NORMA_B  ","timeout_s":20,"pedido":"crea la capa EJE_NORMA_B"}`
+   - `args={"comando":"_.-LAYER _M EJE_NORMA_B\n\n","timeout_s":20,"pedido":"crea la capa EJE_NORMA_B"}`
    - `args={"comando":"_.PLINE 1000,3500 1300,3500 1300,3800 1600,3800  ","timeout_s":20,"pedido":"dibuja la polilínea B"}`
-   - `args={"comando":"_.-LAYER _M EJE_05  ","timeout_s":20,"pedido":"crea la capa EJE_05"}`
+   - `args={"comando":"_.-LAYER _M EJE_05\n\n","timeout_s":20,"pedido":"crea la capa EJE_05"}`
    - `args={"comando":"_.PLINE 1000,6000 2000,6000 4499.905,6021.816  ","timeout_s":20,"pedido":"dibuja la polilínea de 0,5°"}`
-   - `args={"comando":"_.-LAYER _M EJE_U  ","timeout_s":20,"pedido":"crea la capa EJE_U"}`
+   - `args={"comando":"_.-LAYER _M EJE_U\n\n","timeout_s":20,"pedido":"crea la capa EJE_U"}`
    - `args={"comando":"_.PLINE 1000,8000 1600,8000 1600,8600 1000,8600  ","timeout_s":20,"pedido":"dibuja la polilínea en U"}`
-   - `args={"comando":"_.-LAYER _M EJE_LARGO  ","timeout_s":20,"pedido":"crea la capa EJE_LARGO"}`
+   - `args={"comando":"_.-LAYER _M EJE_LARGO\n\n","timeout_s":20,"pedido":"crea la capa EJE_LARGO"}`
    - `args={"comando":"_.PLINE 0,12000 6500,12000  ","timeout_s":20,"pedido":"dibuja la recta de 6500 m"}`
-   - `args={"comando":"_.-LAYER _M EJE_REPARTO  ","timeout_s":20,"pedido":"crea la capa EJE_REPARTO"}`
+   - `args={"comando":"_.-LAYER _M EJE_REPARTO\n\n","timeout_s":20,"pedido":"crea la capa EJE_REPARTO"}`
    - `args={"comando":"_.PLINE 1000,14000 1600,14000 1450,14259.808 1345.811,14850.693  ","timeout_s":20,"pedido":"dibuja la polilínea del reparto"}`
    Luego `leer_variable` con `args={"nombre":"CMDACTIVE"}` → `"valor": "0"`. La **A** gira 90° a la izquierda y 90° a
    la derecha (tramos 500, 700 y 600 m); la **B**, igual con tramos de 300 m; la de **0,5°** tiene un PI que desvía

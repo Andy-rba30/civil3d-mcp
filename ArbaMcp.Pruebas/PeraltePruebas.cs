@@ -499,5 +499,209 @@ namespace ArbaMcp.Pruebas
             Assert.Single(avisos);   // 6,06 frente a 6: 0,06 puntos > 0,05
             Assert.Contains("leído 6.06 %, escrito 6 %", avisos[0]);
         }
+
+        // ------------------------------------------------------------------ tarea 7.6: bombeo en los extremos del eje
+        /// <summary>
+        /// El eje de la validación de la ronda E (20/11/2026): de 0 a 831.3274, dos curvas; Civil 3D deja BeginAlignment y
+        /// EndAlignment en 0 % y el pk 100 salía a −1.0417 % (interpola de 0 en el pk 0 a −2 en EndNormalCrown, pk 192).
+        /// </summary>
+        private const string DosCurvasRondaE = "[{\"pi\": 2, \"estaciones\": ["
+            + "{\"progresiva\": 192, \"tipo\": \"EndNormalCrown\", \"pendientes\": {\"LeftOutLaneCrossSlope\": -2, \"RightOutLaneCrossSlope\": -2}},"
+            + "{\"progresiva\": 220, \"tipo\": \"BeginFullSuper\", \"pendientes\": {\"LeftOutLaneCrossSlope\": 6, \"RightOutLaneCrossSlope\": -6}},"
+            + "{\"progresiva\": 345.6637, \"tipo\": \"EndFullSuper\", \"pendientes\": {\"LeftOutLaneCrossSlope\": 6, \"RightOutLaneCrossSlope\": -6}},"
+            + "{\"progresiva\": 373.6637, \"tipo\": \"BeginNormalCrown\", \"pendientes\": {\"LeftOutLaneCrossSlope\": -2, \"RightOutLaneCrossSlope\": -2}}]},"
+            + "{\"pi\": 3, \"estaciones\": ["
+            + "{\"progresiva\": 457.6637, \"tipo\": \"EndNormalCrown\", \"pendientes\": {\"LeftOutLaneCrossSlope\": -2, \"RightOutLaneCrossSlope\": -2}},"
+            + "{\"progresiva\": 485.6637, \"tipo\": \"BeginFullSuper\", \"pendientes\": {\"LeftOutLaneCrossSlope\": -6, \"RightOutLaneCrossSlope\": 6}},"
+            + "{\"progresiva\": 611.3274, \"tipo\": \"EndFullSuper\", \"pendientes\": {\"LeftOutLaneCrossSlope\": -6, \"RightOutLaneCrossSlope\": 6}},"
+            + "{\"progresiva\": 639.3274, \"tipo\": \"BeginNormalCrown\", \"pendientes\": {\"LeftOutLaneCrossSlope\": -2.5, \"RightOutLaneCrossSlope\": -2.5}}]}]";
+
+        private static PeralteLeido EjeRondaE(double izq = 0, double der = 0)
+        {
+            var p = new PeralteLeido { Alineamiento = "Eje Peralte" };
+            foreach (var (pk, tipo) in new[] { (0.0, "BeginAlignment"), (831.3274, "EndAlignment") })
+            {
+                var e = new EstacionLeida { Progresiva = pk, Tipo = tipo, Curva = "" };
+                e.Pendientes["LeftOutLaneCrossSlope"] = izq;
+                e.Pendientes["RightOutLaneCrossSlope"] = der;
+                p.EstacionesDelEje.Add(e);
+            }
+            return p;
+        }
+
+        [Fact]
+        public void BombeoEnLosExtremosSaleDeLaPrimeraYLaUltimaProgresivaDeBombeoNormal()
+        {
+            var extremos = Peralte.BombeoEnExtremos(Peralte.LeerCurvas(J(DosCurvasRondaE)), EjeRondaE());
+            Assert.Equal(2, extremos.Count);
+            var ini = extremos[0];
+            Assert.Equal("inicio", ini.Extremo);
+            Assert.Equal("BeginAlignment", ini.TipoContorno);
+            Assert.Equal(0.0, ini.Progresiva);
+            Assert.Equal(2, ini.Pi);
+            Assert.Equal("EndNormalCrown", ini.TipoOrigen);
+            Assert.Equal(192.0, ini.ProgresivaOrigen);
+            Assert.Equal(new[] { "LeftOutLaneCrossSlope", "RightOutLaneCrossSlope" }, ini.Pendientes.Select(x => x.Key));
+            Assert.Equal(new[] { -2.0, -2.0 }, ini.Pendientes.Select(x => x.Value));
+            Assert.Null(ini.Motivo);
+            Assert.Null(ini.Escrito);
+            var fin = extremos[1];
+            Assert.Equal("EndAlignment", fin.TipoContorno);
+            Assert.Equal(831.3274, fin.Progresiva);
+            Assert.Equal(3, fin.Pi);
+            Assert.Equal("BeginNormalCrown", fin.TipoOrigen);
+            Assert.Equal(639.3274, fin.ProgresivaOrigen);
+            Assert.Equal(new[] { -2.5, -2.5 }, fin.Pendientes.Select(x => x.Value));
+            Assert.Null(fin.Motivo);
+            var d = ini.ComoDiccionario();
+            Assert.Equal(true, d["se_escribe"]);
+            Assert.Equal("0+000.000", d["progresiva_texto"]);
+            Assert.Equal(-2.0, ((Dictionary<string, object>)d["pendientes"])["LeftOutLaneCrossSlope"]);
+            Assert.Equal("EndNormalCrown", ((Dictionary<string, object>)d["desde"])["tipo"]);
+        }
+
+        [Fact]
+        public void SinProgresivaDeBombeoNormalOSinContornoNoSeEscribeYSeDicePorQue()
+        {
+            // Una curva sin EndNormalCrown ni BeginNormalCrown, y un eje sin EndAlignment
+            var curvas = Peralte.LeerCurvas(J("[{\"pi\": 1, \"estaciones\": [{\"progresiva\": 120, \"tipo\": \"BeginFullSuper\", \"pendientes\": {\"Izq\": 6}}]}]"));
+            var eje = EjeRondaE();
+            eje.EstacionesDelEje.RemoveAll(e => e.Tipo == "EndAlignment");
+            var extremos = Peralte.BombeoEnExtremos(curvas, eje);
+            Assert.StartsWith("La primera curva pedida (PI 1) no tiene EndNormalCrown (fin del bombeo normal): no se sabe qué bombeo poner en BeginAlignment, que queda como la dejó Civil 3D (0 %)", extremos[0].Motivo);
+            Assert.Contains("no tiene BeginNormalCrown", extremos[1].Motivo);
+            Assert.Empty(Peralte.DiferenciasExtremos(extremos, eje));
+            // Solo los de la curva: los extremos que no se escriben no se comprueban
+            Assert.All(Peralte.PuntosDeComprobacion(curvas, extremos), p => Assert.Null(p.Tramo));
+
+            var sinFin = Peralte.BombeoEnExtremos(Peralte.LeerCurvas(J(DosCurvasRondaE)), eje);
+            Assert.Null(sinFin[0].Motivo);
+            Assert.Null(sinFin[1].Progresiva);
+            Assert.StartsWith("El eje no tiene la progresiva de contorno EndAlignment (Civil 3D la crea con el eje)", sinFin[1].Motivo);
+        }
+
+        [Fact]
+        public void ContornoQueNoQuedaAntesDelBombeoNoSeEscribe()
+        {
+            var curvas = Peralte.LeerCurvas(J("[{\"pi\": 1, \"estaciones\": [{\"progresiva\": 0, \"tipo\": \"EndNormalCrown\", \"pendientes\": {\"Izq\": -2}},"
+                + "{\"progresiva\": 831.3274, \"tipo\": \"BeginNormalCrown\", \"pendientes\": {\"Izq\": -2}}]}]"));
+            var extremos = Peralte.BombeoEnExtremos(curvas, EjeRondaE());
+            Assert.Equal("BeginAlignment (0+000.000) no queda antes de EndNormalCrown (0+000.000, PI 1): no hay recta inicial y no se le pone el bombeo.", extremos[0].Motivo);
+            Assert.Contains("no queda después de BeginNormalCrown", extremos[1].Motivo);
+        }
+
+        [Fact]
+        public void SinCurvasNoHayExtremos()
+        {
+            Assert.Empty(Peralte.BombeoEnExtremos(new List<CurvaPeralte>(), EjeRondaE()));
+        }
+
+        [Fact]
+        public void DiferenciasDeLosExtremosSoloEnLosEscritos()
+        {
+            var extremos = Peralte.BombeoEnExtremos(Peralte.LeerCurvas(J(DosCurvasRondaE)), EjeRondaE());
+            // Simulación (Escrito null): no se verifica
+            Assert.Empty(Peralte.DiferenciasExtremos(extremos, EjeRondaE()));
+            extremos[0].Escrito = true;
+            extremos[1].Escrito = true;
+            // Civil 3D dejó el 0 %: el dibujo no refleja el bombeo → diferencias (error sin reintentar)
+            var dif = Peralte.DiferenciasExtremos(extremos, EjeRondaE());
+            Assert.Equal(4, dif.Count);
+            Assert.Equal("BeginAlignment, 0+000.000: pendiente de 'LeftOutLaneCrossSlope' 0 % en vez de -2 % (el bombeo normal)", dif[0]);
+            // Con el bombeo escrito, cuadra (el fin lleva -2.5)
+            var leido = EjeRondaE(-2, -2);
+            leido.EstacionesDelEje[1].Pendientes["LeftOutLaneCrossSlope"] = -2.5;
+            leido.EstacionesDelEje[1].Pendientes["RightOutLaneCrossSlope"] = -2.5004;
+            Assert.Empty(Peralte.DiferenciasExtremos(extremos, leido));
+            // El que falló al escribir no se verifica
+            extremos[1].Escrito = false;
+            extremos[1].Motivo = Peralte.MensajeBombeoNoEscrito(extremos[1], "eNotApplicable");
+            Assert.Equal("No se pudo poner el bombeo normal en EndAlignment (0+831.327) (SuperelevationCriticalStation.SetSlope: eNotApplicable): el corredor podría salir casi plano en la recta final. "
+                + "Ponlo en el editor tabular del peralte de Civil 3D y míralo con listar_peralte con progresivas.", extremos[1].Motivo);
+            Assert.Single(Peralte.DiferenciasExtremos(extremos, EjeRondaE(0, -2)));   // solo el del inicio (izquierdo en 0)
+            var d = extremos[0].ComoDiccionario(leido);
+            Assert.Equal(-2.0, ((Dictionary<string, object>)d["leido"])["LeftOutLaneCrossSlope"]);
+            Assert.Equal(true, d["escrito"]);
+        }
+
+        [Fact]
+        public void LasRectasDeLosExtremosSeCompruebanEnSuMitadConElBombeo()
+        {
+            var curvas = Peralte.LeerCurvas(J(DosCurvasRondaE));
+            var extremos = Peralte.BombeoEnExtremos(curvas, EjeRondaE());
+            foreach (var b in extremos) b.Escrito = true;
+            var puntos = Peralte.PuntosDeComprobacion(curvas, extremos);
+            Assert.Equal(4, puntos.Count);   // recta inicial, PI 2, PI 3, recta final
+            Assert.Equal("recta inicial", puntos[0].Tramo);
+            Assert.Equal(96.0, puntos[0].Progresiva);
+            Assert.Equal(2, puntos[0].Pi);
+            Assert.Equal(new[] { -2.0, -2.0 }, puntos[0].Escrito.Select(x => x.Value));
+            Assert.Equal("recta inicial: mitad entre BeginAlignment (0+000.000) y EndNormalCrown (0+192.000) del PI 2; espera el bombeo normal", puntos[0].Criterio);
+            Assert.Null(puntos[1].Tramo);
+            Assert.Equal(282.83185, puntos[1].Progresiva.Value, 6);
+            Assert.Equal("recta final", puntos[3].Tramo);
+            Assert.Equal((639.3274 + 831.3274) / 2, puntos[3].Progresiva.Value, 9);
+
+            // Como en Civil 3D antes de la tarea 7.6: interpola de 0 (pk 0) a -2 (pk 192) → -1 % en el pk 96: aviso
+            var filas = Peralte.ComprobarEntreProgresivas(new[] { puntos[0] }, (pk, s) => -0.02 * pk / 192, out var avisos);
+            Assert.Equal("recta inicial", filas[0]["tramo"]);
+            Assert.Equal(false, filas[0]["coincide"]);
+            Assert.Equal(-1.0, (double?)filas[0]["leido"]);
+            Assert.Equal("El eje no devuelve el peralte escrito en el pk 0+096.000 (recta inicial, junto al PI 2; segmento LeftOutLaneCrossSlope: leído -1 %, escrito -2 %; "
+                + "segmento RightOutLaneCrossSlope: leído -1 %, escrito -2 %): el corredor podría no seguirlo. Mira listar_peralte con progresivas.", Assert.Single(avisos));
+            // Con el bombeo en BeginAlignment: -2 en toda la recta, sin aviso
+            Peralte.ComprobarEntreProgresivas(new[] { puntos[0] }, (pk, s) => -0.02, out var sinAvisos);
+            Assert.Empty(sinAvisos);
+
+            // Un extremo que falló al escribir no se comprueba
+            extremos[1].Escrito = false;
+            Assert.Equal(3, Peralte.PuntosDeComprobacion(curvas, extremos).Count);
+        }
+
+        // ------------------------------------------------------------------ tarea 7.6: carriles que ignoran el peralte
+        [Theory]
+        [InlineData("UseSuperelevation", 6, null, true)]
+        [InlineData("UseSuperelevation", 6L, null, true)]
+        [InlineData("usesuperelevation", "6", null, true)]
+        [InlineData("UseSuperelevation", 2, "RightLO", false)]
+        [InlineData("UseSuperelevation", 0, "LeftLO", false)]
+        [InlineData("UseSuperelevation", 99, "None", true)]       // manda la opción leída con GetEnumData
+        [InlineData("UseSuperelevation", 6, "RightLO", false)]
+        [InlineData("UseSuperelevation", 2, null, false)]
+        [InlineData("Usar peralte", 6, "None", false)]            // el nombre visible no cuenta: solo la clave
+        [InlineData(null, 6, "None", false)]
+        public void CarrilSinPeraltePorClaveYOpcion(string clave, object valor, string opcion, bool esperado)
+            => Assert.Equal(esperado, CarrilesPeralte.EsSinPeralte(clave, valor, opcion));
+
+        [Fact]
+        public void CarrilesSinPeralteConLosParametrosDeParametrosDetalle()
+        {
+            var parametros = new List<object>
+            {
+                new Dictionary<string, object> { ["nombre"] = "Width", ["clave"] = "Width", ["tipo"] = "double", ["valor"] = 3.6 },
+                new Dictionary<string, object> { ["nombre"] = "12427", ["clave"] = "UseSuperelevation", ["tipo"] = "long", ["valor"] = 6, ["opcion"] = "None", ["etiqueta"] = "12427" },
+                new Dictionary<string, object> { ["nombre"] = "x", ["clave"] = null, ["tipo"] = "long", ["valor"] = 1 }
+            };
+            Assert.True(CarrilesPeralte.TieneSinPeralte(parametros, out var valor, out var opcion, out int sinClave));
+            Assert.Equal(6, valor);
+            Assert.Equal("None", opcion);
+            Assert.Equal(1, sinClave);
+            parametros[1] = new Dictionary<string, object> { ["clave"] = "UseSuperelevation", ["valor"] = 2, ["opcion"] = "RightLO" };
+            Assert.False(CarrilesPeralte.TieneSinPeralte(parametros, out _, out _, out _));
+        }
+
+        [Fact]
+        public void AvisoDeCarrilSinPeralteLiteralYSinRepetir()
+        {
+            var c = new CarrilSinPeralte { Corredor = "Corredor 1", Ensamblaje = "Ensamblaje 1", Grupo = "Derecha", Subensamblaje = "LaneSuperelevationAOR - (Derecha)", Lado = "derecha", Valor = 6, Opcion = "None" };
+            var avisos = CarrilesPeralte.Avisos(new[] { c, c });
+            Assert.Equal("El corredor 'Corredor 1' usa el subensamblaje 'LaneSuperelevationAOR - (Derecha)' con UseSuperelevation = None: ese carril no sigue el peralte del eje (validado el 20/11/2026). "
+                + "Cámbialo en Propiedades del subensamblaje (por ejemplo, a RightLO/LeftLO según el lado) y reconstruye el corredor.", Assert.Single(avisos));
+            var d = c.ComoDiccionario();
+            Assert.Equal("UseSuperelevation", d["clave"]);
+            Assert.Equal("None", d["opcion"]);
+            Assert.StartsWith("No se pudo comprobar si los carriles del corredor 'Corredor 1' siguen el peralte del eje (ensamblaje: eWasErased). Míralo con listar_ensamblajes → parametros_detalle",
+                CarrilesPeralte.AvisoNoComprobado("Corredor 1", "ensamblaje", "eWasErased"));
+        }
     }
 }

@@ -104,6 +104,157 @@ namespace ArbaMcp.Nucleo
         /// <summary>Segmento → pendiente en % que debe devolver el eje en el pk (la media de las dos progresivas del tramo).</summary>
         public List<KeyValuePair<string, double>> Escrito = new List<KeyValuePair<string, double>>();
         public string Motivo;
+        /// <summary>
+        /// Tarea 7.6: "recta inicial" o "recta final" si el pk está en la recta entre el contorno del eje y la primera o
+        /// la última progresiva crítica (espera el bombeo normal); null en el centro de una curva. 'Pi' es el de la curva
+        /// vecina.
+        /// </summary>
+        public string Tramo;
+    }
+
+    /// <summary>
+    /// Tarea 7.6: el bombeo normal que aplicar_peralte pone en una progresiva de contorno del eje (BeginAlignment o
+    /// EndAlignment). Civil 3D las crea con el eje con las pendientes en 0 % y no las cambia al añadir las progresivas
+    /// de las curvas, así que interpola de 0 a la primera progresiva crítica: −1.0417 % en el pk 100 con EndNormalCrown
+    /// en el pk 192 a −2 % (validado el 20/11/2026, ronda E). Las pendientes son las de la primera (o última) progresiva
+    /// de bombeo normal pedida, en los mismos segmentos.
+    /// </summary>
+    public sealed class BombeoExtremo
+    {
+        /// <summary>"inicio" o "fin".</summary>
+        public string Extremo;
+        /// <summary>BeginAlignment o EndAlignment.</summary>
+        public string TipoContorno;
+        /// <summary>Progresiva de la de contorno leída en el eje; null si el eje no la tiene.</summary>
+        public double? Progresiva;
+        /// <summary>De dónde salen las pendientes: PI, tipo (EndNormalCrown o BeginNormalCrown) y progresiva pedidos.</summary>
+        public int? Pi;
+        public string TipoOrigen;
+        public double? ProgresivaOrigen;
+        /// <summary>Segmento → pendiente en % (las de la progresiva de origen, en su orden).</summary>
+        public List<KeyValuePair<string, double>> Pendientes = new List<KeyValuePair<string, double>>();
+        /// <summary>Por qué no se escribe (o por qué falló al escribir); null si se escribe.</summary>
+        public string Motivo;
+        /// <summary>Null hasta escribir (simulación); true si SetSlope no falló en ningún segmento.</summary>
+        public bool? Escrito;
+
+        public Dictionary<string, object> ComoDiccionario(PeralteLeido leido = null)
+        {
+            var d = new Dictionary<string, object>
+            {
+                ["extremo"] = Extremo,
+                ["tipo"] = TipoContorno,
+                ["progresiva"] = Progresiva.HasValue ? Argumentos.Redondear(Progresiva.Value) : null,
+                ["progresiva_texto"] = Progresiva.HasValue ? TablaPi.Progresiva(Progresiva.Value) : null,
+                ["desde"] = ProgresivaOrigen.HasValue ? new Dictionary<string, object>
+                {
+                    ["pi"] = Pi,
+                    ["tipo"] = TipoOrigen,
+                    ["progresiva"] = Argumentos.Redondear(ProgresivaOrigen.Value),
+                    ["progresiva_texto"] = TablaPi.Progresiva(ProgresivaOrigen.Value)
+                } : null,
+                ["pendientes"] = Pendientes.ToDictionary(p => p.Key, p => (object)Argumentos.Redondear(p.Value)),
+                ["se_escribe"] = Motivo == null,
+                ["escrito"] = Escrito,
+                ["motivo"] = Motivo
+            };
+            if (leido != null)
+            {
+                var l = Peralte.EstacionDeContorno(leido, TipoContorno, Progresiva);
+                d["leido"] = l?.Pendientes.ToDictionary(p => p.Key, p => (object)Argumentos.Redondear(p.Value));
+            }
+            return d;
+        }
+    }
+
+    /// <summary>
+    /// Tarea 7.6: un subensamblaje con el parámetro de lista UseSuperelevation en None (valor 6): ese carril no sigue el
+    /// peralte del eje y el corredor queda con el bombeo en la curva (validado el 20/11/2026, ronda E: con RightLO (2) y
+    /// LeftLO (0) seccion_corredor dio +6 y −6 % en la curva tras reconstruir).
+    /// </summary>
+    public sealed class CarrilSinPeralte
+    {
+        public string Corredor, Ensamblaje, Grupo, Subensamblaje, Lado, Opcion;
+        public object Valor;
+
+        public Dictionary<string, object> ComoDiccionario() => new Dictionary<string, object>
+        {
+            ["corredor"] = Corredor,
+            ["ensamblaje"] = Ensamblaje,
+            ["grupo"] = Grupo,
+            ["subensamblaje"] = Subensamblaje,
+            ["lado"] = Lado,
+            ["clave"] = CarrilesPeralte.ClaveUsarPeralte,
+            ["valor"] = Valor,
+            ["opcion"] = Opcion
+        };
+    }
+
+    /// <summary>
+    /// Tarea 7.6: detección de los carriles que ignoran el peralte (aviso de aplicar_peralte y crear_corredor), por la
+    /// clave interna del parámetro (ParamBase.Key, que no cambia con el idioma), nunca por el nombre visible.
+    /// </summary>
+    public static class CarrilesPeralte
+    {
+        /// <summary>Clave del parámetro de lista de los LaneSuperelevationAOR (validada el 20/11/2026).</summary>
+        public const string ClaveUsarPeralte = "UseSuperelevation";
+        /// <summary>Opción que hace que el carril no siga el peralte: None, valor 6 (validado el 20/11/2026).</summary>
+        public const string OpcionSinPeralte = "None";
+        public const int ValorSinPeralte = 6;
+
+        /// <summary>
+        /// El parámetro es UseSuperelevation en None: por la opción leída con GetEnumData si la hay; si no, por el valor 6.
+        /// </summary>
+        public static bool EsSinPeralte(string clave, object valor, string opcion)
+        {
+            if (!string.Equals((clave ?? "").Trim(), ClaveUsarPeralte, StringComparison.OrdinalIgnoreCase)) return false;
+            if (!string.IsNullOrWhiteSpace(opcion)) return string.Equals(opcion.Trim(), OpcionSinPeralte, StringComparison.OrdinalIgnoreCase);
+            double? v = valor switch
+            {
+                int i => i,
+                long l => l,
+                double d => d,
+                float f => f,
+                string s when double.TryParse(s.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double t) => t,
+                _ => (double?)null
+            };
+            return v.HasValue && Math.Abs(v.Value - ValorSinPeralte) < 1e-9;
+        }
+
+        /// <summary>Aviso por subensamblaje con UseSuperelevation = None.</summary>
+        public static string Aviso(string corredor, string subensamblaje)
+            => "El corredor '" + corredor + "' usa el subensamblaje '" + subensamblaje + "' con UseSuperelevation = None: ese carril no sigue el peralte del eje (validado el 20/11/2026). "
+               + "Cámbialo en Propiedades del subensamblaje (por ejemplo, a RightLO/LeftLO según el lado) y reconstruye el corredor.";
+
+        /// <summary>Un aviso por corredor y subensamblaje (sin repetir si el mismo está en varias regiones o grupos).</summary>
+        public static List<string> Avisos(IEnumerable<CarrilSinPeralte> carriles)
+            => (carriles ?? Enumerable.Empty<CarrilSinPeralte>()).Select(c => Aviso(c.Corredor, c.Subensamblaje)).Distinct().ToList();
+
+        /// <summary>
+        /// Los carriles sin peralte de una lista de parámetros de un subensamblaje, cada uno como el diccionario de
+        /// listar_ensamblajes → parametros_detalle (claves "clave", "valor" y, en los de lista, "opcion"). 'sinClave'
+        /// cuenta los parámetros cuya clave no se pudo leer (no se sabe si son UseSuperelevation).
+        /// </summary>
+        public static bool TieneSinPeralte(IEnumerable<object> parametrosDetalle, out object valor, out string opcion, out int sinClave)
+        {
+            valor = null; opcion = null; sinClave = 0;
+            bool hay = false;
+            foreach (var o in parametrosDetalle ?? Enumerable.Empty<object>())
+            {
+                if (!(o is IDictionary<string, object> d)) continue;
+                string clave = d.TryGetValue("clave", out var c) ? c as string : null;
+                if (string.IsNullOrWhiteSpace(clave)) { sinClave++; continue; }
+                d.TryGetValue("valor", out var v);
+                string op = d.TryGetValue("opcion", out var x) ? x as string : null;
+                if (!hay && EsSinPeralte(clave, v, op)) { hay = true; valor = v; opcion = op; }
+            }
+            return hay;
+        }
+
+        /// <summary>Aviso cuando una lectura falla: no se sabe si los carriles siguen el peralte.</summary>
+        public static string AvisoNoComprobado(string corredor, string que, string error)
+            => "No se pudo comprobar si los carriles del corredor '" + corredor + "' siguen el peralte del eje (" + que + ": " + error
+               + "). Míralo con listar_ensamblajes → parametros_detalle (clave " + ClaveUsarPeralte + ").";
     }
 
     /// <summary>Lo que el plugin lee del peralte de un eje.</summary>
@@ -619,18 +770,141 @@ namespace ArbaMcp.Nucleo
                         ["diferencia"] = leido.HasValue ? Argumentos.Redondear(leido.Value - s.Value) : null,
                         ["coincide"] = coincide
                     };
+                    if (p.Tramo != null) fila["tramo"] = p.Tramo;   // tarea 7.6: recta inicial o final (espera el bombeo)
                     if (error != null) { fila["error"] = error; fallidos.Add("segmento " + s.Key + ": " + error); }
                     else if (coincide == false) distintos.Add("segmento " + s.Key + ": leído " + Num(leido.Value) + " %, escrito " + Num(s.Value) + " %");
                     filas.Add(fila);
                 }
+                string dondePk = p.Tramo != null ? p.Tramo + ", junto al PI " + p.Pi : "PI " + p.Pi;
                 if (distintos.Count > 0)
-                    avisos.Add("El eje no devuelve el peralte escrito en el pk " + TablaPi.Progresiva(pk) + " (PI " + p.Pi + "; " + string.Join("; ", distintos)
+                    avisos.Add("El eje no devuelve el peralte escrito en el pk " + TablaPi.Progresiva(pk) + " (" + dondePk + "; " + string.Join("; ", distintos)
                         + "): el corredor podría no seguirlo. Mira listar_peralte con progresivas.");
                 if (fallidos.Count > 0)
-                    avisos.Add("No se pudo leer el peralte en el pk " + TablaPi.Progresiva(pk) + " (PI " + p.Pi + ") con Alignment.GetCrossSlopeAtStation ("
+                    avisos.Add("No se pudo leer el peralte en el pk " + TablaPi.Progresiva(pk) + " (" + dondePk + ") con Alignment.GetCrossSlopeAtStation ("
                         + string.Join("; ", fallidos) + "): no se sabe si el corredor lo sigue. Mira listar_peralte con progresivas.");
             }
             return filas;
+        }
+
+        // ------------------------------------------------------------------ bombeo en los extremos del eje (tarea 7.6)
+        /// <summary>
+        /// Tipos de progresiva crítica del bombeo normal (SuperelevationCriticalStationType, validados el 17/11/2026):
+        /// EndNormalCrown es el fin del bombeo normal (la primera de la entrada de una curva) y BeginNormalCrown, el inicio
+        /// del bombeo normal (la última de la salida). Son los que pone el puente con la DG-2018 (norma_peralte.py).
+        /// </summary>
+        public const string TipoFinBombeoNormal = "EndNormalCrown";
+        public const string TipoInicioBombeoNormal = "BeginNormalCrown";
+
+        /// <summary>La progresiva de contorno de ese tipo leída en la colección del eje (la más cercana a 'pk' si se da).</summary>
+        public static EstacionLeida EstacionDeContorno(PeralteLeido p, string tipo, double? pk = null)
+            => p?.EstacionesDelEje.Where(e => string.Equals((e.Tipo ?? "").Trim(), tipo, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(e => pk.HasValue ? Math.Abs(e.Progresiva - pk.Value) : 0).ThenBy(e => e.Progresiva).FirstOrDefault();
+
+        /// <summary>
+        /// El bombeo normal que aplicar_peralte pone en BeginAlignment y EndAlignment (tarea 7.6): en el inicio, las
+        /// pendientes de la primera EndNormalCrown de la primera curva pedida; en el fin, las de la última BeginNormalCrown
+        /// de la última curva. 'actual' es el peralte leído antes de escribir (para la progresiva de cada contorno). Si
+        /// falta la progresiva de origen, la de contorno, o la de contorno no queda antes (o después) de la de origen, el
+        /// extremo lleva 'Motivo' y no se escribe.
+        /// </summary>
+        public static List<BombeoExtremo> BombeoEnExtremos(IList<CurvaPeralte> curvas, PeralteLeido actual)
+        {
+            var lista = new List<BombeoExtremo>();
+            var conEstaciones = curvas.Where(c => c.Estaciones.Count > 0).ToList();
+            if (conEstaciones.Count == 0) return lista;
+            var primera = conEstaciones.OrderBy(c => c.Estaciones.Min(e => e.Progresiva)).First();
+            var ultima = conEstaciones.OrderBy(c => c.Estaciones.Max(e => e.Progresiva)).Last();
+            lista.Add(Extremo("inicio", TiposDeContorno[0], primera,
+                primera.Estaciones.OrderBy(e => e.Progresiva).FirstOrDefault(e => EsTipo(e, TipoFinBombeoNormal)), TipoFinBombeoNormal, actual));
+            lista.Add(Extremo("fin", TiposDeContorno[1], ultima,
+                ultima.Estaciones.OrderBy(e => e.Progresiva).LastOrDefault(e => EsTipo(e, TipoInicioBombeoNormal)), TipoInicioBombeoNormal, actual));
+            return lista;
+        }
+
+        private static BombeoExtremo Extremo(string extremo, string tipoContorno, CurvaPeralte curva, EstacionPeralte origen, string tipoOrigen, PeralteLeido actual)
+        {
+            bool inicio = extremo == "inicio";
+            string recta = inicio ? "el inicio del eje y la primera progresiva crítica" : "la última progresiva crítica y el final del eje";
+            var b = new BombeoExtremo { Extremo = extremo, TipoContorno = tipoContorno, Pi = curva.Pi, TipoOrigen = tipoOrigen };
+            var contorno = EstacionDeContorno(actual, tipoContorno);
+            b.Progresiva = contorno?.Progresiva;
+            if (origen == null)
+            {
+                b.Motivo = "La " + (inicio ? "primera" : "última") + " curva pedida (PI " + curva.Pi + ") no tiene " + tipoOrigen + " (" + (inicio ? "fin" : "inicio")
+                    + " del bombeo normal): no se sabe qué bombeo poner en " + tipoContorno + ", que queda como la dejó Civil 3D (0 %), y el corredor saldría casi plano entre "
+                    + recta + ". Ponlo en el editor tabular del peralte de Civil 3D o pide esa progresiva.";
+                return b;
+            }
+            b.ProgresivaOrigen = origen.Progresiva;
+            b.Pendientes = origen.Pendientes.ToList();
+            if (contorno == null)
+                b.Motivo = "El eje no tiene la progresiva de contorno " + tipoContorno + " (Civil 3D la crea con el eje): no se le pone el bombeo y el corredor podría salir casi plano entre "
+                    + recta + ". Míralo con listar_peralte.";
+            else if (inicio ? contorno.Progresiva > origen.Progresiva - 2 * ToleranciaProgresiva : contorno.Progresiva < origen.Progresiva + 2 * ToleranciaProgresiva)
+                b.Motivo = tipoContorno + " (" + TablaPi.Progresiva(contorno.Progresiva) + ") no queda " + (inicio ? "antes" : "después") + " de " + tipoOrigen + " ("
+                    + TablaPi.Progresiva(origen.Progresiva) + ", PI " + curva.Pi + "): no hay recta " + (inicio ? "inicial" : "final") + " y no se le pone el bombeo.";
+            return b;
+        }
+
+        /// <summary>
+        /// Diferencias de las progresivas de contorno escritas con lo leído tras escribir (se suman a las de Diferencias:
+        /// si el dibujo no refleja el bombeo, error sin reintentar). Solo las que se escribieron sin error.
+        /// </summary>
+        public static List<string> DiferenciasExtremos(IEnumerable<BombeoExtremo> extremos, PeralteLeido leido)
+        {
+            var dif = new List<string>();
+            foreach (var b in extremos.Where(x => x.Motivo == null && x.Escrito == true))
+            {
+                string donde = b.TipoContorno + ", " + (b.Progresiva.HasValue ? TablaPi.Progresiva(b.Progresiva.Value) : "?");
+                var l = EstacionDeContorno(leido, b.TipoContorno, b.Progresiva);
+                if (l == null || (b.Progresiva.HasValue && Math.Abs(l.Progresiva - b.Progresiva.Value) > ToleranciaProgresiva))
+                { dif.Add(donde + ": no está en el eje después de escribir"); continue; }
+                foreach (var p in b.Pendientes)
+                {
+                    if (!l.Pendientes.TryGetValue(p.Key, out double real)) dif.Add(donde + ": no se pudo leer la pendiente de '" + p.Key + "'");
+                    else if (Math.Abs(real - p.Value) > ToleranciaPendiente)
+                        dif.Add(donde + ": pendiente de '" + p.Key + "' " + Num(real) + " % en vez de " + Num(p.Value) + " % (el bombeo normal)");
+                }
+            }
+            return dif;
+        }
+
+        /// <summary>Aviso cuando SetSlope falla en una progresiva de contorno: el resto del peralte sí se escribe.</summary>
+        public static string MensajeBombeoNoEscrito(BombeoExtremo b, string error)
+            => "No se pudo poner el bombeo normal en " + b.TipoContorno + (b.Progresiva.HasValue ? " (" + TablaPi.Progresiva(b.Progresiva.Value) + ")" : "")
+               + " (SuperelevationCriticalStation.SetSlope: " + error + "): el corredor podría salir casi plano en la recta " + (b.Extremo == "inicio" ? "inicial" : "final")
+               + ". Ponlo en el editor tabular del peralte de Civil 3D y míralo con listar_peralte con progresivas.";
+
+        /// <summary>
+        /// Los pk de la comprobación entre progresivas de aplicar_peralte: los de las curvas (PuntosEntreProgresivas) y,
+        /// desde la tarea 7.6, uno en la mitad de la recta inicial (entre BeginAlignment y la EndNormalCrown de origen) y
+        /// otro en la de la final, que esperan el bombeo normal. Los extremos que no se escriben no se comprueban (su
+        /// motivo ya va en los avisos).
+        /// </summary>
+        public static List<PuntoComprobacion> PuntosDeComprobacion(IList<CurvaPeralte> curvas, IEnumerable<BombeoExtremo> extremos)
+        {
+            var lista = (extremos ?? Enumerable.Empty<BombeoExtremo>()).ToList();
+            var puntos = new List<PuntoComprobacion>();
+            puntos.AddRange(lista.Where(b => b.Extremo == "inicio").Select(PuntoDeRecta).Where(p => p != null));
+            puntos.AddRange(PuntosEntreProgresivas(curvas));
+            puntos.AddRange(lista.Where(b => b.Extremo != "inicio").Select(PuntoDeRecta).Where(p => p != null));
+            return puntos;
+        }
+
+        private static PuntoComprobacion PuntoDeRecta(BombeoExtremo b)
+        {
+            if (b.Motivo != null || b.Escrito == false || !b.Progresiva.HasValue || !b.ProgresivaOrigen.HasValue || b.Pendientes.Count == 0) return null;
+            bool inicio = b.Extremo == "inicio";
+            return new PuntoComprobacion
+            {
+                Pi = b.Pi ?? 0,
+                Progresiva = (b.Progresiva.Value + b.ProgresivaOrigen.Value) / 2,
+                Tramo = inicio ? "recta inicial" : "recta final",
+                Criterio = (inicio ? "recta inicial: mitad entre " + b.TipoContorno + " (" + TablaPi.Progresiva(b.Progresiva.Value) + ") y " + b.TipoOrigen + " (" + TablaPi.Progresiva(b.ProgresivaOrigen.Value) + ")"
+                                   : "recta final: mitad entre " + b.TipoOrigen + " (" + TablaPi.Progresiva(b.ProgresivaOrigen.Value) + ") y " + b.TipoContorno + " (" + TablaPi.Progresiva(b.Progresiva.Value) + ")")
+                           + " del PI " + b.Pi + "; espera el bombeo normal",
+                Escrito = b.Pendientes.ToList()
+            };
         }
 
         // ------------------------------------------------------------------ ayudantes

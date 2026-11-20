@@ -147,6 +147,22 @@ namespace ArbaMcp
                 + " a " + TablaPi.Progresiva(c.ProgresivaPt.Value) + ") al escribir. No se reintenta. Míralo con listar_peralte.");
         }
 
+        /// <summary>
+        /// Tarea 7.6: la progresiva de contorno (BeginAlignment o EndAlignment) de la colección del eje, por su tipo y su
+        /// progresiva (la más cercana a 'pk'); null si no está. Miembros ya usados: Alignment.SuperelevationCriticalStations,
+        /// StationType y Station.
+        /// </summary>
+        private static Civ.SuperelevationCriticalStation EstacionDeContornoDelEje(CivAlignment al, string tipo, double pk)
+        {
+            Civ.SuperelevationCriticalStation mejor = null;
+            foreach (var st in al.SuperelevationCriticalStations)
+            {
+                if (!string.Equals(Seguro(() => st.StationType.ToString(), null), tipo, StringComparison.OrdinalIgnoreCase)) continue;
+                if (mejor == null || Math.Abs(st.Station - pk) < Math.Abs(mejor.Station - pk)) mejor = st;
+            }
+            return mejor;
+        }
+
         // ------------------------------------------------------------------ escritura
         /// <summary>
         /// Cuerpo de aplicar_peralte, con el patrón de CambiarSuperficie: simulación con bloqueo de lectura (sin entrada de
@@ -158,12 +174,15 @@ namespace ArbaMcp
             var doc = ctx.Doc;
             Dictionary<string, object> antes, prevision;
             int curvasAntes;
+            List<BombeoExtremo> extremos;   // tarea 7.6: el bombeo normal en BeginAlignment y EndAlignment
+            ObjectId idEje;
             var avisosLectura = new HashSet<string>();
             string nombreReal = nombreAl;
             using (ctx.Simular ? BloquearParaLeer(doc) : doc.LockDocument())   // simulación: contexto de aplicación y solo lectura, sin entrada de Deshacer
             using (var tr = doc.Database.TransactionManager.StartTransaction())
             {
                 var idAl = BuscarAlineamiento(tr, nombreAl);   // "No existe el alineamiento 'X'. Usa listar_alineamientos."
+                idEje = idAl;
                 var al = (CivAlignment)tr.GetObject(idAl, ctx.Simular ? OpenMode.ForRead : OpenMode.ForWrite);
                 nombreReal = al.Name;
                 var actual = LeerPeralte(al, avisosLectura);
@@ -183,8 +202,13 @@ namespace ArbaMcp
                 if (Seguro(() => al.UseDesignCriteriaFile, false))
                     ctx.Avisos.Add("El eje '" + al.Name + "' tiene activado el archivo de criterios de diseño (" + (Seguro(() => al.CriteriaFileName, null) ?? "sin nombre")
                         + "): aplicar_peralte no lo usa; los valores son los pedidos.");
+                // Tarea 7.6: Civil 3D deja BeginAlignment y EndAlignment en 0 % y el corredor interpolaría de 0 al bombeo
+                // en las rectas de los extremos (−1.0417 % en el pk 100, 20/11/2026): se les pone el bombeo normal pedido
+                extremos = Peralte.BombeoEnExtremos(curvas, actual);
+                foreach (var b in extremos) if (b.Motivo != null) ctx.Avisos.Add(b.Motivo);
                 antes = Peralte.Estado(actual);
                 prevision = Peralte.Prevision(al.Name, curvas, curvasAntes);
+                prevision["bombeo_en_extremos"] = extremos.Select(b => (object)b.ComoDiccionario()).ToList();
                 if (ctx.Simular)
                 {
                     tr.Commit();
@@ -217,6 +241,25 @@ namespace ArbaMcp
                             st.SetSlope(EnumPeralte<SuperelevationCrossSegmentType>(p.Key, "segmento de la sección"), Peralte.PendienteApi(p.Value));
                     }
                 }
+                // Tarea 7.6: el bombeo normal en las progresivas de contorno, con el mismo SetSlope. Si falla, aviso y el
+                // resto del peralte se escribe igual (no se verifica ese extremo).
+                foreach (var b in extremos.Where(x => x.Motivo == null))
+                {
+                    try
+                    {
+                        var st = EstacionDeContornoDelEje(al, b.TipoContorno, b.Progresiva.Value);
+                        if (st == null) throw new InvalidOperationException("no está en Alignment.SuperelevationCriticalStations al escribir");
+                        foreach (var p in b.Pendientes)
+                            st.SetSlope(EnumPeralte<SuperelevationCrossSegmentType>(p.Key, "segmento de la sección"), Peralte.PendienteApi(p.Value));
+                        b.Escrito = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        b.Escrito = false;
+                        b.Motivo = Peralte.MensajeBombeoNoEscrito(b, Raiz(ex).Message);
+                        ctx.Avisos.Add(b.Motivo);
+                    }
+                }
                 tr.Commit();
             }
 
@@ -224,6 +267,8 @@ namespace ArbaMcp
             var avisosRelectura = new HashSet<string>();
             List<Dictionary<string, object>> comprobacion;
             List<string> avisosComprobacion;
+            var avisosCarriles = new List<string>();
+            List<CarrilSinPeralte> carriles;
             using (doc.LockDocument())
             using (var tr = doc.Database.TransactionManager.StartTransaction())
             {
@@ -231,12 +276,16 @@ namespace ArbaMcp
                 leido = LeerPeralte(al, avisosRelectura);
                 // Tarea 7.4: el peralte en el centro del peralte total de cada curva, entre progresivas críticas (lo que pide
                 // el corredor en cualquier pk). Solo en la escritura real; si no coincide, aviso (no error: por verificar).
-                comprobacion = Peralte.ComprobarEntreProgresivas(Peralte.PuntosEntreProgresivas(curvas), (pk, seg) => PendienteEnPk(al, pk, seg), out avisosComprobacion);
+                // Tarea 7.6: más un pk en la mitad de la recta inicial y otro en la de la final, que esperan el bombeo normal
+                comprobacion = Peralte.ComprobarEntreProgresivas(Peralte.PuntosDeComprobacion(curvas, extremos), (pk, seg) => PendienteEnPk(al, pk, seg), out avisosComprobacion);
+                // Tarea 7.6: los corredores que usan este eje con carriles que ignoran el peralte (UseSuperelevation = None)
+                carriles = CarrilesSinPeralteDelEje(tr, idEje, avisosCarriles);
                 tr.Commit();
             }
             var despues = Peralte.Estado(leido);
             string rutaCopia = Verificacion.RutaDeCopia(ctx.Copia);
             var diferencias = Peralte.Diferencias(curvas, leido, out var extra);
+            diferencias.AddRange(Peralte.DiferenciasExtremos(extremos, leido));
             if (diferencias.Count > 0) throw new InvalidOperationException(Peralte.MensajeNoRefleja(nombreReal, diferencias, rutaCopia));
             if (extra.Count > 0)
                 ctx.Avisos.Add("El eje tiene progresivas críticas que no se pidieron (Civil 3D pudo crearlas al añadir la curva de peralte): " + string.Join("; ", extra) + ". Míralas con listar_peralte.");
@@ -245,10 +294,13 @@ namespace ArbaMcp
                     + leido.NumeroEstacionesCurvas + " (dato para VALIDACION_120).");
             ctx.Avisos.AddRange(avisosRelectura);
             ctx.Avisos.AddRange(avisosComprobacion);
+            ctx.Avisos.AddRange(avisosCarriles);
             var datos = new Dictionary<string, object>
             {
                 ["estaciones_del_eje"] = leido.EstacionesDelEje.Count,
+                ["bombeo_en_extremos"] = extremos.Select(b => (object)b.ComoDiccionario(leido)).ToList(),
                 ["comprobacion_entre_progresivas"] = comprobacion,
+                ["carriles_sin_peralte"] = carriles.Select(c => (object)c.ComoDiccionario()).ToList(),
                 ["lectura_entre_progresivas"] = TextoLecturaEntreProgresivas(),
                 ["escala_pendientes"] = "% = valor de la API × " + Peralte.FactorApi.ToString(CultureInfo.InvariantCulture) + " (por verificar en Civil 3D)",
                 ["deshacer"] = Peralte.BloqueDeshacer(leido, rutaCopia)
@@ -316,7 +368,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = HerramientaAplicarPeralte,
-                Descripcion = "Pone el peralte en las curvas circulares de un eje SIN peralte con los valores que se le pasan (sin norma: con 'velocidad_diseno' y los datos del proyecto los calcula el puente con la DG-2018). Por cada curva (identificada por su número de PI de listar_pis) usa la curva de peralte vacía que Civil 3D crea con el eje para ese arco (si no la hay, crea una curva de peralte de usuario) y añade sus progresivas críticas con su tipo, su región de transición y las pendientes transversales por segmento en % (los nombres de tipo, región y segmento son los de listar_peralte → enumerados). Si el eje ya tiene peralte (alguna progresiva crítica en sus curvas de peralte, o en el eje aparte de BeginAlignment y EndAlignment) responde error sin tocar nada: no borra ni reemplaza el que hay. Comprueba que los PI existen y tienen curva y que las progresivas están dentro del eje y no se repiten. Tras escribir relee el peralte y verifica cada progresiva y pendiente pedida. Una sola entrada en el menú Deshacer; copia de seguridad previa. Simula primero (simular=true).",
+                Descripcion = "Pone el peralte en las curvas circulares de un eje SIN peralte con los valores que se le pasan (sin norma: con 'velocidad_diseno' y los datos del proyecto los calcula el puente con la DG-2018). Por cada curva (identificada por su número de PI de listar_pis) usa la curva de peralte vacía que Civil 3D crea con el eje para ese arco (si no la hay, crea una curva de peralte de usuario) y añade sus progresivas críticas con su tipo, su región de transición y las pendientes transversales por segmento en % (los nombres de tipo, región y segmento son los de listar_peralte → enumerados). Si el eje ya tiene peralte (alguna progresiva crítica en sus curvas de peralte, o en el eje aparte de BeginAlignment y EndAlignment) responde error sin tocar nada: no borra ni reemplaza el que hay. Comprueba que los PI existen y tienen curva y que las progresivas están dentro del eje y no se repiten. Pone además en las progresivas de contorno del eje (BeginAlignment y EndAlignment, que Civil 3D deja en 0 %) el bombeo normal de la primera EndNormalCrown y de la última BeginNormalCrown pedidas, para que las rectas de los extremos no salgan casi planas. Tras escribir relee el peralte y verifica cada progresiva y pendiente pedida y el bombeo de los extremos, comprueba el peralte entre progresivas (centro de cada curva y mitad de las rectas inicial y final) y avisa si un corredor que usa el eje tiene carriles con UseSuperelevation = None ('carriles_sin_peralte'). Una sola entrada en el menú Deshacer; copia de seguridad previa. Simula primero (simular=true).",
                 Parametros =
                 {
                     P("alineamiento", "string", "Nombre del alineamiento (eje) sin peralte; ver listar_alineamientos", true),
