@@ -966,3 +966,27 @@ Corrección de la 1.20.0 tras la primera prueba en Civil 3D (17/11/2026, ronda D
 | enumerado | `SuperelevationCrossSegmentType`: `LeftOutShoulderCrossSlope`, `LeftOutLaneCrossSlope`, `LeftInShoulderCrossSlope`, `LeftInLaneCrossSlope`, `RightOutShoulderCrossSlope`, `RightOutLaneCrossSlope`, `RightInShoulderCrossSlope`, `RightInLaneCrossSlope` | 2027 | ídem | validado el 17/11/2026 (paso 2); **por verificar** que en una calzada de dos carriles sin mediana los carriles sean los `Out` (`VALIDACION_120`, pasos 5b y 9) |
 | enumerado | `Autodesk.Civil.DatabaseServices.SuperelevationType`: `NotSupported`, `Superelevation`, `Cant` (el eje de la prueba: `Superelevation`) | 2027 | `listar_peralte` (`tipo_peralte`) | validado el 17/11/2026 (paso 2) |
 
+
+## Ronda E (1.22.0, tarea 7.3): `seccion_corredor` y `parametros_detalle` de `listar_ensamblajes`: escrita sin Civil 3D
+
+Escrita el 20/11/2026 sin Civil 3D. Cada miembro se **confirmó en el catálogo** de `memoria-firma` en la misma sesión
+(nombre, tipo, firma y si la colección se puede recorrer con `foreach`). Nadie los ha ejecutado: todos están **por
+verificar**. La herramienta los lee cada uno en su `try`: si uno falla, sale en `avisos` con el texto `No se pudo leer
+<miembro>: <mensaje>` y la respuesta sigue. Los ya validados que se reutilizan (`CorridorCollection`, `Corridor.Baselines`,
+`Baseline.Name`, `AlignmentId`, `ProfileId`, `StartStation`, `EndStation`, `BaselineRegions`, `BaselineRegion.Name`,
+`StartStation`, `EndStation`, `AssemblyId`, `Corridor.IsOutOfDate`, `Subassembly.Name`, `Side`, `ParamsDouble/Long/String/Bool`)
+no se repiten.
+
+| Tipo | Miembro | Versión | Herramienta que lo usa | Estado |
+|---|---|---|---|---|
+| método | `Baseline.GetAppliedAssemblyAtStation(double station)` → `AppliedAssembly` | 2027 | `seccion_corredor` (en la progresiva pedida y, si lanza o da `null`, en la calculada más cercana) | por verificar (confirmado en el catálogo). **No se sabe** qué hace en una progresiva que no es de las calculadas por la frecuencia: ¿lanza, da `null` o interpola? Lo dice la validación |
+| método | `BaseBaseline.SortedStations()` → `double[]` | 2027 | `seccion_corredor` (`estacion_anterior`, `estacion_siguiente` y la progresiva calculada más cercana) | por verificar (confirmado en el catálogo, declarado en `BaseBaseline`) |
+| propiedad | `AppliedAssembly.AssemblyId` (`ObjectId`) | 2027 | `seccion_corredor` (ensamblaje si la progresiva no cae en una región; grupo de cada subensamblaje) | por verificar (confirmado en el catálogo) |
+| método | `AppliedAssembly.GetAppliedSubassemblies()` → `AppliedSubassemblyCollection` (`Count`, `Item`, `GetEnumerator()` → `IEnumerator<AppliedSubassembly>`) | 2027 | `seccion_corredor` | por verificar (confirmado en el catálogo; se recorre con `foreach`) |
+| propiedad | `AppliedSubassembly.SubassemblyId` (`ObjectId`), `.Parameters` (`IAppliedSubassemblyParam[]`, un arreglo), `.Points` (`CalculatedPointCollection`: `Count`, `Item`, `GetEnumerator()` → `IEnumerator<CalculatedPoint>`) | 2027 | `seccion_corredor` | por verificar (confirmados en el catálogo) |
+| propiedad | `IAppliedSubassemblyParam.KeyName`, `.DisplayName` (string), `.ValueAsObject`, `.DesignValueAsObject` (object), `.IsOverriden` (bool, sic: con una sola «d») | 2027 | `seccion_corredor` (`parametros[]`) | por verificar (confirmados en el catálogo; interfaz de `Autodesk.Civil.DatabaseServices`). No se usan `ValueType`, `Comment` ni `ClearOverride()` |
+| propiedad | `CalculatedPoint.StationOffsetElevationToBaseline` (`Point3d`) | 2027 | `seccion_corredor` (`puntos[]`, tramos y carriles) | por verificar (confirmado en el catálogo). **Supuesto por verificar**: X = progresiva, Y = desplazamiento (negativo a la izquierda), Z = cota. Si la X de algún punto difiere más de 0,01 de la progresiva usada, la herramienta lo avisa. No se usan `XYZ`, `StationOffsetElevationToSubassembly` ni las normales |
+| propiedad | `CalculatedSubentity.CorridorCodes` (`CorridorCodeCollection`: `Count`, `Item` → string, `GetEnumerator()` → `IEnumerator<string>`), heredada por `CalculatedPoint` | 2027 | `seccion_corredor` (`codigos` de cada punto; `Crown` y `ETW` para la pendiente del carril) | por verificar (confirmado en el catálogo) |
+| propiedad | `Subassembly.GeometryGenerator` (`SubassemblyGenerator`) → `.MacroOrClassName` (string) | 2027 | `seccion_corredor` (`clase`) | por verificar (confirmados en el catálogo; solo se leen) |
+| propiedad | `ParamBase<...>.Key` (string, solo lectura), declarada en la plantilla `ParamBase` de la que derivan `ParamDouble`, `ParamLong`, `ParamString` y `ParamBool` (`Autodesk.Civil.Runtime`) | 2027 | `listar_ensamblajes` (`parametros_detalle[].clave`) | por verificar (confirmado en el catálogo en cada instancia de `ParamBase`; se lee **por reflexión**, como `DisplayName` y `Value`) |
+| método | `ParamLong.EnumCount()` → `uint` y `ParamLong.GetEnumData(uint index, out string name, out string displayName, out int value)` | 2027 | `listar_ensamblajes` (`opciones[]`, `opcion` y `etiqueta` de los parámetros de lista) | por verificar (confirmados en el catálogo; enlace directo a `Autodesk.Civil.Runtime.ParamLong`). `ParamLong.Value` es `int` en el catálogo; la opción actual es la de `GetEnumData` cuyo `value` coincide |
