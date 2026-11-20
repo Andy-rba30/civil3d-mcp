@@ -147,7 +147,7 @@ namespace ArbaMcp
             Registrar(new Herramienta
             {
                 Nombre = HerramientaCrearCorredor,
-                Descripcion = "Crea un corredor nuevo con una línea base (un alineamiento y su rasante) y una región con un ensamblaje que ya existe en el dibujo, entre dos progresivas (por defecto el tramo común del eje y la rasante) y con una frecuencia dada (la misma en tangentes, curvas, espirales y curvas del perfil). Pone la superficie de terreno en todos los objetivos de tipo superficie de la región (los taludes, como asignar_objetivos_superficie) y reconstruye el corredor, todo en una sola entrada de Deshacer. Vía: CorridorCollection.Add(nombre, línea base, eje, rasante, región, ensamblaje), ajuste del rango de la región, AppliedAssemblySetting, GetTargets/SetTargets y Corridor.Rebuild(). Relee el corredor y comprueba línea base, eje, rasante, ensamblaje, rango (±0,01), frecuencias y que cada objetivo de superficie tiene la superficie pedida (si no, error sin reintentar). Desde 1.14.1 pone el corredor en la capa de corredores de la configuración del dibujo (Entity.LayerId después de Add; si no existe o no se puede poner, aviso y se queda en la que le pone Civil 3D). Devuelve 'estado_corredor' (el mismo bloque que la herramienta estado_corredor), la capa, los objetivos asignados, los subensamblajes del ensamblaje y 'restaurar': Civil 3D no deshace objetivos con Ctrl+Z, así que deshacer_objetivos los deja como estaban (sin objetivo). Con simular=true solo comprueba e informa (sin copia ni cambios). Si ya existe un corredor con ese nombre, error sin tocar nada. No crea superficies de corredor (Top, Datum).",
+                Descripcion = "Crea un corredor nuevo con una línea base (un alineamiento y su rasante) y una región con un ensamblaje que ya existe en el dibujo, entre dos progresivas (por defecto el tramo común del eje y la rasante) y con una frecuencia dada (la misma en tangentes, curvas, espirales y curvas del perfil). Pone la superficie de terreno en todos los objetivos de tipo superficie de la región (los taludes, como asignar_objetivos_superficie) y reconstruye el corredor, todo en una sola entrada de Deshacer. Vía: CorridorCollection.Add(nombre, línea base, eje, rasante, región, ensamblaje), ajuste del rango de la región, AppliedAssemblySetting, GetTargets/SetTargets y Corridor.Rebuild(). Relee el corredor y comprueba línea base, eje, rasante, ensamblaje, rango (±0,01), frecuencias y que cada objetivo de superficie tiene la superficie pedida (si no, error sin reintentar). Desde 1.14.1 pone el corredor en la capa de corredores de la configuración del dibujo (Entity.LayerId después de Add; si no existe o no se puede poner, aviso y se queda en la que le pone Civil 3D). Devuelve 'estado_corredor' (el mismo bloque que la herramienta estado_corredor), la capa, los objetivos asignados, los subensamblajes del ensamblaje y 'restaurar': Civil 3D no deshace objetivos con Ctrl+Z, así que deshacer_objetivos los deja como estaban (sin objetivo). Con simular=true solo comprueba e informa (sin copia ni cambios). Si ya existe un corredor con ese nombre, error sin tocar nada. No crea superficies de corredor (Top, Datum). Si el eje ya tiene peralte, avisa (también al simular) de cada subensamblaje del ensamblaje con UseSuperelevation = None, un carril que no sigue el peralte ('carriles_sin_peralte').",
                 Parametros =
                 {
                     P("nombre", "string", "Nombre del corredor nuevo (no debe existir; ver listar_corredores)", true),
@@ -180,6 +180,8 @@ namespace ArbaMcp
                     string nombreAlReal = nombreAl, nombrePerfilReal = nombrePerfil, nombreEnsReal = nombreEns, nombreSuperficie = null, tipoPerfil = null, capaPrevista = null;
                     RangoCorredor rango = null;
                     List<Dictionary<string, object>> subensamblajes = null;
+                    bool? ejeConPeralte = null;                    // tarea 7.6
+                    List<CarrilSinPeralte> carrilesSinPeralte = null;
 
                     // Lo que deja la creación (para la respuesta y la memoria técnica)
                     var guardados = new List<ObjetivoGuardado>();
@@ -258,6 +260,15 @@ namespace ArbaMcp
                             subensamblajes = SubensamblajesDe(tr, asm);
                             if (subensamblajes.Count == 0)
                                 ctx.Avisos.Add("El ensamblaje '" + asm.Name + "' no tiene subensamblajes legibles: el corredor no tendrá secciones. Revísalo con listar_ensamblajes.");
+                            // Tarea 7.6: si el eje ya tiene peralte, aviso por cada carril con UseSuperelevation = None
+                            // (el corredor se quedaría con el bombeo en las curvas). Solo avisa: crea el corredor igual.
+                            try { ejeConPeralte = LeerPeralte(al, new HashSet<string>()).TienePeralte; }
+                            catch (Exception ex) { ctx.Avisos.Add("No se pudo leer si el eje '" + al.Name + "' tiene peralte (Alignment.SuperelevationCurves): " + Raiz(ex).Message + ". No se comprobó si los carriles del ensamblaje lo siguen; míralo con listar_peralte y listar_ensamblajes."); }
+                            if (ejeConPeralte == true)
+                            {
+                                carrilesSinPeralte = CarrilesSinPeralteDeEnsamblaje(tr, idEns, nombre, ctx.Avisos);
+                                ctx.Avisos.AddRange(CarrilesPeralte.Avisos(carrilesSinPeralte));
+                            }
 
                             rango = Corredor.Rango(al.StartingStation, al.EndingStation, pr.StartingStation, pr.EndingStation, inicioPedido, finPedido, al.Name, pr.Name);
                             ctx.Avisos.AddRange(rango.Avisos);
@@ -449,6 +460,8 @@ namespace ArbaMcp
                             tipo_perfil = tipoPerfil,
                             ensamblaje = nombreEnsReal,
                             subensamblajes,
+                            eje_con_peralte = ejeConPeralte,
+                            carriles_sin_peralte = carrilesSinPeralte?.Select(c => c.ComoDiccionario()).ToList(),
                             inicio = N(inicioLeido),
                             fin = N(finLeido),
                             rango = rango.ComoDiccionario(),
