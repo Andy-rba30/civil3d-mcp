@@ -13,7 +13,10 @@ dan lo mismo que `formulas.expresion_python` de la base, que los umbrales de las
 y que todas las referencias que cita el código existen en la base. Desde 1.20.0, si la base trae `peralte_figura` (las
 Figuras 302.02 a 302.05 digitalizadas, tarea 6.10), compara la lectura de la figura de aplicar_peralte con los valores
 de control de la orquestadora (CASOS_PERALTE_FIGURA); si no la trae, los salta y lo dice. Desde 1.21.0 también comprueba
-el sobreancho (norma_sobreancho.py: la F46, el mínimo de 0,40 m de la R302.09.03-2 y sus referencias).
+el sobreancho (norma_sobreancho.py: la F46, el mínimo de 0,40 m de la R302.09.03-2 y sus referencias) y, desde la
+tarea 7.5, el sobreancho aplicado sin y con la reducción de la T302.20 (P5, opción F) frente a los valores de control del
+dueño (CASOS_SOBREANCHO_P5; si la base no tiene las filas que necesitan, los salta y lo dice) y que no sube al crecer el
+radio.
 
 Sale con 0 si todo coincide, 1 si algo no coincide y 2 si falta la memoria, la base o el archivo de casos.
 """
@@ -358,6 +361,51 @@ def comprobar_figuras_peralte(base: norma.BaseNorma, informe: Informe, casos=CAS
                          f"{r['resultado']}, entregado {r['peralte_pct']} %")
 
 
+# ---------------------------------------------------------------------------------------------- sobreancho, P5 opción F
+# Valores de control de la decisión P5 (opción F, decidida por el dueño el 20/11/2026; tarea 7.5), con B2 (L 10,55 m),
+# n = 2 y calzada de 7,20 m: (velocidad en km/h, radio en m, sobreancho aplicado sin y con reduccion_t30220, en m). 0 es
+# que no se aplica (Sa < 0,40 m, P7). Se comparan a dos decimales.
+CASOS_SOBREANCHO_P5 = (
+    (30, 25, 5.27, 4.53), (30, 30, 4.38, 3.64), (60, 125, 1.43, 0.77), (60, 150, 1.23, 0.58), (60, 200, 0.98, 0.40),
+    (60, 400, 0.58, 0.40), (60, 500, 0.49, 0.40), (60, 600, 0.43, 0.40), (80, 600, 0.51, 0.40), (80, 700, 0.46, 0.40),
+    (30, 500, 0.0, 0.0),
+)
+L_B2_CONTROL_M = 10.55
+# Filas de la T302.20 que necesitan esos controles (los radios entre dos filas usan las dos vecinas).
+RADIOS_P5 = (25, 30, 120, 130, 150, 200, 400, 450, 500)
+
+
+def _sobreancho_aplicado(filas: list, velocidad: float, radio: float, reduccion: bool) -> float:
+    sa = norma_sobreancho.sobreancho_formula(2, radio, L_B2_CONTROL_M, velocidad)["sobreancho"]
+    elegido = norma_sobreancho.factor_de_tabla(filas, radio) if velocidad <= norma_sobreancho.V_MAX_FACTOR_KMH else None
+    return norma_sobreancho.decidir(sa, elegido["valor"] if elegido else None, reduccion)["sobreancho"]
+
+
+def comprobar_sobreancho_p5(base: norma.BaseNorma, informe: Informe, casos=CASOS_SOBREANCHO_P5):
+    filas = norma_sobreancho.factores_reduccion(base)
+    radios = {float(f["radio_m"]) for f in filas}
+    faltan = [r for r in RADIOS_P5 if not any(abs(r - x) <= norma.TOLERANCIA for x in radios)]
+    if faltan:
+        informe.linea(f"Sobreancho con la T302.20 (P5, opción F): la base no tiene las filas de {faltan} m; se omiten "
+                      f"{len(casos)} casos de control.")
+    else:
+        informe.linea("Sobreancho aplicado sin y con reduccion_t30220 (P5, opción F; B2, n = 2, calzada 7,20 m):")
+        for v, radio, sin, con in casos:
+            for reduccion, esperado in ((False, sin), (True, con)):
+                obtenido = round(_sobreancho_aplicado(filas, v, radio, reduccion), 2)
+                informe.comparar(f"{v} km/h · R = {radio} m · {'con' if reduccion else 'sin'} reducción", esperado,
+                                 obtenido, 0.001)
+    # Al crecer el radio, el sobreancho aplicado no sube (barrido de 11 a 1000 m cada 0,5 m), con y sin reducción.
+    radios_barrido = sorted({11 + 0.5 * i for i in range(1979)} | {r for r in radios if r > L_B2_CONTROL_M})
+    for v in (30, 50, 60, 80):
+        for reduccion in (False, True):
+            valores = [_sobreancho_aplicado(filas, v, r, reduccion) for r in radios_barrido]
+            sube = next((radios_barrido[i + 1] for i in range(len(valores) - 1) if valores[i + 1] > valores[i] + 1e-9),
+                        None)
+            informe.comparar(f"Barrido de radios a {v} km/h {'con' if reduccion else 'sin'} reducción: el sobreancho no "
+                             "sube", "no sube", "no sube" if sube is None else f"sube en R = {sube} m")
+
+
 # ---------------------------------------------------------------------------------------------- principal
 def main(argv=None, salida=None) -> int:
     parser = argparse.ArgumentParser(description="Casos de la DG-2018 contra la base real de memoria-firma")
@@ -393,6 +441,7 @@ def main(argv=None, salida=None) -> int:
         comprobar_umbrales(base, informe)
         comprobar_referencias(base, informe)
         comprobar_figuras_peralte(base, informe)
+        comprobar_sobreancho_p5(base, informe)
     informe.linea()
     informe.linea(f"Resultado: {informe.ok} comprobaciones OK, {informe.fallos} fallos, {informe.sin_comparar} sin comparar, "
                   f"{informe.fuera} casos fuera de alcance.")
