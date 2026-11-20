@@ -397,7 +397,8 @@ Los prompts que no tocan Civil 3D (solo documentación, scripts de la nube o el 
   5 m), crea el eje con una sola entrada de Deshacer y 0 «No cumple»; si la polilínea no deja sitio, pide el mayor radio
   que cabe (80 m) con un aviso; un radio del usuario (150 m) manda y se avisa (informe 119, pasos 4 a 7).
 - **Ronda D con la 1.21.2** (20/11/2026, `informe_validacion_ronda_d_20261120.md`). Peralte: 16 puntos críticos
-  escritos y `enumerados` completo (`VALIDACION_120`). Decisiones de la norma: OK (`VALIDACION_1211`). En
+  escritos y `enumerados` completo (`VALIDACION_120`); la API da las pendientes del peralte en tanto por uno (0.06 = 6 %), y
+  **un `_.UNDO 1` quita el peralte** (`tiene_peralte: false`, 0 estaciones): no hace falta un `deshacer_peralte` (paso 7). Decisiones de la norma: OK (`VALIDACION_1211`). En
   `crear_secciones`, Civil 3D **rechaza** el nombre de un grupo de muestreo que ya usa otro eje con «Sample line group
   name is duplicate.», y el plugin creó `Eje 2 - Muestreo 100` en la misma transacción, con 215 de 215 secciones
   identificadas (`VALIDACION_1193`). `ejecutar_codigo` sin `solo_lectura` rechaza al compilar un cambio sobre un objeto
@@ -408,7 +409,7 @@ Los prompts que no tocan Civil 3D (solo documentación, scripts de la nube o el 
   toma el espacio como Enter (al revés que `_.PLINE`, que sí termina con dos espacios desde la 1.10.1); en los guiones
   con `-LAYER` hay que usar `"\n\n"`. C2: confirmada la hipótesis H4: la lista blanca de `ejecutar_codigo` rechaza al
   compilar la lectura de `Bounds`, aunque sea solo una lectura, porque esa propiedad solo la declara
-  `GraphicsInterface.Drawable` (las que `DBObject` vuelve a declarar, como `Id`, sí compilan). C3: durante la transacción, `IsNewObject` da `false` e
+  `GraphicsInterface.Drawable` (sale como «[bloqueado: ventanas y diálogos] Autodesk.AutoCAD.GraphicsInterface.Drawable»; `DrawableType` también) (las que `DBObject` vuelve a declarar, como `Id`, sí compilan). C3: durante la transacción, `IsNewObject` da `false` e
   `IsModified` da `true`.
 - **Bordes de calzada** (20/11/2026, `crear_bordes_calzada`, informes 121, 1213 y 1214). `Alignment.CreateOffsetAlignment`
   con −3.6 crea el borde a la **izquierda** (`NominalOffset` −3.6, `Side` `Left`; a la derecha, `Right`).
