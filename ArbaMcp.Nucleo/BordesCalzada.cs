@@ -27,6 +27,18 @@ namespace ArbaMcp.Nucleo
         public double InicioOcupado => ProgresivaInicial - (LongitudTransicion ?? 0);
         public double FinOcupado => ProgresivaFinal + (LongitudTransicion ?? 0);
 
+        /// <summary>
+        /// Rango que se pasa a OffsetAlignmentInfo.AddWidening (1.21.4). En Civil 3D 2027 (20/11/2026, VALIDACION_121,
+        /// paso 3, con la 1.21.3) la transición de ENTRADA quedó al principio del rango pasado (220–260, dentro de la
+        /// curva) y la de SALIDA justo después del final (345.6637–385.6637). Dentro de la curva la transición lineal
+        /// salió deformada (sobreancho medido 1.05 en vez de 0.6); en la recta, bien. Para que el tramo pleno sea el
+        /// pedido y las dos transiciones queden fuera (antes del PC y después del PT, como pide la DG-2018), el rango
+        /// empieza 'longitud_transicion' antes: de InicioOcupado a ProgresivaFinal. Sin longitud_transicion, el rango
+        /// pedido tal cual (la transición la decide Civil 3D y la entrada caerá dentro del rango).
+        /// </summary>
+        public double InicioAddWidening => ProgresivaInicial - (LongitudTransicion ?? 0);
+        public double FinAddWidening => ProgresivaFinal;
+
         /// <summary>El pedido como diccionario para la respuesta, con el desplazamiento total que se pasará a AddWidening.</summary>
         public Dictionary<string, object> ComoDiccionario(double desplazamientoNominal)
         {
@@ -38,7 +50,8 @@ namespace ArbaMcp.Nucleo
                 ["progresiva_final"] = Argumentos.Redondear(ProgresivaFinal),
                 ["sobreancho"] = Argumentos.Redondear(Sobreancho),
                 ["desplazamiento_total"] = Argumentos.Redondear(Math.Abs(desplazamientoNominal) + Sobreancho),
-                ["longitud_transicion"] = LongitudTransicion.HasValue ? Argumentos.Redondear(LongitudTransicion.Value) : null
+                ["longitud_transicion"] = LongitudTransicion.HasValue ? Argumentos.Redondear(LongitudTransicion.Value) : null,
+                ["rango_add_widening"] = new[] { Argumentos.Redondear(InicioAddWidening), Argumentos.Redondear(FinAddWidening) }
             };
             if (LongitudTransicion.HasValue)
                 d["transicion_prevista"] = new Dictionary<string, object>
@@ -192,7 +205,7 @@ namespace ArbaMcp.Nucleo
         /// <summary>Muestras como mucho por borde: el paso es max(1 m, longitud / 2000).</summary>
         public const int MaximoMuestras = 2000;
 
-        public const string SupuestoTransicion = "Se supone que el rango pedido es el tramo pleno y que la transición queda fuera de él; al crear se mide y se avisa si Civil 3D la puso de otra forma.";
+        public const string SupuestoTransicion = "El rango pedido es el tramo pleno y las transiciones quedan fuera de él. Como Civil 3D pone la transición de entrada al principio del rango que recibe AddWidening y la de salida después del final (validación del 20/11/2026), se le pasa el rango empezando 'longitud_transicion' antes (rango_add_widening); al crear se mide y se avisa si Civil 3D la puso de otra forma.";
 
         private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 

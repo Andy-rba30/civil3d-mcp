@@ -62,6 +62,22 @@ namespace ArbaMcp.Pruebas
         public void NormalizaElBorde(string texto, string esperado) => Assert.Equal(esperado, BordesCalzada.NormalizarBorde(texto));
 
         [Fact]
+        public void RangoDeAddWideningEmpiezaUnaTransicionAntes()
+        {
+            // 1.21.4: Civil 3D pone la entrada al principio del rango de AddWidening (validación del 20/11/2026)
+            var l = BordesCalzada.Leer(J("[{\"borde\":\"izquierdo\",\"progresiva_inicial\":220,\"progresiva_final\":345.6637,\"sobreancho\":0.6,\"longitud_transicion\":40},"
+                + "{\"borde\":\"derecho\",\"progresiva_inicial\":485.6637,\"progresiva_final\":611.3274,\"sobreancho\":0.6}]"), 0, 831.3274);
+            Assert.Equal(180, l[0].InicioAddWidening, 9);
+            Assert.Equal(345.6637, l[0].FinAddWidening, 9);
+            Assert.Equal(new double?[] { 180, 345.6637 }, (double?[])l[0].ComoDiccionario(-3.6)["rango_add_widening"]);
+            // Sin longitud_transicion, el rango pedido tal cual
+            Assert.Equal(485.6637, l[1].InicioAddWidening, 9);
+            Assert.Equal(611.3274, l[1].FinAddWidening, 9);
+            // La transición que no cabe antes del inicio del eje se rechaza al leer (ya lo hacía con InicioOcupado)
+            Assert.Throws<ArgumentException>(() => BordesCalzada.Leer(J("[{\"borde\":\"izquierdo\",\"progresiva_inicial\":20,\"progresiva_final\":100,\"sobreancho\":0.6,\"longitud_transicion\":40}]"), 0, 831.3274));
+        }
+
+        [Fact]
         public void DistanciaEnsanchadaSinSignoEnLosDosBordes()
         {
             // 1.21.3: AddWidening rechaza offsetDistance <= 0 (validación de la ronda D, 20/11/2026)

@@ -25,7 +25,7 @@ import norma_alineamiento as norma_eje  # 1.19.0: crear_alineamiento_desde_polil
 import norma_peralte  # 1.20.0: aplicar_peralte con velocidad_diseno (DG-2018)
 import norma_sobreancho as norma_bordes  # 1.21.0: crear_bordes_calzada con velocidad_diseno (sobreancho DG-2018)
 
-__version__ = "1.21.3"
+__version__ = "1.21.4"
 
 CARPETA = os.path.dirname(os.path.abspath(__file__))
 

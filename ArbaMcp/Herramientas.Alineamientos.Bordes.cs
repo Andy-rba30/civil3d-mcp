@@ -357,8 +357,12 @@ namespace ArbaMcp
                                 {
                                     // 1.21.3: sin signo; con −4.2 Civil 3D respondió «offsetDistance must greater than 0» (20/11/2026)
                                     double total = BordesCalzada.DistanciaEnsanchada(nominal, p.Sobreancho);
-                                    try { info.AddWidening(p.ProgresivaInicial, p.ProgresivaFinal, total); }
-                                    catch (Exception ex) { throw ErrorDeCivil3d(ex, "Civil 3D no dejó añadir el ensanchamiento " + p.Numero + " al borde " + par.lado + " '" + al.Name + "' (OffsetAlignmentInfo.AddWidening de " + p.ProgresivaInicial.ToString(System.Globalization.CultureInfo.InvariantCulture) + " a " + p.ProgresivaFinal.ToString(System.Globalization.CultureInfo.InvariantCulture) + " con " + total.ToString(System.Globalization.CultureInfo.InvariantCulture) + ", nominal releído " + nominal.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")"); }
+                                    // 1.21.4: el rango empieza 'longitud_transicion' antes (Ensanchamiento.InicioAddWidening):
+                                    // Civil 3D pone la transición de entrada al principio del rango que recibe (20/11/2026)
+                                    if (!p.LongitudTransicion.HasValue)
+                                        ctx.Avisos.Add("El ensanchamiento " + p.Numero + " no tiene 'longitud_transicion': Civil 3D decide la transición y la de entrada quedará dentro del rango pedido (" + p.ProgresivaInicial.ToString(System.Globalization.CultureInfo.InvariantCulture) + " en adelante), no antes. Para que el sobreancho pleno cubra todo el rango, pasa 'longitud_transicion'.");
+                                    try { info.AddWidening(p.InicioAddWidening, p.FinAddWidening, total); }
+                                    catch (Exception ex) { throw ErrorDeCivil3d(ex, "Civil 3D no dejó añadir el ensanchamiento " + p.Numero + " al borde " + par.lado + " '" + al.Name + "' (OffsetAlignmentInfo.AddWidening de " + p.InicioAddWidening.ToString(System.Globalization.CultureInfo.InvariantCulture) + " a " + p.FinAddWidening.ToString(System.Globalization.CultureInfo.InvariantCulture) + " con " + total.ToString(System.Globalization.CultureInfo.InvariantCulture) + ", nominal releído " + nominal.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")"); }
                                     if (p.LongitudTransicion.HasValue)
                                     {
                                         string motivo = FijarTransicion(al, p);

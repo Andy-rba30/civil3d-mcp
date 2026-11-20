@@ -35,6 +35,11 @@ Copia este texto tal cual en el agente que tiene conectado el MCP de Civil 3D. R
   un ensanchamiento (`OffsetAlignmentInfo.AddWidening`), el signo del desplazamiento de `CreateOffsetAlignment` y de
   `AddWidening`, y si `_.UNDO 1` quita los dos bordes. **Los pasos 0, 3, 4, 8, 9 y 10 son los decisivos.**
 
+- **Repetición con la 1.21.4 (20/11/2026).** Con la 1.21.3, `AddWidening` ya no dio error, pero el paso 3 midió
+  1.0518 m de sobreancho con 0.6 pedidos: Civil 3D puso la transición de **entrada al principio** del rango (220–260,
+  dentro de la curva, donde el borde salió deformado) y la de salida después del final (345.6637–385.6637, en la
+  recta, bien). La 1.21.4 pasa a `AddWidening` el rango empezando `longitud_transicion` antes (`rango_add_widening`:
+  `[180, 345.6637]` y `[445.6637, 611.3274]`). `ping` debe dar `"version": "1.21.4"`; copia nueva del dibujo.
 - **Repetición con la 1.21.3 (20/11/2026).** En la ronda D, con la 1.21.2, el paso 3 falló con
   `The offsetDistance value must greater than 0. Nombre del parámetro: offsetDistance`: el plugin pasaba a
   `AddWidening` el desplazamiento del borde izquierdo con signo (−4,2). La 1.21.3 (rama `tarea/ronda-d`) lo pasa sin
@@ -117,7 +122,8 @@ cada curva del `Eje 1`, en el tramo del PC al PT, con 40 m de transición):
    `despues.izquierdo`: `nombre: "Eje 1 - Borde izq"`, `lado: "izquierdo"`, `desplazamiento_nominal: -3.6`, `estilo`
    y `capa` los de alineaciones de la configuración, y un ensanchamiento con `progresiva_inicial: 220`,
    `progresiva_final: 345.6637`, `sobreancho: 0.6`, `desplazamiento_total: 4.2`, `longitud_transicion: 40` y
-   `transicion_prevista.entrada: [180, 220]`, `.salida: [345.6637, 385.6637]`; `despues.derecho` igual con
+   `transicion_prevista.entrada: [180, 220]`, `.salida: [345.6637, 385.6637]`, `rango_add_widening: [180, 345.6637]`
+   (desde 1.21.4); `despues.derecho` igual con
    `nombre: "Eje 1 - Borde der"`, `desplazamiento_nominal: 3.6` y su ensanchamiento de 485.6637 a 611.3274. Vuelve a
    contar: **N2 + 1** líneas y **C2** copias; ninguna entrada nueva en el menú Deshacer.
 
@@ -133,6 +139,12 @@ cada curva del `Eje 1`, en el tramo del PC al PT, con 40 m de transición):
      **un** elemento en `medicion.ensanchamientos_medidos` con `sobreancho_maximo` ≈ 0.6. Su ensanchamiento pedido con
      `medido.sobreancho_medido` ≈ 0.6 y `medido.transicion` (`fuera`, `dentro` u `otra`).
    - `despues.derecho` igual, a la derecha, con su zona de 485.6637 a 611.3274.
+   - Desde la 1.21.4, en `regiones_civil3d` del izquierdo: la región `Specific` de **220 a 345.6637** con `offset: -4.2`,
+     la transición de entrada de **180 a 220** y la de salida de **345.6637 a 385.6637**, las dos `Linear` de 40 m (en el
+     derecho, `Specific` de 485.6637 a 611.3274, entrada 445.6637–485.6637, salida 611.3274–651.3274). En
+     `medicion.ensanchamientos_medidos`, `sobreancho_maximo` ≈ 0.6 (no 1.05) y `puntos_entrada` subiendo de 0 a 0.6 sin
+     picos. Si la región `Specific` no empieza en 220 o el sobreancho medido pasa de 0.6, **cópialo entero**: la
+     colocación de la transición sigue sin ser la supuesta.
    - **Anota literal**: `desplazamiento_nominal` y `lado_civil3d` de cada borde, `regiones_civil3d` completas de cada
      borde, `medido.zona_medida` y `medido.explicacion_transicion` de cada ensanchamiento,
      `longitud_transicion_aplicada` y todos los `avisos`.
@@ -152,6 +164,10 @@ cada curva del `Eje 1`, en el tramo del PC al PT, con 40 m de transición):
    b. Las **regiones de ensanchamiento** (*Widening regions*): progresiva inicial y final, desplazamiento del
       ensanchamiento (¿`4.200`, `-4.200` o `0.600`?) y las **transiciones de entrada y salida**: tipo y longitud, y su
       progresiva inicial y final.
+   c. (Desde la 1.21.4; **después del paso 9**, porque el zoom deja su propia entrada en Deshacer.) Con zoom en
+      `Eje 1` entre las progresivas 170 y 270, si `Eje 1 - Borde izq` se abre en una rampa recta **antes** del inicio
+      de la curva (PC en 220) y sigue la curva sin quiebres ni «panza» hacia el centro; y lo mismo entre 330 y 400
+      (salida). Las respuestas a y b las dicta Jose: no las sustituyas por lo que devuelve la herramienta.
    Con eso y lo del paso 3 responde en el informe:
    - **P1.** ¿El rango que se pasó (220 a 345.6637) quedó como **tramo pleno**, con la transición **fuera** (de 180 a
      220 y de 345.6637 a 385.6637), o la transición quedó **dentro** del rango? (compara `medido.transicion` y
