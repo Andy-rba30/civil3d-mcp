@@ -35,6 +35,15 @@ Copia este texto tal cual en el agente que tiene conectado el MCP de Civil 3D. R
   un ensanchamiento (`OffsetAlignmentInfo.AddWidening`), el signo del desplazamiento de `CreateOffsetAlignment` y de
   `AddWidening`, y si `_.UNDO 1` quita los dos bordes. **Los pasos 0, 3, 4, 8, 9 y 10 son los decisivos.**
 
+- **Repetición con la 1.21.3 (20/11/2026).** En la ronda D, con la 1.21.2, el paso 3 falló con
+  `The offsetDistance value must greater than 0. Nombre del parámetro: offsetDistance`: el plugin pasaba a
+  `AddWidening` el desplazamiento del borde izquierdo con signo (−4,2). La 1.21.3 (rama `tarea/ronda-d`) lo pasa sin
+  signo y, si una llamada a Civil 3D falla, el error dice cuál (`CreateOffsetAlignment` del borde izquierdo o del
+  derecho, o `AddWidening` con sus valores). Para repetir: `ping` debe dar `"version": "1.21.3"` (no `1.21.0`) y se
+  usa una **copia nueva** del dibujo. Usa los `args` de cada paso **tal cual** (`eje`, `desplazamiento`,
+  `ensanchamientos`), no otros nombres, y cuando un paso pida la línea de `mcp_log.jsonl`, cópiala del archivo con
+  `Get-Content` sin reescribirla.
+
 ---
 
 Eres el agente de validación de la versión 1.21.0 del conector Civil 3D MCP (plugin `ArbaMcp` + puente `PuenteMcp`).
@@ -129,6 +138,9 @@ cada curva del `Eje 1`, en el tramo del PC al PT, con 40 m de transición):
      `longitud_transicion_aplicada` y todos los `avisos`.
    - Si responde **error** (por ejemplo «quedó a la derecha del eje», «sobreancho medido de ... y se pidió 0.6» o
      «Parece que AddWidening suma el valor al nominal»), **cópialo entero**: es la respuesta a una pregunta decisiva.
+     Pega también, **copiadas del archivo y sin reescribir**, la última línea de `mcp_log.jsonl`
+     (`Get-Content <carpeta del dwg>\mcp_log.jsonl -Tail 1`) y las líneas de `leer_historial` de esa llamada que
+     empiezan por `crear_bordes_calzada:` o `MCP ← crear_bordes_calzada ERROR` (traen el miembro que falló y la traza).
      Comprueba con `listar_alineamientos` si los bordes quedaron creados, anota el resultado del paso 4 igualmente y
      **para aquí** (salvo el paso 4).
 

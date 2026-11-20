@@ -62,6 +62,18 @@ namespace ArbaMcp.Pruebas
         public void NormalizaElBorde(string texto, string esperado) => Assert.Equal(esperado, BordesCalzada.NormalizarBorde(texto));
 
         [Fact]
+        public void DistanciaEnsanchadaSinSignoEnLosDosBordes()
+        {
+            // 1.21.3: AddWidening rechaza offsetDistance <= 0 (validación de la ronda D, 20/11/2026)
+            Assert.Equal(4.2, BordesCalzada.DistanciaEnsanchada(-3.6, 0.6), 9);
+            Assert.Equal(4.2, BordesCalzada.DistanciaEnsanchada(3.6, 0.6), 9);
+            Assert.True(BordesCalzada.DistanciaEnsanchada(-0.001, 0.001) > 0);
+            Assert.Throws<InvalidOperationException>(() => BordesCalzada.DistanciaEnsanchada(0, 0.6));
+            Assert.Throws<ArgumentException>(() => BordesCalzada.DistanciaEnsanchada(-3.6, 0));
+            Assert.Throws<ArgumentException>(() => BordesCalzada.DistanciaEnsanchada(-3.6, double.NaN));
+        }
+
+        [Fact]
         public void DesplazamientoTotalConElSignoDelNominal()
         {
             Assert.Equal(-4.2, BordesCalzada.DesplazamientoTotal(-3.6, 0.6), 9);

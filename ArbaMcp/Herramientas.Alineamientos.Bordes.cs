@@ -34,6 +34,18 @@ namespace ArbaMcp
             return nombres;
         }
 
+        /// <summary>
+        /// Error de una llamada a Civil 3D en crear_bordes_calzada (1.21.3): el texto dice qué miembro falló y con qué
+        /// valores, más el texto original de Civil 3D; se lanza SIN InnerException porque el servidor y el log informan la
+        /// excepción más interna (Raiz) y el contexto se perdía. El texto original y su traza van al historial.
+        /// </summary>
+        private static InvalidOperationException ErrorDeCivil3d(Exception ex, string que)
+        {
+            var raiz = Raiz(ex);
+            Historial.Registrar(HerramientaCrearBordes + ": " + que + " → " + raiz.GetType().Name + ": " + raiz.Message + " " + raiz.StackTrace);
+            return new InvalidOperationException(que + ". Civil 3D respondió: " + raiz.GetType().Name + ": " + raiz.Message.Replace("\r", " ").Replace("\n", " ") + ". Nada queda escrito (la transacción se descarta) y no se reintenta. El detalle está en leer_historial.");
+        }
+
         /// <summary>Nombre de un alineamiento por id o null.</summary>
         private static string NombreAlineamiento(Transaction tr, ObjectId id)
             => id.IsNull ? null : Seguro(() => (tr.GetObject(id, OpenMode.ForRead) as CivAlignment)?.Name);
@@ -317,13 +329,14 @@ namespace ArbaMcp
                         Esperado = new Dictionary<string, object> { ["existe_izquierdo"] = true, ["existe_derecho"] = true },
                         Crear = tr =>
                         {
+                            // 1.21.3: cada llamada a Civil 3D con su propio error, lanzado SIN la excepción interna (el
+                            // servidor informa la más interna, y entonces se perdía qué miembro falló); el texto original y
+                            // su traza van al historial (leer_historial).
                             ObjectId idIzq;
-                            try
-                            {
-                                idIzq = CivAlignment.CreateOffsetAlignment(nombreIzq, idEje, -d, idEstilo);
-                                idDer = CivAlignment.CreateOffsetAlignment(nombreDer, idEje, d, idEstilo);
-                            }
-                            catch (Exception ex) { throw new InvalidOperationException("Alignment.CreateOffsetAlignment falló: " + ex.GetType().Name + ": " + ex.Message + ". Nada queda escrito (la transacción se descarta) y no se reintenta.", ex); }
+                            try { idIzq = CivAlignment.CreateOffsetAlignment(nombreIzq, idEje, -d, idEstilo); }
+                            catch (Exception ex) { throw ErrorDeCivil3d(ex, "Civil 3D no dejó crear el borde izquierdo '" + nombreIzq + "' con desplazamiento " + (-d).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + " (Alignment.CreateOffsetAlignment, borde izquierdo)"); }
+                            try { idDer = CivAlignment.CreateOffsetAlignment(nombreDer, idEje, d, idEstilo); }
+                            catch (Exception ex) { throw ErrorDeCivil3d(ex, "Civil 3D no dejó crear el borde derecho '" + nombreDer + "' con desplazamiento " + d.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + " (Alignment.CreateOffsetAlignment, borde derecho)"); }
                             if (idIzq.IsNull || idDer.IsNull)
                                 throw new InvalidOperationException("Alignment.CreateOffsetAlignment no devolvió el borde " + (idIzq.IsNull ? "izquierdo" : "derecho") + ". Nada queda escrito (la transacción se descarta) y no se reintenta.");
                             foreach (var par in new[] { (lado: BordesCalzada.Izquierdo, id: idIzq), (lado: BordesCalzada.Derecho, id: idDer) })
@@ -342,9 +355,10 @@ namespace ArbaMcp
                                 catch (Exception ex) { throw new InvalidOperationException("No se pudo leer el desplazamiento nominal del borde recién creado '" + al.Name + "' (OffsetAlignmentInfo.NominalOffset): " + ex.GetType().Name + ": " + ex.Message + ". Sin él no se puede calcular el desplazamiento ensanchado. Nada queda escrito (la transacción se descarta) y no se reintenta.", ex); }
                                 foreach (var p in propios)
                                 {
-                                    double total = BordesCalzada.DesplazamientoTotal(nominal, p.Sobreancho);
+                                    // 1.21.3: sin signo; con −4.2 Civil 3D respondió «offsetDistance must greater than 0» (20/11/2026)
+                                    double total = BordesCalzada.DistanciaEnsanchada(nominal, p.Sobreancho);
                                     try { info.AddWidening(p.ProgresivaInicial, p.ProgresivaFinal, total); }
-                                    catch (Exception ex) { throw new InvalidOperationException("No se pudo añadir el ensanchamiento " + p.Numero + " al borde '" + al.Name + "' (OffsetAlignmentInfo.AddWidening de " + p.ProgresivaInicial + " a " + p.ProgresivaFinal + " con " + total + "): " + ex.GetType().Name + ": " + ex.Message + ". Nada queda escrito (la transacción se descarta) y no se reintenta.", ex); }
+                                    catch (Exception ex) { throw ErrorDeCivil3d(ex, "Civil 3D no dejó añadir el ensanchamiento " + p.Numero + " al borde " + par.lado + " '" + al.Name + "' (OffsetAlignmentInfo.AddWidening de " + p.ProgresivaInicial.ToString(System.Globalization.CultureInfo.InvariantCulture) + " a " + p.ProgresivaFinal.ToString(System.Globalization.CultureInfo.InvariantCulture) + " con " + total.ToString(System.Globalization.CultureInfo.InvariantCulture) + ", nominal releído " + nominal.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")"); }
                                     if (p.LongitudTransicion.HasValue)
                                     {
                                         string motivo = FijarTransicion(al, p);

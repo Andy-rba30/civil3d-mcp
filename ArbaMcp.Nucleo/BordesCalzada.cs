@@ -303,8 +303,24 @@ namespace ArbaMcp.Nucleo
         private static string Medido(double v) => Math.Round(v, 2).ToString("0.##", Inv);
 
         /// <summary>
-        /// Desplazamiento total que se pasa a AddWidening: el nominal más el sobreancho, con el signo del NominalOffset
-        /// releído del borde (el catálogo no documenta el signo; la validación lo decide). Lanza si el nominal es 0.
+        /// Distancia que se pasa a AddWidening desde la 1.21.3: el nominal más el sobreancho, SIN signo (4.2 en los dos
+        /// bordes). En Civil 3D 2027, el 20/11/2026 (validación de la ronda D, VALIDACION_121, paso 3), crear el borde
+        /// izquierdo con ensanchamiento respondió «The offsetDistance value must greater than 0» (offsetDistance es el
+        /// parámetro de AddWidening): el lado lo da el propio borde. Lanza si el nominal es 0.
+        /// </summary>
+        public static double DistanciaEnsanchada(double nominalReleido, double sobreancho)
+        {
+            if (Math.Abs(nominalReleido) < 1e-9)
+                throw new InvalidOperationException("El borde se creó con desplazamiento nominal 0: no se puede calcular el desplazamiento ensanchado.");
+            if (double.IsNaN(sobreancho) || double.IsInfinity(sobreancho) || sobreancho <= 0)
+                throw new ArgumentException("El sobreancho debe ser un número mayor que 0.");
+            return Math.Abs(nominalReleido) + sobreancho;
+        }
+
+        /// <summary>
+        /// Desplazamiento total con el signo del NominalOffset releído del borde. Es lo que se pasaba a AddWidening hasta
+        /// la 1.21.2; Civil 3D lo rechazó en el borde izquierdo (negativo). Desde la 1.21.3 el plugin usa
+        /// DistanciaEnsanchada; esta se conserva por sus pruebas. Lanza si el nominal es 0.
         /// </summary>
         public static double DesplazamientoTotal(double nominalReleido, double sobreancho)
         {
