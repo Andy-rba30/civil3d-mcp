@@ -54,7 +54,42 @@ haya que probar. Usa Opus con esfuerzo extra alto en las sesiones hijas. Actuali
   (plantilla métrica + ensamblaje, sin nada más; anotado en `ESTADO_PC.md`). Una copia reutilizada arrastra líneas de
   muestreo y falla la tarea 7.
 
-## Estado actual (17/11/2026, ronda C cerrada: hoja de ruta programada completa)
+## Estado actual (20/11/2026, ronda D verificada en Civil 3D)
+
+**Ronda D verificada en Civil 3D 2027 el 20/11/2026, con «Verificación OK» del dueño.** El PR #56 (`tarea/ronda-d`, de
+la 1.19.1 a la 1.21.5) pasó a listo; la fusión la hace el dueño desde GitHub (regla 11g). Esta tarea, la **6.11**
+(`tarea/6.11-hallazgos-ronda-d`, solo documentación), se fusiona después del #56.
+
+Cómo fue la prueba (20/11/2026):
+- Validación con la **1.21.2** (madrugada del 20/11): partes 1 (peralte), 3 (norma), 4 (secciones) y 5
+  (`ejecutar_codigo`) y comprobaciones C1 a C3 de `COMPROBACIONES_RONDA_D.md` OK. La **parte 2 (bordes) falló en el
+  paso 3** con «The offsetDistance value must greater than 0».
+- Correcciones del 20/11 en la misma rama:
+  - **1.21.3**: `AddWidening` recibe la distancia sin signo, y cada llamada a Civil 3D da su propio error, sin
+    envolverlo en otro (`InnerException`).
+  - **1.21.4**: el rango de `AddWidening` empieza una transición antes. Con la 1.21.3 la transición de entrada caía
+    dentro de la curva y el borde salía deformado: 1.0518 m medidos con 0.6 pedidos.
+  - **1.21.5**: en `asignar_objetivo(s)`, la opción solo se manda con dos o más objetivos, por «The count of TargetIds
+    should be greater or equal to 2»; `deshacer_objetivos`, igual.
+- Con la 1.21.4, `VALIDACION_121` dio OK en los pasos decisivos 0, 3, 4, 8, 9 y 10 (0.6 m medidos, transiciones fuera
+  de la curva, un `_.UNDO 1` quita los dos bordes) y la comparación a 30 km/h coincidió con los valores de control. Con
+  la 1.21.5, la prueba corta de objetivos dio OK.
+
+Lecciones:
+1. El primer informe corto del agente traía una línea de `mcp_log.jsonl` **reescrita con otros parámetros**. Pedir
+   siempre la línea literal, con `Get-Content -Encoding UTF8` (sin `-Encoding` los acentos salen rotos).
+2. El servidor informa la excepción más interna, así que un error envuelto en otro pierde el texto del plugin.
+3. En Civil 3D en español, la entrada `Executefunction` del menú Deshacer se ve como «Grupo de comandos».
+4. Una sesión hija para los hallazgos se quedó esperando los informes, que solo están en la PC: **los informes los
+   tiene que pegar el dueño**.
+
+Hallazgos pasados a la documentación en la tarea **6.11** (`tarea/6.11-hallazgos-ronda-d`): los hechos validados de
+`CLAUDE.md`, la hoja de ruta (ronda D hecha) y este registro.
+
+**Siguiente**: fusionar el #56 y después esta 6.11; luego L.1 con `main` en la PC. Quedan la 3.3 (cada mes), F, L.2 y
+5.2 (continuo) y las «Propuestas pendientes».
+
+## Estado anterior (17/11/2026, ronda C cerrada: hoja de ruta programada completa)
 
 **En `main`: versión 1.19.1, 59 herramientas (55 del plugin + 4 del puente), validada en Civil 3D 2027.** El dueño
 escribió «Verificación OK» y el PR #48 (`tarea/ronda-c`) se fusionó el 17/11 (commit `dba04e3`; L.1 con `main` OK en la
@@ -459,22 +494,28 @@ y todavía **no están en el repositorio**: hay que pedírselos al dueño o al a
 
 ## Propuestas pendientes (no están en la hoja de ruta)
 
-- **En curso, ronda D (tarea 6.1, 1.19.2).** `ejecutar_codigo` **sin** `solo_lectura`: un script que cambie un objeto
+- **Hecho en la ronda D (tarea 6.1, 1.19.2; parte 5 OK el 20/11).** `ejecutar_codigo` **sin** `solo_lectura`: un script que cambie un objeto
   abierto para lectura (olvidando `F.Abrir(id, true)`) puede cerrar Civil 3D, como `Curve.Extend` en la ronda C
   (17/11). Valorar una protección también en ese modo (por ejemplo, avisar al compilar si se llama a un método que no
   es de lectura sobre un objeto abierto con `F.Abrir` sin `escribir`). Es la propuesta más importante de esta lista.
-- **En curso, ronda D (tarea 6.2): comprobación C1 lista en `COMPROBACIONES_RONDA_D.md`.** Informe 118, paso 2: el
+- **Ronda D: comprobación C1 hecha el 20/11 (`COMPROBACIONES_RONDA_D.md`).** Informe 118, paso 2: el
   agente dice que `_.-LAYER _M EJE_NORMA  ` (dos espacios) necesitó un Enter más para cerrar; en las partes 1 y 4 el
   mismo patrón terminó bien. Comprobar en otra prueba antes de cambiar los `VALIDACION_*.md`.
-- **En curso, ronda D (tarea 6.7, en `memoria-firma`).** La evaluación marca OK comprobaciones manuales que no hace
+- **Hecho en la ronda D (tarea 6.7, en `memoria-firma`).** La evaluación marca OK comprobaciones manuales que no hace
   (curvas de la tarea 1, cálculo manual de la 8, informe de Civil 3D de la 9): aclararlo en `tareas.yaml` o en el
   prompt de evaluación.
-- **En curso, ronda D (tarea 6.2): comprobación C2 lista en `COMPROBACIONES_RONDA_D.md`.** `ejecutar_codigo`
+- **Ronda D: comprobación C2 hecha el 20/11 (`COMPROBACIONES_RONDA_D.md`).** `ejecutar_codigo`
   (revisión previa del 15/11): comprobar en Civil 3D si algún miembro heredado de `GraphicsInterface.Drawable` sale
   bloqueado por la lista blanca (H4). El alias H3 quedó resuelto y validado en la 1.17.5 (16/11).
-- **En curso, ronda D (tarea 6.2): comprobación C3 lista en `COMPROBACIONES_RONDA_D.md`.** `ejecutar_codigo` (informe
+- **Ronda D: comprobación C3 hecha el 20/11 (`COMPROBACIONES_RONDA_D.md`).** `ejecutar_codigo` (informe
   1175): la fuente `transaccion_script` trae objetos pero no marca la línea como nueva (`IsNewObject`): sin aclarar, no
   bloquea. (Lo de que un conteo dejaba entrada en Deshacer lo resolvió `solo_lectura`, 1.17.6, validado el 17/11.)
-- **En curso, ronda D (tarea 6.3, 1.19.3).** `crear_secciones`: comprobar si los nombres de **grupo** también deben
+- **Hecho en la ronda D (tarea 6.3, 1.19.3; parte 4 OK el 20/11).** `crear_secciones`: comprobar si los nombres de **grupo** también deben
   ser únicos en todo el dibujo (propuesta de la hija de la 1.14.2) y añadir en `datos.lineas[].secciones` el nombre de
   la superficie del dibujo junto a `SourceName`.
+- **P5 (ronda D)**: cómo se aplica el factor de la Tabla 302.20 en el sobreancho. Jose no lo aplicaba: el XML de
+  criterios de Civil 3D que usaba no lo tiene. La herramienta da Sa con y sin factor, «a confirmar».
+- Medir cuánto mide la transición que Civil 3D pone por defecto cuando `crear_bordes_calzada` no recibe
+  `longitud_transicion`.
+- Valorar una transición del sobreancho más suave que la lineal: Jose la ve «un poco brusca».
+- ~~Subir a `herramientas-dev/informes/` los informes del 20/11.~~ Hecho en la 6.11: los nueve, pegados por el dueño. El 121 y el consolidado de la ronda D llevan una nota con los datos que no cuadran (causa raíz, línea de log reescrita, enumerados que no son los de Civil 3D).
