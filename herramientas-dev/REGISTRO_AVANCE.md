@@ -518,4 +518,4 @@ y todavía **no están en el repositorio**: hay que pedírselos al dueño o al a
 - Medir cuánto mide la transición que Civil 3D pone por defecto cuando `crear_bordes_calzada` no recibe
   `longitud_transicion`.
 - Valorar una transición del sobreancho más suave que la lineal: Jose la ve «un poco brusca».
-- Subir a `herramientas-dev/informes/` los informes del 20/11 que faltan. Están en la PC: los tiene que pegar el dueño.
+- ~~Subir a `herramientas-dev/informes/` los informes del 20/11.~~ Hecho en la 6.11: los nueve, pegados por el dueño. El 121 y el consolidado de la ronda D llevan una nota con los datos que no cuadran (causa raíz, línea de log reescrita, enumerados que no son los de Civil 3D).
