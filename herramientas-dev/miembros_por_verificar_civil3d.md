@@ -966,3 +966,16 @@ Corrección de la 1.20.0 tras la primera prueba en Civil 3D (17/11/2026, ronda D
 | enumerado | `SuperelevationCrossSegmentType`: `LeftOutShoulderCrossSlope`, `LeftOutLaneCrossSlope`, `LeftInShoulderCrossSlope`, `LeftInLaneCrossSlope`, `RightOutShoulderCrossSlope`, `RightOutLaneCrossSlope`, `RightInShoulderCrossSlope`, `RightInLaneCrossSlope` | 2027 | ídem | validado el 17/11/2026 (paso 2); **por verificar** que en una calzada de dos carriles sin mediana los carriles sean los `Out` (`VALIDACION_120`, pasos 5b y 9) |
 | enumerado | `Autodesk.Civil.DatabaseServices.SuperelevationType`: `NotSupported`, `Superelevation`, `Cant` (el eje de la prueba: `Superelevation`) | 2027 | `listar_peralte` (`tipo_peralte`) | validado el 17/11/2026 (paso 2) |
 
+## Ronda E, tarea 7.1 (`ejecutar_codigo`: leer `Bounds` de una entidad): escrita sin Civil 3D
+
+Escrita el 20/11/2026 sin Civil 3D y probada en la nube (`dotnet test ArbaMcp.Pruebas`, con `Drawable` añadido a la
+biblioteca falsa de las pruebas). Sale del hallazgo H4, confirmado en Civil 3D en la comprobación C2 del 20/11/2026
+(`COMPROBACIONES_RONDA_D.md`): `e.Bounds` se rechazaba al compilar con «[bloqueado: ventanas y diálogos]
+Autodesk.AutoCAD.GraphicsInterface.Drawable», porque `Bounds` solo la declara `Drawable` y todo
+`Autodesk.AutoCAD.GraphicsInterface` está bloqueado. **Ningún miembro nuevo en el plugin ni sustituto nuevo** en
+`CompilarSinCivil`: solo una excepción de la lista blanca (`CodigoReglas.LecturasPermitidasDe`, nombres comparados
+como texto) para los scripts de `ejecutar_codigo`. Versión: la que fije la integración de la ronda E.
+
+| Tipo | Miembro | Versión | Herramienta que lo usa | Estado |
+|---|---|---|---|---|
+| propiedad | `Drawable.Bounds` (lectura; `Nullable<Extents3d>`, heredada por `DBObject` y `Entity` sin volver a declararla) | 2027 | `ejecutar_codigo` (desde la ronda E compila leer `e.Bounds`, con y sin `solo_lectura`; asignarla, `DrawableType` y el resto de `GraphicsInterface` siguen bloqueados como «ventanas y diálogos») | que la declara solo `Drawable`, confirmado en el catálogo (orquestadora, 17/11/2026) y en Civil 3D por el rechazo de la comprobación C2 del 20/11/2026; que compile y devuelva la caja de la entidad sin entrada en Deshacer ni copia con `solo_lectura=true`, **por verificar** |

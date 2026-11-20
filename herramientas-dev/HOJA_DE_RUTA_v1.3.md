@@ -77,8 +77,9 @@ Siguen abiertos:
 
 - `ejecutar_codigo` **sin** `solo_lectura`: un script que cambie un objeto abierto para lectura (sin `F.Abrir(id, true)`)
   puede cerrar Civil 3D, como `Curve.Extend` en la ronda C. Valorar una protección también para ese modo.
-- `ejecutar_codigo` (revisión previa del 15/11/2026): comprobar en Civil 3D si algún miembro heredado de
-  `GraphicsInterface.Drawable` sale bloqueado por la lista blanca (H4).
+- `ejecutar_codigo` (revisión previa del 15/11/2026, H4): confirmado en Civil 3D en la comprobación C2 del 20/11/2026
+  (`e.Bounds` se rechazaba como «ventanas y diálogos»); desde la ronda E (tarea 7.1) se permite leer `Bounds`, **por
+  verificar** en Civil 3D. `DrawableType` y el resto de `GraphicsInterface` siguen bloqueados.
 - La evaluación marca OK comprobaciones manuales que no hace (curvas de la tarea 1, cálculo manual de la 8, informe de
   Civil 3D de la 9): aclararlo en `tareas.yaml` o en el prompt de evaluación.
 
