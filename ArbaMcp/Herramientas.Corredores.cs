@@ -325,7 +325,10 @@ namespace ArbaMcp
                             {
                                 try
                                 {
-                                    pl.GetEnumData(i, out string nombre, out string visible, out int valor);
+                                    // ref, no out: en las DLL reales de Civil 3D 2027 los tres van por referencia con ref
+                                    // (CS1620 al compilar con out, 20/11/2026, instalación de la ronda E)
+                                    string nombre = null, visible = null; int valor = 0;
+                                    pl.GetEnumData(i, ref nombre, ref visible, ref valor);
                                     opciones.Add(new Dictionary<string, object> { ["nombre"] = nombre, ["etiqueta"] = visible, ["valor"] = valor });
                                     if (actual == valor) { etiqueta = visible; opcion = nombre; }
                                 }

@@ -726,6 +726,6 @@ namespace Autodesk.Civil.Runtime
     {
         public string Key => ""; public string DisplayName { get; set; } public int Value { get; set; }
         public uint EnumCount() => 0;
-        public void GetEnumData(uint index, out string name, out string displayName, out int value) { name = null; displayName = null; value = 0; }
+        public void GetEnumData(uint index, ref string name, ref string displayName, ref int value) { }
     }
 }
