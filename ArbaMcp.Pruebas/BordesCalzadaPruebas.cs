@@ -70,8 +70,9 @@ namespace ArbaMcp.Pruebas
             Assert.Equal(180, l[0].InicioAddWidening, 9);
             Assert.Equal(345.6637, l[0].FinAddWidening, 9);
             Assert.Equal(new double?[] { 180, 345.6637 }, (double?[])l[0].ComoDiccionario(-3.6)["rango_add_widening"]);
-            // Sin longitud_transicion, el rango pedido tal cual
-            Assert.Equal(485.6637, l[1].InicioAddWidening, 9);
+            // Sin longitud_transicion, desde la 1.22.1 (tarea 7.6, cambio pedido) se usan 40 m y el rango también se adelanta
+            // 40 m; hasta la 1.22.0 se pasaba el rango pedido tal cual (485.6637) y Civil 3D dejaba la transición en 0 m
+            Assert.Equal(445.6637, l[1].InicioAddWidening, 9);
             Assert.Equal(611.3274, l[1].FinAddWidening, 9);
             // La transición que no cabe antes del inicio del eje se rechaza al leer (ya lo hacía con InicioOcupado)
             Assert.Throws<ArgumentException>(() => BordesCalzada.Leer(J("[{\"borde\":\"izquierdo\",\"progresiva_inicial\":20,\"progresiva_final\":100,\"sobreancho\":0.6,\"longitud_transicion\":40}]"), 0, 831.3274));
@@ -126,11 +127,18 @@ namespace ArbaMcp.Pruebas
             Assert.Equal(385.6637, l[0].FinOcupado, 9);
             Assert.Equal(BordesCalzada.Derecho, l[1].Borde);
             Assert.Equal(485.66, l[1].ProgresivaInicial, 9);
-            Assert.Null(l[1].LongitudTransicion);
+            // Desde la 1.22.1 (tarea 7.6, cambio pedido): sin longitud_transicion, 40 m por defecto (antes quedaba null y la
+            // transicion_prevista era un texto «La decide Civil 3D»)
+            Assert.Equal(40, l[1].LongitudTransicion);
+            Assert.True(l[1].TransicionPorDefecto);
+            Assert.False(l[0].TransicionPorDefecto);
             var d = l[0].ComoDiccionario(-3.6);
             Assert.Equal(4.2, (double?)d["desplazamiento_total"]);
             Assert.IsType<Dictionary<string, object>>(d["transicion_prevista"]);
-            Assert.IsType<string>(l[1].ComoDiccionario(3.6)["transicion_prevista"]);
+            Assert.Equal(false, d["longitud_transicion_por_defecto"]);
+            var d1 = l[1].ComoDiccionario(3.6);
+            Assert.IsType<Dictionary<string, object>>(d1["transicion_prevista"]);
+            Assert.Equal(true, d1["longitud_transicion_por_defecto"]);
         }
 
         [Theory]
@@ -161,17 +169,96 @@ namespace ArbaMcp.Pruebas
             Assert.Contains("Los ensanchamientos 1 y 2 del borde izquierdo se solapan", ex.Message);
             // En bordes distintos no hay solape
             Assert.Equal(2, BordesCalzada.Leer(J(json.Replace("\"borde\":\"izquierdo\",\"progresiva_inicial\":260", "\"borde\":\"derecho\",\"progresiva_inicial\":260")), 0, 800).Count);
-            // Sin transición pedida, tocarse no es solaparse
-            Assert.Equal(2, BordesCalzada.Leer(J("[{\"borde\":\"i\",\"progresiva_inicial\":100,\"progresiva_final\":200,\"sobreancho\":0.5},{\"borde\":\"i\",\"progresiva_inicial\":200,\"progresiva_final\":300,\"sobreancho\":0.5}]"), 0, 800).Count);
+            // Con transición nula pedida a propósito, tocarse no es solaparse. Hasta la 1.22.0 esto se probaba sin
+            // longitud_transicion; desde la 1.22.1 (tarea 7.6, cambio pedido) sin ella se usan 40 m y sí se solapan
+            Assert.Equal(2, BordesCalzada.Leer(J("[{\"borde\":\"i\",\"progresiva_inicial\":100,\"progresiva_final\":200,\"sobreancho\":0.5,\"longitud_transicion\":0},{\"borde\":\"i\",\"progresiva_inicial\":200,\"progresiva_final\":300,\"sobreancho\":0.5,\"longitud_transicion\":0}]"), 0, 800).Count);
         }
 
         [Fact]
         public void RechazaMasDeDoscientos()
         {
             var partes = Enumerable.Range(0, BordesCalzada.MaximoEnsanchamientos + 1)
-                .Select(i => "{\"borde\":\"izquierdo\",\"progresiva_inicial\":" + (i * 10) + ",\"progresiva_final\":" + (i * 10 + 5) + ",\"sobreancho\":0.5}");
+                .Select(i => "{\"borde\":\"izquierdo\",\"progresiva_inicial\":" + (i * 10) + ",\"progresiva_final\":" + (i * 10 + 5) + ",\"sobreancho\":0.5,\"longitud_transicion\":0}");
+            // longitud_transicion 0 desde la 1.22.1 (tarea 7.6): sin ella, los 40 m por defecto sacarían el primero del eje
+            // antes de llegar al elemento 201, y lo que se prueba aquí es el límite de 200
             var ex = Assert.Throws<ArgumentException>(() => BordesCalzada.Leer(J("[" + string.Join(",", partes) + "]"), 0, 5000));
             Assert.Contains("más de 200", ex.Message);
+        }
+
+        // ------------------------------------------------------------------ transición por defecto (1.22.1, tarea 7.6)
+        [Fact]
+        public void SinLongitudTransicionSeUsan40Metros()
+        {
+            // Ronda E, paso 5.2 (20/11/2026): sin longitud_transicion, AddWidening dejó la transición en 0 m (salto)
+            var l = BordesCalzada.Leer(J("[{\"borde\":\"izquierdo\",\"progresiva_inicial\":60,\"progresiva_final\":140,\"sobreancho\":0.6}]"), 0, 831.3274);
+            var x = Assert.Single(l);
+            Assert.Equal(40, x.LongitudTransicion);
+            Assert.Equal(BordesCalzada.LongitudTransicionPorDefecto, x.LongitudTransicion);
+            Assert.True(x.TransicionPorDefecto);
+            Assert.Equal(20, x.InicioAddWidening, 9);
+            Assert.Equal(140, x.FinAddWidening, 9);
+            Assert.Equal(20, x.InicioOcupado, 9);
+            Assert.Equal(180, x.FinOcupado, 9);
+            var d = x.ComoDiccionario(-3.6);
+            Assert.Equal(new double?[] { 20, 140 }, (double?[])d["rango_add_widening"]);
+            Assert.Equal(40.0, (double?)d["longitud_transicion"]);
+            Assert.Equal(true, d["longitud_transicion_por_defecto"]);
+            var t = Assert.IsType<Dictionary<string, object>>(d["transicion_prevista"]);
+            Assert.Equal(new double?[] { 20, 60 }, (double?[])t["entrada"]);
+            Assert.Equal(new double?[] { 140, 180 }, (double?[])t["salida"]);
+            Assert.Equal("El ensanchamiento 1 no tiene 'longitud_transicion': se usan 40 m (DG-2018, 302.09.02: «Normalmente la longitud para desarrollar el sobreancho será de 40 m»). Sin ella, Civil 3D deja la transición en 0 m y el borde da un salto (validado el 20/11/2026).", x.AvisoTransicion());
+        }
+
+        [Fact]
+        public void LongitudTransicionPasadaNoAvisa()
+        {
+            var x = Assert.Single(BordesCalzada.Leer(J("[{\"borde\":\"derecho\",\"progresiva_inicial\":60,\"progresiva_final\":140,\"sobreancho\":0.6,\"longitud_transicion\":25}]"), 0, 800));
+            Assert.Equal(25, x.LongitudTransicion);
+            Assert.False(x.TransicionPorDefecto);
+            Assert.Equal(35, x.InicioAddWidening, 9);
+            Assert.Null(x.AvisoTransicion());
+        }
+
+        [Fact]
+        public void LongitudTransicionCeroExplicitaSePermiteConAviso()
+        {
+            var x = Assert.Single(BordesCalzada.Leer(J("[{\"borde\":\"izquierdo\",\"progresiva_inicial\":60,\"progresiva_final\":140,\"sobreancho\":0.6,\"longitud_transicion\":0}]"), 0, 800));
+            Assert.Equal(0, x.LongitudTransicion);
+            Assert.False(x.TransicionPorDefecto);
+            Assert.Equal(60, x.InicioAddWidening, 9);
+            Assert.Equal(new double?[] { 60, 140 }, (double?[])x.ComoDiccionario(-3.6)["rango_add_widening"]);
+            Assert.Equal(false, x.ComoDiccionario(-3.6)["longitud_transicion_por_defecto"]);
+            string aviso = x.AvisoTransicion();
+            Assert.Contains("El ensanchamiento 1 tiene 'longitud_transicion' = 0", aviso);
+            Assert.Contains("el borde dará un salto en 60 y en 140", aviso);
+            // Y el tramo que llega al inicio del eje cabe con 0 explícito
+            Assert.Single(BordesCalzada.Leer(J("[{\"borde\":\"izquierdo\",\"progresiva_inicial\":0,\"progresiva_final\":50,\"sobreancho\":0.6,\"longitud_transicion\":0}]"), 0, 800));
+        }
+
+        [Fact]
+        public void QueNoCabePorLaTransicionPorDefectoEsErrorClaro()
+        {
+            // Hasta la 1.22.0 cabía (sin transición, de 10 a 100 en un eje de 0 a 800); con los 40 m por defecto empieza en −30
+            var ex = Assert.Throws<ArgumentException>(() => BordesCalzada.Leer(J("[{\"borde\":\"izquierdo\",\"progresiva_inicial\":10,\"progresiva_final\":100,\"sobreancho\":0.6}]"), 0, 800));
+            Assert.Contains("El ensanchamiento 1 ocupa de -30 a 140 contando la transición de 40 m (por defecto, porque no se pasó 'longitud_transicion'; DG-2018, 302.09.02) y el eje va de 0 a 800", ex.Message);
+            Assert.Contains("pasa 'longitud_transicion' menor", ex.Message);
+            // Al final del eje, igual
+            ex = Assert.Throws<ArgumentException>(() => BordesCalzada.Leer(J("[{\"borde\":\"derecho\",\"progresiva_inicial\":700,\"progresiva_final\":790,\"sobreancho\":0.6}]"), 0, 800));
+            Assert.Contains("por defecto", ex.Message);
+            // Con una transición menor pasada, cabe
+            Assert.Single(BordesCalzada.Leer(J("[{\"borde\":\"izquierdo\",\"progresiva_inicial\":10,\"progresiva_final\":100,\"sobreancho\":0.6,\"longitud_transicion\":10}]"), 0, 800));
+        }
+
+        [Fact]
+        public void SolapeQueSaleDeLaTransicionPorDefectoLoDice()
+        {
+            // 100–200 y 250–300 sin transición no se solapaban; con 40 m por defecto ocupan 60–240 y 210–340
+            string json = "[{\"borde\":\"izquierdo\",\"progresiva_inicial\":100,\"progresiva_final\":200,\"sobreancho\":0.5},"
+                + "{\"borde\":\"izquierdo\",\"progresiva_inicial\":250,\"progresiva_final\":300,\"sobreancho\":0.5}]";
+            var ex = Assert.Throws<ArgumentException>(() => BordesCalzada.Leer(J(json), 0, 800));
+            Assert.Contains("Los ensanchamientos 1 y 2 del borde izquierdo se solapan", ex.Message);
+            Assert.Contains("se usan 40 m por defecto", ex.Message);
+            Assert.Contains("pasa 'longitud_transicion' menor", ex.Message);
         }
 
         // ------------------------------------------------------------------ medición

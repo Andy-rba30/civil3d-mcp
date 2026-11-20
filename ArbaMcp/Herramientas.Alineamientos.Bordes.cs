@@ -226,7 +226,7 @@ namespace ArbaMcp
                     P("nombre_izquierdo", "string", "Nombre del borde izquierdo (no debe existir). Por defecto '<eje> - Borde izq'"),
                     P("nombre_derecho", "string", "Nombre del borde derecho (no debe existir). Por defecto '<eje> - Borde der'"),
                     P("estilo", "string", "Estilo de alineamiento de los bordes. Si falta, el de la configuración del dibujo; si no existe, error con la lista"),
-                    P("ensanchamientos", "json", "Lista de sobreanchos: [{\"borde\": \"izquierdo\", \"progresiva_inicial\": 220, \"progresiva_final\": 345.66, \"sobreancho\": 0.6, \"longitud_transicion\": 40}]. borde: izquierdo o derecho (en el sentido de avance del eje). El rango es el tramo de sobreancho pleno (se supone: la validación lo confirma) y sobreancho lo que se añade a la media calzada (> 0). longitud_transicion (opcional, m): se intenta fijar en la transición de entrada y de salida; si falta, la decide Civil 3D. Sin solapes en un mismo borde"),
+                    P("ensanchamientos", "json", "Lista de sobreanchos: [{\"borde\": \"izquierdo\", \"progresiva_inicial\": 220, \"progresiva_final\": 345.66, \"sobreancho\": 0.6, \"longitud_transicion\": 40}]. borde: izquierdo o derecho (en el sentido de avance del eje). El rango es el tramo de sobreancho pleno (se supone: la validación lo confirma) y sobreancho lo que se añade a la media calzada (> 0). longitud_transicion (opcional, m, ≥ 0): se fija en la transición de entrada y de salida, fuera del rango; si falta, 40 m (DG-2018, 302.09.02) con un aviso, porque sin ella Civil 3D la deja en 0 m y el borde da un salto; 0 = sin transición, a propósito (aviso). Sin solapes en un mismo borde contando las transiciones"),
                     P("simular", "boolean", "Con true comprueba el eje, los nombres, el estilo y los ensanchamientos y devuelve los bordes previstos sin tocar el dibujo (ni copia)")
                 },
                 Ejecutar = a => Escritura.Ejecutar(HerramientaCrearBordes, a, ctx =>
@@ -295,6 +295,13 @@ namespace ArbaMcp
                                 if (!BuscarAlineamientoONull(tr, nombre).IsNull)
                                     throw new ArgumentException("Ya existe el alineamiento '" + nombre + "'. Alineamientos del dibujo: " + string.Join(", ", NombresAlineamientos(tr)) + ". Pasa 'nombre_izquierdo' o 'nombre_derecho' con otro nombre, o usa listar_bordes_calzada para ver los bordes que ya tiene el eje.");
                             pedidos = BordesCalzada.Leer(jsonEns, eje.StartingStation, eje.EndingStation);
+                            // 1.22.1: sin longitud_transicion se usan 40 m (DG-2018, 302.09.02); con 0 explícito, salto.
+                            // Aquí, para que la simulación avise igual que la escritura real.
+                            foreach (var p in pedidos)
+                            {
+                                string aviso = p.AvisoTransicion();
+                                if (aviso != null) ctx.Avisos.Add(aviso);
+                            }
                             try
                             {
                                 foreach (ObjectId idHijo in eje.GetChildOffsetAlignmentIds())
@@ -358,9 +365,8 @@ namespace ArbaMcp
                                     // 1.21.3: sin signo; con −4.2 Civil 3D respondió «offsetDistance must greater than 0» (20/11/2026)
                                     double total = BordesCalzada.DistanciaEnsanchada(nominal, p.Sobreancho);
                                     // 1.21.4: el rango empieza 'longitud_transicion' antes (Ensanchamiento.InicioAddWidening):
-                                    // Civil 3D pone la transición de entrada al principio del rango que recibe (20/11/2026)
-                                    if (!p.LongitudTransicion.HasValue)
-                                        ctx.Avisos.Add("El ensanchamiento " + p.Numero + " no tiene 'longitud_transicion': Civil 3D decide la transición y la de entrada quedará dentro del rango pedido (" + p.ProgresivaInicial.ToString(System.Globalization.CultureInfo.InvariantCulture) + " en adelante), no antes. Para que el sobreancho pleno cubra todo el rango, pasa 'longitud_transicion'.");
+                                    // Civil 3D pone la transición de entrada al principio del rango que recibe (20/11/2026).
+                                    // 1.22.1: LongitudTransicion siempre tiene valor (40 m por defecto, puesto por Leer).
                                     try { info.AddWidening(p.InicioAddWidening, p.FinAddWidening, total); }
                                     catch (Exception ex) { throw ErrorDeCivil3d(ex, "Civil 3D no dejó añadir el ensanchamiento " + p.Numero + " al borde " + par.lado + " '" + al.Name + "' (OffsetAlignmentInfo.AddWidening de " + p.InicioAddWidening.ToString(System.Globalization.CultureInfo.InvariantCulture) + " a " + p.FinAddWidening.ToString(System.Globalization.CultureInfo.InvariantCulture) + " con " + total.ToString(System.Globalization.CultureInfo.InvariantCulture) + ", nominal releído " + nominal.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")"); }
                                     if (p.LongitudTransicion.HasValue)
