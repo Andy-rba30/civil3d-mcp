@@ -26,6 +26,9 @@ namespace ArbaMcp
     /// SuperelevationCrossSegmentType y SuperelevationTransitionRegionType) no están en el catálogo: listar_peralte los lee
     /// de la DLL con Enum.GetNames y aplicar_peralte acepta esos nombres; ninguno está escrito en el código.
     /// Lo que no toca Civil 3D (lectura de 'curvas', verificación, mensajes) está en ArbaMcp.Nucleo.Peralte.
+    /// Tarea 7.4: Alignment.GetCrossSlopeAtStation(double station, SuperelevationCrossSegmentType crossSegmentType, bool
+    /// applySmoothing) (catálogo, 20/11/2026; por verificar) lee el peralte en cualquier pk, también entre progresivas
+    /// críticas: listar_peralte con 'progresivas' y la comprobación de aplicar_peralte en el centro del peralte total.
     /// </summary>
     public static partial class Herramientas
     {
@@ -74,6 +77,19 @@ namespace ArbaMcp
             foreach (var st in al.SuperelevationCriticalStations) p.EstacionesDelEje.Add(LeerEstacionPeralte(st, avisos));
             return p;
         }
+
+        /// <summary>
+        /// Pendiente transversal del eje en un pk y un segmento (nombre del enumerado), en tanto por uno, con
+        /// Alignment.GetCrossSlopeAtStation y el suavizado de Peralte.AplicarSuavizado (tarea 7.4). Lanza si falla: el
+        /// núcleo pone el texto del error en el lugar del valor.
+        /// </summary>
+        private static double PendienteEnPk(CivAlignment al, double pk, string segmento)
+            => al.GetCrossSlopeAtStation(pk, EnumPeralte<SuperelevationCrossSegmentType>(segmento, "segmento de la sección"), Peralte.AplicarSuavizado);
+
+        private static string TextoLecturaEntreProgresivas()
+            => "Alignment.GetCrossSlopeAtStation(pk, segmento, applySmoothing: " + (Peralte.AplicarSuavizado ? "true" : "false") + "); % = valor de la API × "
+               + Peralte.FactorApi.ToString(CultureInfo.InvariantCulture) + "; tolerancia de la comprobación de aplicar_peralte: "
+               + Peralte.ToleranciaEntreProgresivas.ToString(CultureInfo.InvariantCulture) + " puntos de % (por verificar en Civil 3D)";
 
         /// <summary>Los nombres de los enumerados del peralte, leídos de la DLL de Civil 3D (no se inventan).</summary>
         private static Dictionary<string, object> EnumeradosPeralte() => new Dictionary<string, object>
@@ -206,11 +222,16 @@ namespace ArbaMcp
 
             PeralteLeido leido;
             var avisosRelectura = new HashSet<string>();
+            List<Dictionary<string, object>> comprobacion;
+            List<string> avisosComprobacion;
             using (doc.LockDocument())
             using (var tr = doc.Database.TransactionManager.StartTransaction())
             {
                 var al = (CivAlignment)tr.GetObject(BuscarAlineamiento(tr, nombreReal), OpenMode.ForRead);
                 leido = LeerPeralte(al, avisosRelectura);
+                // Tarea 7.4: el peralte en el centro del peralte total de cada curva, entre progresivas críticas (lo que pide
+                // el corredor en cualquier pk). Solo en la escritura real; si no coincide, aviso (no error: por verificar).
+                comprobacion = Peralte.ComprobarEntreProgresivas(Peralte.PuntosEntreProgresivas(curvas), (pk, seg) => PendienteEnPk(al, pk, seg), out avisosComprobacion);
                 tr.Commit();
             }
             var despues = Peralte.Estado(leido);
@@ -223,9 +244,12 @@ namespace ArbaMcp
                 ctx.Avisos.Add("Alignment.SuperelevationCriticalStations tiene " + leido.NumeroEstacionesDelEjeSinContorno + " progresivas críticas (sin las de contorno BeginAlignment y EndAlignment) y las curvas de peralte suman "
                     + leido.NumeroEstacionesCurvas + " (dato para VALIDACION_120).");
             ctx.Avisos.AddRange(avisosRelectura);
+            ctx.Avisos.AddRange(avisosComprobacion);
             var datos = new Dictionary<string, object>
             {
                 ["estaciones_del_eje"] = leido.EstacionesDelEje.Count,
+                ["comprobacion_entre_progresivas"] = comprobacion,
+                ["lectura_entre_progresivas"] = TextoLecturaEntreProgresivas(),
                 ["escala_pendientes"] = "% = valor de la API × " + Peralte.FactorApi.ToString(CultureInfo.InvariantCulture) + " (por verificar en Civil 3D)",
                 ["deshacer"] = Peralte.BloqueDeshacer(leido, rutaCopia)
             };
@@ -245,12 +269,17 @@ namespace ArbaMcp
             {
                 Nombre = HerramientaListarPeralte,
                 Contexto = ContextoEjecucion.Aplicacion,   // lectura: sin entrada en el menú Deshacer (ver CONTRATO, Contextos)
-                Descripcion = "Devuelve el peralte de un alineamiento existente: 'tiene_peralte', las curvas de peralte (nombre, progresivas de inicio y fin) con sus progresivas críticas en orden (progresiva, tipo, región de transición, descripción y pendientes transversales por segmento en %), las progresivas críticas de la colección del propio eje ('estaciones_del_eje'), el tipo de peralte del eje, si usa un archivo de criterios de diseño (solo informativo) y 'enumerados': los nombres reales de los tipos de progresiva crítica, de región y de segmento de esta versión de Civil 3D, que son los que acepta aplicar_peralte. Solo lee: no cambia el dibujo.",
-                Parametros = { P("alineamiento", "string", "Nombre del alineamiento (eje); ver listar_alineamientos", true) },
+                Descripcion = "Devuelve el peralte de un alineamiento existente: 'tiene_peralte', las curvas de peralte (nombre, progresivas de inicio y fin) con sus progresivas críticas en orden (progresiva, tipo, región de transición, descripción y pendientes transversales por segmento en %), las progresivas críticas de la colección del propio eje ('estaciones_del_eje'), el tipo de peralte del eje, si usa un archivo de criterios de diseño (solo informativo) y 'enumerados': los nombres reales de los tipos de progresiva crítica, de región y de segmento de esta versión de Civil 3D, que son los que acepta aplicar_peralte. Con 'progresivas' (lista de pk) devuelve además 'pendientes_en_progresivas': la pendiente de cada segmento en esos pk, también entre progresivas críticas, como la pide el corredor (Alignment.GetCrossSlopeAtStation). Solo lee: no cambia el dibujo.",
+                Parametros =
+                {
+                    P("alineamiento", "string", "Nombre del alineamiento (eje); ver listar_alineamientos", true),
+                    P("progresivas", "json", "Opcional. Lista de progresivas del eje en metros, por ejemplo [100, 280, 550] (máximo " + Peralte.MaximoProgresivas + "): en cada una devuelve la pendiente transversal de los 8 segmentos en %, leída del eje en ese pk aunque no sea una progresiva crítica")
+                },
                 Ejecutar = a =>
                 {
                     var doc = DocActivo();
                     string nombreAl = Requerido(a, "alineamiento").Trim();
+                    var progresivas = Peralte.LeerProgresivas(JsonArg(a, "progresivas"));   // forma inválida: error sin leer el dibujo
                     var avisos = new HashSet<string>();
                     Dictionary<string, object> respuesta;
                     using (BloquearParaLeer(doc))
@@ -270,6 +299,13 @@ namespace ArbaMcp
                         respuesta["archivo_criterios"] = Seguro(() => al.CriteriaFileName, null);
                         respuesta["escala_pendientes"] = "% = valor de la API × " + Peralte.FactorApi.ToString(CultureInfo.InvariantCulture) + " (por verificar en Civil 3D)";
                         respuesta["enumerados"] = EnumeradosPeralte();
+                        if (progresivas != null)
+                        {
+                            // Tarea 7.4: el peralte en cualquier pk (cada lectura en su try, dentro del núcleo)
+                            respuesta["pendientes_en_progresivas"] = Peralte.PendientesEnProgresivas(progresivas, al.StartingStation, al.EndingStation,
+                                Enum.GetNames(typeof(SuperelevationCrossSegmentType)), (pk, seg) => PendienteEnPk(al, pk, seg));
+                            respuesta["lectura_en_progresivas"] = TextoLecturaEntreProgresivas();
+                        }
                         respuesta["avisos"] = avisos.ToList();
                         tr.Commit();
                     }

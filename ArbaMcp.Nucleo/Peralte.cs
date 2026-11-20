@@ -90,6 +90,22 @@ namespace ArbaMcp.Nucleo
         };
     }
 
+    /// <summary>
+    /// Un pk entre progresivas críticas donde aplicar_peralte comprueba, tras escribir, que el eje devuelve el peralte
+    /// escrito con Alignment.GetCrossSlopeAtStation (tarea 7.4): el centro del tramo de peralte total de una curva.
+    /// </summary>
+    public sealed class PuntoComprobacion
+    {
+        public int Pi;
+        /// <summary>Null si no se pudo elegir un pk (entonces 'Motivo' dice por qué).</summary>
+        public double? Progresiva;
+        /// <summary>Cómo se eligió el pk (entre BeginFullSuper y EndFullSuper, o el tramo de pendientes iguales).</summary>
+        public string Criterio;
+        /// <summary>Segmento → pendiente en % que debe devolver el eje en el pk (la media de las dos progresivas del tramo).</summary>
+        public List<KeyValuePair<string, double>> Escrito = new List<KeyValuePair<string, double>>();
+        public string Motivo;
+    }
+
     /// <summary>Lo que el plugin lee del peralte de un eje.</summary>
     public sealed class PeralteLeido
     {
@@ -397,6 +413,225 @@ namespace ArbaMcp.Nucleo
                        + "ya no tiene peralte; está POR VERIFICAR en Civil 3D (VALIDACION_120). Si no lo quita, vuelve a la copia previa"
                        + (rutaCopia != null ? " (" + rutaCopia + ")" : "") + ": aplicar_peralte no borra peralte."
         };
+
+        // ------------------------------------------------------------------ peralte entre progresivas críticas (tarea 7.4)
+        /// <summary>
+        /// Tolerancia (puntos de %) al comparar la pendiente que devuelve el eje entre progresivas críticas
+        /// (Alignment.GetCrossSlopeAtStation) con la escrita. Más holgada que ToleranciaPendiente porque el valor sale
+        /// interpolado por Civil 3D.
+        /// </summary>
+        public const double ToleranciaEntreProgresivas = 0.05;
+        /// <summary>Máximo de progresivas que acepta listar_peralte en 'progresivas' (8 lecturas por progresiva).</summary>
+        public const int MaximoProgresivas = 100;
+        /// <summary>
+        /// Tercer parámetro de Alignment.GetCrossSlopeAtStation (applySmoothing): true aplica el suavizado de las
+        /// transiciones de peralte si la curva lo tiene, que es lo que usa el corredor. aplicar_peralte no define
+        /// suavizado, así que en sus curvas true y false deberían dar lo mismo (por verificar en Civil 3D).
+        /// </summary>
+        public const bool AplicarSuavizado = true;
+        /// <summary>Tipos de progresiva crítica que limitan el tramo de peralte total (SuperelevationCriticalStationType, validados el 17/11/2026).</summary>
+        public const string TipoInicioPeralteTotal = "BeginFullSuper";
+        public const string TipoFinPeralteTotal = "EndFullSuper";
+
+        /// <summary>
+        /// Lee el parámetro opcional 'progresivas' de listar_peralte: lista JSON de números (acepta texto con coma
+        /// decimal). Null si no se pasó. Lanza ArgumentException (sin leer el dibujo) si no es una lista, está vacía,
+        /// tiene más de MaximoProgresivas o algún valor no es un número finito. Conserva el orden pedido.
+        /// </summary>
+        public static List<double> LeerProgresivas(JsonElement v)
+        {
+            const string Forma = " Forma: [100, 280, 550] (progresivas del eje en metros).";
+            if (v.ValueKind == JsonValueKind.Undefined || v.ValueKind == JsonValueKind.Null) return null;
+            if (v.ValueKind != JsonValueKind.Array) throw new ArgumentException("'progresivas' debe ser una lista JSON de números." + Forma);
+            var lista = new List<double>();
+            int n = 0;
+            foreach (var e in v.EnumerateArray())
+            {
+                n++;
+                lista.Add(ValorNumero(e, "la progresiva " + n + " de 'progresivas'"));
+            }
+            if (lista.Count == 0) throw new ArgumentException("'progresivas' está vacía: pon al menos una progresiva o quita el parámetro." + Forma);
+            if (lista.Count > MaximoProgresivas)
+                throw new ArgumentException("'progresivas' tiene " + lista.Count + " valores; el máximo es " + MaximoProgresivas + ". Pide menos progresivas.");
+            return lista;
+        }
+
+        /// <summary>
+        /// Pendiente transversal de cada segmento en cada progresiva pedida, en %, con 'leer' (pk, segmento) → valor de la
+        /// API en tanto por uno (Alignment.GetCrossSlopeAtStation en el plugin). Cada lectura va en su try: si falla o no
+        /// es un número finito, en el lugar del valor va el texto del error (no tumba la respuesta). Una progresiva fuera
+        /// del eje no se lee: lleva 'error' y 'pendientes' vacío.
+        /// </summary>
+        public static List<Dictionary<string, object>> PendientesEnProgresivas(IList<double> progresivas, double inicioEje, double finEje,
+            IEnumerable<string> segmentos, Func<double, string, double> leer)
+        {
+            var segs = segmentos.ToList();
+            var filas = new List<Dictionary<string, object>>();
+            foreach (double pk in progresivas)
+            {
+                var pendientes = new Dictionary<string, object>();
+                var fila = new Dictionary<string, object>
+                {
+                    ["progresiva"] = Argumentos.Redondear(pk),
+                    ["progresiva_texto"] = TablaPi.Progresiva(pk),
+                    ["pendientes"] = pendientes
+                };
+                if (pk < inicioEje - ToleranciaProgresiva || pk > finEje + ToleranciaProgresiva)
+                {
+                    fila["error"] = "Fuera del eje (de " + TablaPi.Progresiva(inicioEje) + " a " + TablaPi.Progresiva(finEje) + "): no se lee.";
+                    filas.Add(fila);
+                    continue;
+                }
+                foreach (var s in segs) pendientes[s] = LeerUna(pk, s, leer, out _, out _);
+                filas.Add(fila);
+            }
+            return filas;
+        }
+
+        /// <summary>Una lectura en % (redondeada) o el texto del error en su lugar.</summary>
+        private static object LeerUna(double pk, string segmento, Func<double, string, double> leer, out double? pct, out string error)
+        {
+            pct = null; error = null;
+            try
+            {
+                double v = leer(pk, segmento);
+                if (double.IsNaN(v) || double.IsInfinity(v)) error = "error: Civil 3D devolvió un valor no finito (" + v.ToString(Inv) + ")";
+                else pct = PendientePct(v);
+            }
+            catch (Exception ex)
+            {
+                while (ex.InnerException != null) ex = ex.InnerException;
+                error = "error: " + ex.GetType().Name + ": " + ex.Message;
+            }
+            return pct.HasValue ? (object)Argumentos.Redondear(pct.Value) : error;
+        }
+
+        /// <summary>
+        /// Para cada curva pedida, el pk donde comprobar el peralte entre progresivas críticas: el centro del tramo de
+        /// peralte total, entre la progresiva BeginFullSuper y la EndFullSuper escritas; si la curva no tiene las dos, el
+        /// centro del tramo entre dos progresivas seguidas con las mismas pendientes escritas (el de mayor pendiente y, a
+        /// igualdad, el más largo). Lo escrito en el pk es la media de las dos progresivas, solo en los segmentos que
+        /// llevan las dos. Si no hay tramo (o mide menos de 0,002 m), 'Motivo' dice por qué y no se comprueba.
+        /// </summary>
+        public static List<PuntoComprobacion> PuntosEntreProgresivas(IList<CurvaPeralte> curvas)
+        {
+            var puntos = new List<PuntoComprobacion>();
+            foreach (var c in curvas)
+            {
+                var est = c.Estaciones.OrderBy(e => e.Progresiva).ToList();
+                var punto = new PuntoComprobacion { Pi = c.Pi };
+                EstacionPeralte a = est.FirstOrDefault(e => EsTipo(e, TipoInicioPeralteTotal)), b = null;
+                if (a != null) b = est.FirstOrDefault(e => EsTipo(e, TipoFinPeralteTotal) && e.Progresiva > a.Progresiva);
+                if (a != null && b != null) punto.Criterio = "centro del peralte total, entre " + TipoInicioPeralteTotal + " y " + TipoFinPeralteTotal;
+                else
+                {
+                    a = b = null;
+                    double mejorPendiente = -1, mejorLongitud = -1;
+                    for (int i = 1; i < est.Count; i++)
+                    {
+                        var x = est[i - 1]; var y = est[i];
+                        if (!MismasPendientes(x, y)) continue;
+                        double pend = x.Pendientes.Max(p => Math.Abs(p.Value)), lon = y.Progresiva - x.Progresiva;
+                        if (pend > mejorPendiente + ToleranciaPendiente || (Math.Abs(pend - mejorPendiente) <= ToleranciaPendiente && lon > mejorLongitud))
+                        { a = x; b = y; mejorPendiente = pend; mejorLongitud = lon; }
+                    }
+                    if (a != null) punto.Criterio = "centro del tramo entre " + a.Tipo + " y " + b.Tipo + " con las mismas pendientes (sin " + TipoInicioPeralteTotal + " y " + TipoFinPeralteTotal + ")";
+                }
+                if (a == null)
+                {
+                    punto.Motivo = "La curva del PI " + c.Pi + " no tiene " + TipoInicioPeralteTotal + " y " + TipoFinPeralteTotal
+                        + " ni dos progresivas seguidas con las mismas pendientes: no se comprueba el peralte entre progresivas.";
+                    puntos.Add(punto);
+                    continue;
+                }
+                if (b.Progresiva - a.Progresiva < 2 * ToleranciaProgresiva)
+                {
+                    punto.Motivo = "El tramo de peralte total de la curva del PI " + c.Pi + " mide 0 (" + TablaPi.Progresiva(a.Progresiva)
+                        + "): no hay pk entre progresivas que comprobar.";
+                    puntos.Add(punto);
+                    continue;
+                }
+                punto.Progresiva = (a.Progresiva + b.Progresiva) / 2;
+                foreach (var p in a.Pendientes)
+                {
+                    var q = b.Pendientes.FirstOrDefault(x => string.Equals(x.Key, p.Key, StringComparison.OrdinalIgnoreCase));
+                    if (q.Key != null) punto.Escrito.Add(new KeyValuePair<string, double>(p.Key, (p.Value + q.Value) / 2));
+                }
+                if (punto.Escrito.Count == 0)
+                {
+                    punto.Progresiva = null;
+                    punto.Motivo = "Las progresivas " + TablaPi.Progresiva(a.Progresiva) + " y " + TablaPi.Progresiva(b.Progresiva) + " de la curva del PI " + c.Pi
+                        + " no tienen ningún segmento en común: no se comprueba el peralte entre progresivas.";
+                }
+                puntos.Add(punto);
+            }
+            return puntos;
+        }
+
+        private static bool EsTipo(EstacionPeralte e, string tipo) => string.Equals((e.Tipo ?? "").Trim(), tipo, StringComparison.OrdinalIgnoreCase);
+
+        private static bool MismasPendientes(EstacionPeralte x, EstacionPeralte y)
+        {
+            if (x.Pendientes.Count == 0 || x.Pendientes.Count != y.Pendientes.Count) return false;
+            foreach (var p in x.Pendientes)
+            {
+                var q = y.Pendientes.FirstOrDefault(z => string.Equals(z.Key, p.Key, StringComparison.OrdinalIgnoreCase));
+                if (q.Key == null || Math.Abs(q.Value - p.Value) > ToleranciaPendiente) return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Lee con 'leer' (pk, segmento) → valor de la API (Alignment.GetCrossSlopeAtStation) cada segmento escrito en
+        /// cada punto y lo compara con lo escrito (ToleranciaEntreProgresivas). Devuelve una fila por segmento (pi,
+        /// progresiva, segmento, escrito, leido, diferencia, coincide y, si la lectura falla, error) o una por curva sin
+        /// pk (con 'motivo' y coincide null). 'avisos' recibe un aviso por pk que no coincide o no se pudo leer, y uno por
+        /// curva sin pk: es aviso, no error, porque esta lectura aún no está validada en Civil 3D.
+        /// </summary>
+        public static List<Dictionary<string, object>> ComprobarEntreProgresivas(IList<PuntoComprobacion> puntos, Func<double, string, double> leer, out List<string> avisos)
+        {
+            avisos = new List<string>();
+            var filas = new List<Dictionary<string, object>>();
+            foreach (var p in puntos)
+            {
+                if (!p.Progresiva.HasValue)
+                {
+                    filas.Add(new Dictionary<string, object> { ["pi"] = p.Pi, ["progresiva"] = null, ["motivo"] = p.Motivo, ["coincide"] = null });
+                    if (p.Motivo != null) avisos.Add(p.Motivo);
+                    continue;
+                }
+                double pk = p.Progresiva.Value;
+                var distintos = new List<string>();
+                var fallidos = new List<string>();
+                foreach (var s in p.Escrito)
+                {
+                    LeerUna(pk, s.Key, leer, out double? leido, out string error);
+                    bool? coincide = leido.HasValue ? Math.Abs(leido.Value - s.Value) <= ToleranciaEntreProgresivas : (bool?)null;
+                    var fila = new Dictionary<string, object>
+                    {
+                        ["pi"] = p.Pi,
+                        ["progresiva"] = Argumentos.Redondear(pk),
+                        ["progresiva_texto"] = TablaPi.Progresiva(pk),
+                        ["criterio"] = p.Criterio,
+                        ["segmento"] = s.Key,
+                        ["escrito"] = Argumentos.Redondear(s.Value),
+                        ["leido"] = leido.HasValue ? Argumentos.Redondear(leido.Value) : null,
+                        ["diferencia"] = leido.HasValue ? Argumentos.Redondear(leido.Value - s.Value) : null,
+                        ["coincide"] = coincide
+                    };
+                    if (error != null) { fila["error"] = error; fallidos.Add("segmento " + s.Key + ": " + error); }
+                    else if (coincide == false) distintos.Add("segmento " + s.Key + ": leído " + Num(leido.Value) + " %, escrito " + Num(s.Value) + " %");
+                    filas.Add(fila);
+                }
+                if (distintos.Count > 0)
+                    avisos.Add("El eje no devuelve el peralte escrito en el pk " + TablaPi.Progresiva(pk) + " (PI " + p.Pi + "; " + string.Join("; ", distintos)
+                        + "): el corredor podría no seguirlo. Mira listar_peralte con progresivas.");
+                if (fallidos.Count > 0)
+                    avisos.Add("No se pudo leer el peralte en el pk " + TablaPi.Progresiva(pk) + " (PI " + p.Pi + ") con Alignment.GetCrossSlopeAtStation ("
+                        + string.Join("; ", fallidos) + "): no se sabe si el corredor lo sigue. Mira listar_peralte con progresivas.");
+            }
+            return filas;
+        }
 
         // ------------------------------------------------------------------ ayudantes
         private static int Entero(JsonElement o, string campo, string donde)

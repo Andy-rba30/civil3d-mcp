@@ -250,6 +250,8 @@ namespace Autodesk.Civil.DatabaseServices
         public SuperelevationType SuperelevationType => default;
         public bool UseDesignCriteriaFile { get; set; }
         public string CriteriaFileName { get; set; }
+        // Ronda E, tarea 7.4 (listar_peralte con progresivas, comprobación de aplicar_peralte): firma del catálogo (20/11/2026), por verificar
+        public double GetCrossSlopeAtStation(double station, Autodesk.Civil.SuperelevationCrossSegmentType crossSegmentType, bool applySmoothing) => 0;
         // 1.21.0 (crear_bordes_calzada, listar_bordes_calzada): alineamientos desplazados (confirmados en el catálogo, por verificar)
         public static ObjectId CreateOffsetAlignment(string alignmentName, ObjectId parentAlignmentId, double offset, ObjectId styleId) => ObjectId.Null;
         public bool IsOffsetAlignment => false;
