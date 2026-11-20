@@ -1118,7 +1118,12 @@ namespace ArbaMcp
                             var ids = ResolverObjetivo(tr, db, tipo, objetivo, alPerfil);
                             ComprobarNoSuperficieDelCorredor(tr, cor, tipo, ids);   // 1.3.3
                             var e = new Dictionary<string, object> { ["objetivos"] = ids.Cast<ObjectId>().Select(id => TextoObjeto(tr, id)).ToList() };
-                            if (!string.IsNullOrWhiteSpace(opcion)) e["opcion"] = OpcionApi(opcion) == "Nearest" ? "mas_cercano" : OpcionApi(opcion) == "Farthest" ? "exterior" : "interior";
+                            // 1.21.5: la opción solo con 2 o más objetivos (Civil 3D 2027 la rechaza con uno)
+                            if (!string.IsNullOrWhiteSpace(opcion))
+                            {
+                                if (OpcionDeObjetivo.Aplicable(ids.Count)) e["opcion"] = OpcionApi(opcion) == "Nearest" ? "mas_cercano" : OpcionApi(opcion) == "Farthest" ? "exterior" : "interior";
+                                else ctx.Avisos.Add(OpcionDeObjetivo.AvisoNoAplicada(opcion.Trim(), ids.Count, "en '" + sub + "' (región '" + region + "')"));
+                            }
                             return e;
                         },
                         (tr, cor) =>
@@ -1130,7 +1135,7 @@ namespace ArbaMcp
                             ComprobarNoSuperficieDelCorredor(tr, cor, tipo, ids);
                             var g = GuardarObjetivo(tr, bl, reg, info);
                             info.TargetIds = ids;
-                            if (!string.IsNullOrWhiteSpace(opcion) && Enum.TryParse<Civ.SubassemblyTargetToOption>(OpcionApi(opcion), true, out var opt)) info.TargetToOption = opt;
+                            if (!string.IsNullOrWhiteSpace(opcion) && OpcionDeObjetivo.Aplicable(ids.Count) && Enum.TryParse<Civ.SubassemblyTargetToOption>(OpcionApi(opcion), true, out var opt)) info.TargetToOption = opt;
                             if (mismoLado.HasValue) info.UseSameSideTarget = mismoLado.Value;
                             reg.SetTargets(coleccion);
                             guardados.Add(CerrarObjetivoGuardado(tr, g, info));
@@ -1186,7 +1191,12 @@ namespace ArbaMcp
                             var ids = ResolverObjetivo(tr, db, it.tipo, it.objetivo, it.alPerfil);
                             ComprobarNoSuperficieDelCorredor(tr, cor, it.tipo, ids);   // 1.3.3: va a 'fallidos' sin abortar el lote
                             var e = new Dictionary<string, object> { ["objetivos"] = ids.Cast<ObjectId>().Select(id => TextoObjeto(tr, id)).ToList() };
-                            if (!string.IsNullOrWhiteSpace(it.opcion)) e["opcion"] = OpcionApi(it.opcion) == "Nearest" ? "mas_cercano" : OpcionApi(it.opcion) == "Farthest" ? "exterior" : "interior";
+                            // 1.21.5: la opción solo con 2 o más objetivos (Civil 3D 2027 la rechaza con uno)
+                            if (!string.IsNullOrWhiteSpace(it.opcion))
+                            {
+                                if (OpcionDeObjetivo.Aplicable(ids.Count)) e["opcion"] = OpcionApi(it.opcion) == "Nearest" ? "mas_cercano" : OpcionApi(it.opcion) == "Farthest" ? "exterior" : "interior";
+                                else ctx.Avisos.Add("asignaciones[" + i + "]: " + OpcionDeObjetivo.AvisoNoAplicada(it.opcion.Trim(), ids.Count, "en '" + it.sub + "' (región '" + it.region + "')"));
+                            }
                             return e;
                         },
                         (tr, cor, i) =>
@@ -1199,7 +1209,7 @@ namespace ArbaMcp
                             ComprobarNoSuperficieDelCorredor(tr, cor, it.tipo, ids);
                             var g = GuardarObjetivo(tr, bl, reg, info);
                             info.TargetIds = ids;
-                            if (!string.IsNullOrWhiteSpace(it.opcion) && Enum.TryParse<Civ.SubassemblyTargetToOption>(OpcionApi(it.opcion), true, out var opt)) info.TargetToOption = opt;
+                            if (!string.IsNullOrWhiteSpace(it.opcion) && OpcionDeObjetivo.Aplicable(ids.Count) && Enum.TryParse<Civ.SubassemblyTargetToOption>(OpcionApi(it.opcion), true, out var opt)) info.TargetToOption = opt;
                             if (it.mismoLado.HasValue) info.UseSameSideTarget = it.mismoLado.Value;
                             reg.SetTargets(coleccion);
                             guardados.Add(CerrarObjetivoGuardado(tr, g, info));
@@ -1348,7 +1358,8 @@ namespace ArbaMcp
                                 ["tipo"] = o.Tipo,
                                 ["parametro"] = o.Parametro,
                                 ["objetivos"] = new List<string>(o.AntesTexto),
-                                ["opcion"] = o.AntesOpcion
+                                // 1.21.5: con menos de 2 objetivos la opción no se repone (Civil 3D la rechaza): queda la actual
+                                ["opcion"] = OpcionDeObjetivo.Aplicable(o.AntesHandles.Count) ? o.AntesOpcion : OpcionObjetivo(info)
                             };
                         },
                         (tr, cor, i) =>
@@ -1356,7 +1367,7 @@ namespace ArbaMcp
                             var o = g[i];
                             var info = Info(tr, cor, o, out var reg, out var col);
                             info.TargetIds = IdsAntes(o);
-                            if (o.AntesOpcionApi != null && Enum.TryParse<Civ.SubassemblyTargetToOption>(o.AntesOpcionApi, true, out var opt)) info.TargetToOption = opt;
+                            if (o.AntesOpcionApi != null && OpcionDeObjetivo.Aplicable(o.AntesHandles.Count) && Enum.TryParse<Civ.SubassemblyTargetToOption>(o.AntesOpcionApi, true, out var opt)) info.TargetToOption = opt;
                             if (o.AntesMismoLado.HasValue) info.UseSameSideTarget = o.AntesMismoLado.Value;
                             reg.SetTargets(col);
                         },

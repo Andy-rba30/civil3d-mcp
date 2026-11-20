@@ -213,7 +213,9 @@ cada curva del `Eje 1`, en el tramo del PC al PT, con 40 m de transición):
       `args={"corredor":"Corredor 1","linea_base":"<línea base>","simular":true,"asignaciones":"[{\"region\":\"0\",\"subensamblaje\":\"<carril izquierdo>\",\"tipo\":\"desplazamiento\",\"objetivo\":\"Eje 1 - Borde izq\",\"opcion\":\"mas_cercano\"},{\"region\":\"0\",\"subensamblaje\":\"<carril derecho>\",\"tipo\":\"desplazamiento\",\"objetivo\":\"Eje 1 - Borde der\",\"opcion\":\"mas_cercano\"}]","pedido":"asigna los bordes a los carriles del Corredor 1"}`
       (con los nombres literales del paso 7c; si un carril tiene varios objetivos de desplazamiento, añade su
       `parametro`) → el `plan` con los dos. Repite sin `simular` → los dos aplicados, `restaurar` y **una** entrada nueva
-      en el menú Deshacer.
+      en el menú Deshacer. Desde la 1.21.5, en la simulación y en la escritura, un aviso por asignación: «asignaciones[0]:
+      La opción 'mas_cercano' no se aplica en … hay 1 objetivo y Civil 3D exige al menos 2 …» (con la 1.21.4 la escritura
+      real falló con «The count of TargetIds should be greater or equal to 2.»).
    e. `reconstruir_corredor` con `args={"corredor":"Corredor 1"}` y `estado_corredor` → `esta_desactualizado: false`.
       Pregunta a Jose si en el **Visor de sucesos** de Civil 3D (*Event Viewer*) sale «Width not found» u «Offset
       target not found»: anota la respuesta.
