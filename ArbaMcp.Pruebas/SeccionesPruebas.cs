@@ -425,5 +425,214 @@ namespace ArbaMcp.Pruebas
             Assert.Contains("no se reintenta", m);
             Assert.DoesNotContain("should not duplicate", m);
         }
+
+        // ---------------------------------------------------------------- plan de nombres de un grupo (1.19.3)
+        [Fact]
+        public void PlanDeNombresSinChoquesNoAvisa()
+        {
+            var p = Secciones.PlanNombres(new List<double> { 0, 20 }, " Eje 1 - Muestreo ", new Dictionary<string, string>(), new string[0], true);
+            Assert.Equal("Eje 1 - Muestreo", p.Grupo);
+            Assert.Equal(new[] { "0+000.00", "0+020.00" }, p.Lineas.Lineas);
+            Assert.Equal(new[] { "Eje 1 - Muestreo 0+000.00", "Eje 1 - Muestreo 0+020.00" }, p.Vistas);
+            Assert.Equal(0, p.VistasRenombradas);
+            Assert.Empty(p.Avisos);
+        }
+
+        [Fact]
+        public void PlanDeNombresDeUnSegundoGrupoDaLosMismosAvisosQueEn1142()
+        {
+            // Lo que hacía crear_secciones hasta la 1.19.2, ahora en PlanNombres: prefijo en las líneas y " (2)" en las vistas que chocan
+            var vistas = new[] { "muestreo 100 0+100.00" };
+            var p = Secciones.PlanNombres(new List<double> { 0, 100 }, "Muestreo 100", PrimerGrupo(), vistas, true);
+            Assert.Equal(new[] { "Muestreo 100 0+000.00", "Muestreo 100 0+100.00" }, p.Lineas.Lineas);
+            Assert.Equal(new[] { "Muestreo 100 0+000.00", "Muestreo 100 0+100.00 (2)" }, p.Vistas);
+            Assert.Equal(1, p.VistasRenombradas);
+            Assert.Equal(2, p.Avisos.Count);
+            Assert.Equal(Secciones.NombresLineasUnicos(new List<double> { 0, 100 }, "Muestreo 100", PrimerGrupo()).Aviso, p.Avisos[0]);
+            Assert.Equal("1 vistas de sección llevan ' (2)' detrás porque ya hay vistas con su nombre en el dibujo (por ejemplo 'Muestreo 100 0+100.00 (2)').", p.Avisos[1]);
+            // Sin vistas no se avisa de las vistas
+            Assert.Single(Secciones.PlanNombres(new List<double> { 0, 100 }, "Muestreo 100", PrimerGrupo(), vistas, false).Avisos);
+        }
+
+        // ---------------------------------------------------------------- nombre del grupo en otro eje (1.19.3)
+        private static readonly (string grupo, string eje)[] GruposDelEje1 = { ("Eje 1 - Muestreo", "Eje 1"), ("Muestreo 100", "Eje 1") };
+
+        [Fact]
+        public void UnNombreLibreNoTieneAlternativoNiAviso()
+        {
+            var r = Secciones.NombreDeGrupoNuevo("Muestreo 50", "Eje 2", GruposDelEje1);
+            Assert.Equal("Muestreo 50", r.Pedido);
+            Assert.Empty(r.EnOtrosEjes);
+            Assert.Null(r.Alternativo);
+            Assert.Null(r.Aviso);
+            Assert.Equal(2, r.GruposLeidos);
+            // Sin grupos en el dibujo, igual
+            Assert.Null(Secciones.NombreDeGrupoNuevo("Muestreo 50", "Eje 2", null).Alternativo);
+        }
+
+        [Fact]
+        public void UnNombreDeOtroEjeLlevaDelanteElEjeEnElAlternativo()
+        {
+            var r = Secciones.NombreDeGrupoNuevo(" muestreo 100 ", "Eje 2", GruposDelEje1);   // sin distinguir mayúsculas ni espacios
+            Assert.Equal(new[] { "Eje 1" }, r.EnOtrosEjes);
+            Assert.Equal("Eje 2 - muestreo 100", r.Alternativo);
+            Assert.StartsWith("Ya hay un grupo de líneas de muestreo llamado 'muestreo 100' en el eje 'Eje 1'. No se sabe todavía si Civil 3D deja repetir el nombre de un grupo en otro eje (por verificar, VALIDACION_1193)", r.Aviso);
+            Assert.Contains("si Civil 3D lo rechaza por repetido, el grupo se crea como 'Eje 2 - muestreo 100'", r.Aviso);
+        }
+
+        [Fact]
+        public void ElPropioEjeNoCuentaComoOtroEje()
+        {
+            // El choque en el mismo eje es error antes (BuscarGrupoMuestreoONull); aquí no se trata como "otro eje"
+            var r = Secciones.NombreDeGrupoNuevo("Muestreo 100", "eje 1", GruposDelEje1);
+            Assert.Empty(r.EnOtrosEjes);
+            Assert.Null(r.Alternativo);
+        }
+
+        [Fact]
+        public void ElAlternativoLlevaNumeroSiTambienExisteOSiYaEmpiezaPorElEje()
+        {
+            var grupos = GruposDelEje1.Concat(new[] { ("Eje 2 - Muestreo 100", "Eje 3"), ("Muestreo 100", "Eje 3") }).ToList();
+            var r = Secciones.NombreDeGrupoNuevo("Muestreo 100", "Eje 2", grupos);
+            Assert.Equal(new[] { "Eje 1", "Eje 3" }, r.EnOtrosEjes);
+            Assert.Equal("Eje 2 - Muestreo 100 (2)", r.Alternativo);
+            Assert.Contains("en los ejes 'Eje 1', 'Eje 3'", r.Aviso);
+
+            // El nombre por defecto de otro eje ya empieza por el eje: no se repite delante
+            var d = Secciones.NombreDeGrupoNuevo("Eje 2 - Muestreo", "Eje 2", new[] { ("Eje 2 - Muestreo", "Eje 9") });
+            Assert.Equal("Eje 2 - Muestreo (2)", d.Alternativo);
+            // "Eje 20 ..." no empieza por el eje "Eje 2"
+            Assert.Equal("Eje 2 - Eje 20 - Muestreo", Secciones.NombreDeGrupoNuevo("Eje 20 - Muestreo", "Eje 2", new[] { ("Eje 20 - Muestreo", "Eje 20") }).Alternativo);
+        }
+
+        [Fact]
+        public void ElPlanDelAlternativoCambiaLasLineasYLasVistas()
+        {
+            // 'Muestreo 100' en Eje 2 cuando Eje 1 ya tiene 'Eje 1 - Muestreo' (cada 20 m) y 'Muestreo 100' (con prefijo)
+            var lineas = PrimerGrupo();
+            foreach (var p in Cada100) lineas["Muestreo 100 " + Secciones.NombreLinea(p)] = "grupo 'Muestreo 100' del eje 'Eje 1'";
+            var vistas = Cada100.Select(p => "Muestreo 100 " + Secciones.NombreLinea(p)).ToList();
+            var g = Secciones.NombreDeGrupoNuevo("Muestreo 100", "Eje 2", GruposDelEje1);
+            var pedido = Secciones.PlanNombres(Cada100, g.Pedido, lineas, vistas, true);
+            var alternativo = Secciones.PlanNombres(Cada100, g.Alternativo, lineas, vistas, true);
+            Assert.Equal("Muestreo 100 0+000.00 (2)", pedido.Lineas.Lineas[0]);
+            Assert.Equal("Muestreo 100 0+000.00 (2)", pedido.Vistas[0]);
+            Assert.Equal("Eje 2 - Muestreo 100 0+000.00", alternativo.Lineas.Lineas[0]);
+            Assert.Equal("Eje 2 - Muestreo 100 0+000.00", alternativo.Vistas[0]);
+            Assert.Equal(0, alternativo.VistasRenombradas);
+        }
+
+        [Theory]
+        [InlineData("Sample line group name should not duplicate.", "Eje 2 - Muestreo 100", 1, 1, true)]
+        [InlineData("Sample line group name should not duplicate.", "Eje 2 - Muestreo 100", 1, 2, false)]   // el intento dejó algo
+        [InlineData("Sample line group name should not duplicate.", "Eje 2 - Muestreo 100", -1, -1, false)] // no se pudo contar
+        [InlineData("Sample line group name should not duplicate.", null, 0, 0, false)]                     // el plugin no lo vio en otro eje
+        [InlineData("eInvalidInput", "Eje 2 - Muestreo 100", 0, 0, false)]                                  // no es por nombre repetido
+        public void SoloSeReintentaConRechazoPorRepetidoNombreVistoYNadaCreado(string mensaje, string alternativo, int antes, int despues, bool esperado)
+            => Assert.Equal(esperado, Secciones.PuedeReintentarGrupo(mensaje, alternativo, antes, despues));
+
+        [Fact]
+        public void MensajesDelGrupoRechazado()
+        {
+            var visto = Secciones.NombreDeGrupoNuevo("Muestreo 100", "Eje 2", GruposDelEje1);
+            string m = Secciones.MensajeGrupoRechazado(visto, "Eje 2", 1, 2);
+            Assert.Equal("Civil 3D no deja crear el grupo de líneas de muestreo 'Muestreo 100' en el eje 'Eje 2' porque ya hay uno con ese nombre en el eje 'Eje 1', y no se prueba con 'Eje 2 - Muestreo 100' porque el eje pasó de 1 a 2 grupos con el intento rechazado. Nada queda escrito (la transacción se descarta) y no se reintenta. Pasa otro 'nombre' (por ejemplo 'Eje 2 - Muestreo 100').", m);
+            Assert.Contains("no se pudieron contar los grupos del eje", Secciones.MensajeGrupoRechazado(visto, "Eje 2", -1, -1));
+
+            var noVisto = Secciones.NombreDeGrupoNuevo("Muestreo 7", "Eje 2", GruposDelEje1);
+            m = Secciones.MensajeGrupoRechazado(noVisto, "Eje 2", 0, 0);
+            Assert.StartsWith("Civil 3D no deja crear el grupo de líneas de muestreo 'Muestreo 7' en el eje 'Eje 2': dice que el nombre está repetido y el plugin no lo encontró entre los 2 grupos que leyó de todos los ejes.", m);
+            Assert.Contains("sección 1.19.3", m);
+            Assert.DoesNotContain("should not duplicate", m);
+
+            Assert.Equal("Civil 3D no deja crear el grupo de líneas de muestreo 'Muestreo 100' en el eje 'Eje 2' (ya hay uno con ese nombre en el eje 'Eje 1') ni con el nombre alternativo 'Eje 2 - Muestreo 100': eInvalidInput. Nada queda escrito (la transacción se descarta) y no se reintenta más. Pasa otro 'nombre'.",
+                Secciones.MensajeAlternativoRechazado(visto, "Eje 2", "eInvalidInput"));
+            Assert.StartsWith("Civil 3D no dejó crear el grupo 'Muestreo 100' en el eje 'Eje 2' porque ya hay uno con ese nombre en el eje 'Eje 1'", Secciones.AvisoGrupoRenombrado(visto, "Eje 2"));
+            Assert.Contains("se creó como 'Eje 2 - Muestreo 100'", Secciones.AvisoGrupoRenombrado(visto, "Eje 2"));
+            Assert.Equal("Civil 3D dejó crear el grupo 'Muestreo 100' en el eje 'Eje 2' aunque el eje 'Eje 1' ya tiene uno con ese nombre (datos.nombre_grupo.rechazado_por_civil3d: false): el nombre del grupo se dejó tal cual.",
+                Secciones.AvisoGrupoAceptado(visto, "Eje 2"));
+        }
+
+        // ---------------------------------------------------------------- de qué superficie es cada sección (1.19.3)
+        /// <summary>Las cinco secciones de una línea como las da Civil 3D (informe 1.13.0, pregunta 2): ids h1..h5, SourceId de las de corredor que no es la TIN.</summary>
+        private static List<SeccionCandidata> SeccionesDeUnaLinea() => new List<SeccionCandidata>
+        {
+            new SeccionCandidata("h1", "T1", null, "Terreno"),
+            new SeccionCandidata("h2", "T2", null, "Terreno 2"),
+            new SeccionCandidata("h3", "C1", null, "Corredor 1"),
+            new SeccionCandidata("h4", "X4", null, "Corredor 1 Corredor 1 - Top"),
+            new SeccionCandidata("h5", "X5", null, "Corredor 1 Corredor 1 - Datum")
+        };
+
+        private static List<FuenteParaIdentificar> FuentesDelGrupo(bool conGetSectionId) => new List<FuenteParaIdentificar>
+        {
+            // El corredor primero en la lista: las superficies se identifican antes igualmente
+            new FuenteParaIdentificar("Corredor 1", Secciones.ClaseCorredor, "C1"),
+            new FuenteParaIdentificar("Terreno", Secciones.ClaseSuperficie, "T1", null, conGetSectionId ? "h1" : null),
+            new FuenteParaIdentificar("Terreno 2", Secciones.ClaseSuperficie, "T2", null, conGetSectionId ? "h2" : null),
+            new FuenteParaIdentificar("Corredor 1 - Top", Secciones.ClaseSuperficieCorredor, "S4", "Corredor 1", conGetSectionId ? "h4" : null),
+            new FuenteParaIdentificar("Corredor 1 - Datum", Secciones.ClaseSuperficieCorredor, "S5", "Corredor 1", conGetSectionId ? "h5" : null)
+        };
+
+        [Fact]
+        public void CadaSeccionDiceSuSuperficieConGetSectionId()
+        {
+            var d = Secciones.IdentificarSecciones(SeccionesDeUnaLinea(), FuentesDelGrupo(true));
+            Assert.Equal(5, d.Count);
+            Assert.Equal(new[] { "Terreno", "Terreno 2", null, "Corredor 1 - Top", "Corredor 1 - Datum" }, d.Select(x => x.Superficie));
+            Assert.Equal(new[] { "Terreno", "Terreno 2", "Corredor 1", "Corredor 1 Corredor 1 - Top", "Corredor 1 Corredor 1 - Datum" }, d.Select(x => x.SourceName));
+            Assert.Equal(new[] { Secciones.ClaseSuperficie, Secciones.ClaseSuperficie, Secciones.ClaseCorredor, Secciones.ClaseSuperficieCorredor, Secciones.ClaseSuperficieCorredor }, d.Select(x => x.Clase));
+            Assert.Equal(IdentificacionSecciones.PorGetSectionId, d[0].Metodo);
+            Assert.Equal(IdentificacionSecciones.PorGetSectionId, d[4].Metodo);
+            Assert.Equal(IdentificacionSecciones.PorSourceId, d[2].Metodo);   // el corredor, por su SourceId
+        }
+
+        [Fact]
+        public void SinGetSectionIdLaDeCorredorSeEncuentraPorCorredorYSuperficie()
+        {
+            var d = Secciones.IdentificarSecciones(SeccionesDeUnaLinea(), FuentesDelGrupo(false));
+            Assert.Equal(IdentificacionSecciones.PorSourceId, d[0].Metodo);   // el SourceId del terreno sí es la TIN
+            Assert.Equal("Corredor 1 - Datum", d[4].Superficie);
+            Assert.Equal(IdentificacionSecciones.PorNombreConCorredor, d[4].Metodo);
+            Assert.Equal(IdentificacionSecciones.PorNombreConCorredor, d[3].Metodo);
+        }
+
+        [Fact]
+        public void UnaSeccionNoSeAsignaADosFuentesYLaQueNoSeIdentificaQuedaSinSuperficie()
+        {
+            var secciones = new List<SeccionCandidata>
+            {
+                new SeccionCandidata("h1", "T1", null, "Terreno"),
+                new SeccionCandidata("h9", "Z9", null, "Red de tuberías 1")
+            };
+            var fuentes = new List<FuenteParaIdentificar>
+            {
+                new FuenteParaIdentificar("Terreno", Secciones.ClaseSuperficie, "T1", null, "h1"),
+                new FuenteParaIdentificar("TERRENO", Secciones.ClaseSuperficie, "T1", null, "h1")   // repetida: no se queda con otra
+            };
+            var d = Secciones.IdentificarSecciones(secciones, fuentes);
+            Assert.Equal("Terreno", d[0].Superficie);
+            Assert.Null(d[1].Superficie);
+            Assert.Null(d[1].Clase);
+            Assert.Null(d[1].Metodo);
+            Assert.Equal("Red de tuberías 1", d[1].SourceName);
+
+            var resumen = new ResumenSecciones();
+            resumen.Anotar(d);
+            resumen.Anotar(Secciones.IdentificarSecciones(SeccionesDeUnaLinea(), FuentesDelGrupo(true)));
+            Assert.Equal(7, resumen.Secciones);
+            Assert.Equal(1, resumen.SinIdentificar);
+            Assert.Equal(5, resumen.Metodos[IdentificacionSecciones.PorGetSectionId]);
+            Assert.Equal(1, resumen.Metodos[IdentificacionSecciones.PorSourceId]);
+        }
+
+        [Fact]
+        public void SinSeccionesOSinFuentesNoFalla()
+        {
+            Assert.Empty(Secciones.IdentificarSecciones(null, FuentesDelGrupo(true)));
+            var d = Secciones.IdentificarSecciones(SeccionesDeUnaLinea(), null);
+            Assert.Equal(5, d.Count);
+            Assert.All(d, x => Assert.Null(x.Superficie));
+        }
     }
 }

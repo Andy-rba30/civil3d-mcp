@@ -61,6 +61,8 @@ namespace Autodesk.AutoCAD.Runtime
     {
         public static RXClass GetClass(System.Type t) => null;
         public static RXObject Create(System.IntPtr p, bool autoDelete) => null;
+        // 1.19.2: copia en memoria (válida sobre un objeto abierto para lectura)
+        public virtual object Clone() => null;
     }
     public class RXClass : RXObject { public string Name => """"; }
     public class DynamicLinker { public bool LoadModule(string fileName, bool printit, bool asCmd) => false; }
@@ -83,6 +85,7 @@ namespace Autodesk.AutoCAD.DatabaseServices
     public enum OpenMode { ForRead, ForWrite, ForNotify }
     public struct ObjectId
     {
+        public static ObjectId Null => default(ObjectId);
         public bool IsNull => true;
         public DBObject GetObject(OpenMode modo) => null;
         public DBObject Open(OpenMode modo) => null;
@@ -101,6 +104,15 @@ namespace Autodesk.AutoCAD.DatabaseServices
         public void DisableUndoRecording(bool disable) { }
         public void CopyFrom(object otro) { }
         public int ColorIndex { get; set; }
+        // 1.19.2: cambian el modo de apertura
+        public void UpgradeFromNotify() { }
+        public void DowngradeToNotify(bool wasWritable) { }
+    }
+    // 1.19.2: Entity.Explode deja las piezas aquí, en memoria
+    public class DBObjectCollection
+    {
+        public int Count => 0;
+        public int Add(DBObject o) => 0;
     }
     // Auditoría de la ronda C (I3): gestores que heredan de RXObject, no de DBObject, y cambian el dibujo
     public class LayoutManager : Autodesk.AutoCAD.Runtime.RXObject
@@ -133,6 +145,11 @@ namespace Autodesk.AutoCAD.DatabaseServices
         public string Layer { get; set; }
         public void SetDatabaseDefaults() { }
         public void IntersectWith(Entity otra, int modo, object puntos, System.IntPtr thisGraphicSystemMarker, System.IntPtr otherGraphicSystemMarker) { }
+        // 1.19.2: leen la entidad (válidos sobre una abierta para lectura)
+        public void Explode(DBObjectCollection entitySet) { }
+        public void Highlight() { }
+        public void Unhighlight() { }
+        public void List() { }
     }
     public class Curve : Entity
     {
@@ -156,6 +173,7 @@ namespace Autodesk.AutoCAD.DatabaseServices
     }
     public class TransactionManager
     {
+        public DBObject GetObject(ObjectId id, OpenMode mode, bool openErased, bool forceOpenOnLockedLayers) => null;
         public Transaction StartTransaction() => null;
         public Transaction StartOpenCloseTransaction() => null;
         public Transaction TopTransaction => null;
@@ -165,6 +183,8 @@ namespace Autodesk.AutoCAD.DatabaseServices
     public class Database : DBObject
     {
         public TransactionManager TransactionManager => null;
+        public ObjectId LayerTableId => default(ObjectId);
+        public ObjectId BlockTableId => default(ObjectId);
         public ObjectId Clayer { get; set; }
         public void SaveAs(string fileName, bool bakAndRename) { }
         public void ReadDwgFile(string fileName, int mode, bool allowCPConversion, string password) { }
@@ -194,11 +214,26 @@ namespace Autodesk.AutoCAD.DatabaseServices
     }
     public class RasterImageDef : DBObject { public string SourceFileName { get; set; } }
     // Solo para la prueba de parámetros que contienen 'name' y no son archivos (en la API real, BlockTable.Has(string key))
-    public class BlockTable : DBObject { public bool Has(string blockName) => false; }
+    public class BlockTable : DBObject
+    {
+        public bool Has(string blockName) => false;
+        public ObjectId this[string key] => default(ObjectId);
+    }
+    // 1.19.2: la receta crear_capa_con_color, tal cual
+    public class SymbolTableRecord : DBObject { public string Name { get; set; } }
+    public class SymbolTable : DBObject
+    {
+        public bool Has(string key) => false;
+        public ObjectId Add(SymbolTableRecord value) => default(ObjectId);
+        public ObjectId this[string key] => default(ObjectId);
+    }
+    public class LayerTableRecord : SymbolTableRecord { public Autodesk.AutoCAD.Colors.Color Color { get; set; } }
+    public class LayerTable : SymbolTable { }
     public class BlockTableRecord : DBObject, System.Collections.Generic.IEnumerable<ObjectId>
     {
         public System.Collections.Generic.IEnumerator<ObjectId> GetEnumerator() => null;
         System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => null;
+        public const string ModelSpace = ""*Model_Space"";
         public string PathName { get; set; }
         public string Name { get; set; }
         public ObjectId AppendEntity(Entity e) => default(ObjectId);
@@ -209,6 +244,11 @@ namespace Autodesk.AutoCAD.DatabaseServices
         public static Database WorkingDatabase { get; set; }
         public string GetRemoteFile(System.Uri url, bool ignoreCache) => null;
     }
+}
+namespace Autodesk.AutoCAD.Colors
+{
+    public enum ColorMethod { ByAci = 195 }
+    public sealed class Color { public static Color FromColorIndex(ColorMethod colorMethod, short colorIndex) => null; }
 }
 namespace Autodesk.AutoCAD.EditorInput
 {
@@ -268,7 +308,13 @@ namespace Autodesk.Civil.DatabaseServices
         public static Autodesk.AutoCAD.DatabaseServices.ObjectId Create(object documento, string alignmentName, string siteName, string layerName, string styleName, string labelSetName) => default(Autodesk.AutoCAD.DatabaseServices.ObjectId);
         public void PointLocation(double station, double offset, ref double easting, ref double northing) { }
         public void StationOffset(double easting, double northing, ref double station, ref double offset) { }
+        public double Length => 0;
     }
+    // 1.19.2: subobjetos de un corredor (no son DBObject: viven dentro del corredor)
+    public class Corridor : Entity { public BaselineCollection Baselines => null; }
+    public class BaselineCollection { public int Count => 0; public Baseline this[int index] => null; }
+    public class Baseline { public BaselineRegionCollection BaselineRegions => null; }
+    public class BaselineRegion { public double StartStation { get; set; } }
     public class Profile : Entity
     {
         public static Autodesk.AutoCAD.DatabaseServices.ObjectId CreateByLayout(string profileName, Autodesk.AutoCAD.DatabaseServices.ObjectId alignmentId, string layerName) => default(Autodesk.AutoCAD.DatabaseServices.ObjectId);
@@ -290,6 +336,32 @@ namespace Autodesk.Civil.DatabaseServices
     {
         public int Count => 0;
         public void RemoveAt(int indice) { }
+        public BaselineRegion this[int index] => null;
+    }
+}
+// 1.19.2: la Fachada con las firmas de ArbaMcp.Fachada (Fachada.cs), para compilar literales los scripts de las
+// validaciones (F.Tr, F.Db, F.EspacioModelo(), F.Abrir<T>(ObjectId, bool)...). Solo firmas: no se ejecuta.
+namespace ArbaMcp
+{
+    public sealed class Fachada
+    {
+        public Autodesk.AutoCAD.ApplicationServices.Document Doc => null;
+        public Autodesk.AutoCAD.DatabaseServices.Database Db => null;
+        public Autodesk.AutoCAD.DatabaseServices.Transaction Tr => null;
+        public bool Simulando => true;
+        public bool SoloLectura => false;
+        public T Abrir<T>(Autodesk.AutoCAD.DatabaseServices.ObjectId id, bool escribir = false) where T : Autodesk.AutoCAD.DatabaseServices.DBObject => null;
+        public Autodesk.AutoCAD.DatabaseServices.ObjectId Alineamiento(string nombre) => default(Autodesk.AutoCAD.DatabaseServices.ObjectId);
+        public Autodesk.AutoCAD.DatabaseServices.ObjectId Corredor(string nombre) => default(Autodesk.AutoCAD.DatabaseServices.ObjectId);
+        public Autodesk.AutoCAD.DatabaseServices.ObjectId Capa(string nombre) => default(Autodesk.AutoCAD.DatabaseServices.ObjectId);
+        public System.Collections.Generic.IEnumerable<Autodesk.AutoCAD.DatabaseServices.ObjectId> EspacioModelo() { yield break; }
+        public Autodesk.AutoCAD.DatabaseServices.ObjectId Agregar(Autodesk.AutoCAD.DatabaseServices.Entity entidad) => default(Autodesk.AutoCAD.DatabaseServices.ObjectId);
+        public void Escribir(string texto) { }
+        public string Texto(string nombre, string porDefecto = null) => porDefecto;
+        public double Numero(string nombre, double porDefecto = 0) => porDefecto;
+        public bool Booleano(string nombre, bool porDefecto = false) => porDefecto;
+        public string LeerTexto(string nombre) => null;
+        public void EscribirTexto(string nombre, string texto) { }
     }
 }
 ";
@@ -339,6 +411,13 @@ namespace Autodesk.Civil.DatabaseServices
         });
 
         public static OpcionesCompilacion Opciones() => new OpcionesCompilacion { TipoFachada = TipoFachada };
+
+        /// <summary>
+        /// 1.19.2: compila con la Fachada de firmas reales de la biblioteca falsa (ArbaMcp.Fachada, el tipo por defecto de
+        /// OpcionesCompilacion), así los scripts de las validaciones compilan literales.
+        /// </summary>
+        public static ResultadoCompilacion CompilarConFachadaReal(string codigo, bool soloLectura = false)
+            => CodigoCompilador.Compilar(codigo, Refs.Value, new OpcionesCompilacion { SoloLectura = soloLectura });
 
         public static ResultadoCompilacion Compilar(string codigo) => CodigoCompilador.Compilar(codigo, Refs.Value, Opciones());
 

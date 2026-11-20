@@ -61,6 +61,9 @@ CAPAS["SALTO"] = _por_rumbos([600, 160, 160, 600], [40, 1, 40])
 # I2: un PI de 20° (autopista a 100 km/h). M1: dos curvas con 2000 m de recta entre ellas, y una sola curva.
 CAPAS["AUTOPISTA_1"] = _por_rumbos([1000, 2500], [20])
 CAPAS["AUTOPISTA_2"] = _por_rumbos([1000, 2000, 3000], [20, 20])
+# Tarea 6.9. b) un PI de 0,5° a 100 km/h. f) un PI de 120° que ocupa la recta y otro de 20° detrás (reparto).
+CAPAS["AUTOPISTA_05"] = _por_rumbos([1000, 2500], [0.5])
+CAPAS["REPARTO"] = _por_rumbos([600, 300, 600], [120, -20])
 SEGUNDA_60 = {"velocidad_diseno": 60, "clasificacion": SEGUNDA, "orografia": "Ondulado", "ubicacion": "rural"}
 AUTOPISTA_100 = {"velocidad_diseno": 100, "clasificacion": "Autopista de primera clase", "orografia": "Plano",
                  "ubicacion": "rural"}
@@ -271,6 +274,14 @@ def test_tercera_clase_propone_el_radio_sin_transicion_y_verifica_la_simulacion(
     assert minimos["Radio mínimo"]["valor_exigido"] == 125 and minimos["Radio mínimo"]["referencia"]["id"] == "T302.02"
     assert minimos["Radio para prescindir de la curva de transición"]["valor_exigido"] == 210
     assert p1["radio_maximo_que_cabe"] == 500 and p1["aviso"] is None and p1["nota_3v"] is None
+    assert p1["requiere_confirmacion"] is False and p1["eliminar_pi"] is False and p1["reparto"] is None
+    # g) la alternativa de 302.05.06: 125 m con clotoide de Le entre 0,0178·V³/R y el menor de √(24R) y 1,5·Le mín
+    alt = p1["alternativa_con_clotoide"]
+    assert alt["radio"] == 125 and alt["le_minimo"] == 30.758 and alt["le_maximo_24r"] == 54.772
+    assert alt["le_maximo_1_5_le_minimo"] == 46.138 and alt["le_maximo"] == 46.138, "manda el más exigente"
+    assert "de 30.758 a 46.138 m" in alt["texto"] and "velocidad específica" in alt["nota"]
+    assert [(c["seccion"], c["pagina_impresa"], c["pagina_pdf"]) for c in alt["referencias"]] == [
+        ("302.05.06", "145", "146"), ("302.05.06", "146", "147")]
     assert pi(r, 2)["radio_maximo_que_cabe"] == 402
     # la respuesta del plugin va tal cual y la verificación es la prevista
     assert r["simulado"] is True and r["id_log"] == "id-crear-2" and r["despues"]["numero_curvas"] == 2
@@ -279,6 +290,7 @@ def test_tercera_clase_propone_el_radio_sin_transicion_y_verifica_la_simulacion(
     assert v["resumen"]["No cumple"] == 0 and v["lecturas"] == {"simulacion": "id-crear-2"}
     assert filas(v, "Curva PI 1", "Radio para prescindir")[0]["resultado"] == "Cumple"
     assert filas(v, "Tangente PI 1–PI 2", "Tangente mínima")[0]["valor_diseno"] == 270
+    assert v["avisos"].count(n.AVISO_TRANSICION_PERALTE) == 1, "a) el aviso de 302.05.06, una sola vez"
 
 
 def test_escritura_real_adjunta_la_verificacion_con_listar_pis(servidor, puente, plugin):
@@ -311,12 +323,17 @@ def test_pi_sin_curva_por_deflexion_y_longitud_con_deflexion_pequena(servidor, p
     assert v["resumen"]["No cumple"] == 0
 
 
-def test_transicion_a_admite_el_igual_y_segunda_clase(servidor, puente, plugin):
+def test_transicion_a_es_estricta_como_la_b_y_segunda_clase(servidor, puente, plugin):
+    """a) Decisión del dueño (17/11/2026): la T302.11A también pide un radio superior (igual no basta): 250 → 255.
+    Fuera de Tercera Clase no hay alternativa con clotoide de 302.05.06 (sus fórmulas son de Tercera Clase)."""
     r = crear(puente, nombre="Eje S", capa="EJE_NORMA_A", simular=True, velocidad_diseno=60, clasificacion=SEGUNDA,
               orografia="Ondulado", ubicacion="rural")
     p1 = pi(r, 1)
-    assert p1["radio_pedido"] == 250 and p1["manda"]["referencia"].startswith("T302.11A")
-    assert "redondeado" not in p1["manda"]["explicacion"], "250 ya es múltiplo de 5 y en la A igual basta"
+    assert p1["radio_pedido"] == 255 and p1["manda"]["referencia"].startswith("T302.11A")
+    assert "250 m redondeado hacia arriba a un múltiplo de 5 m (desigualdad estricta)" in p1["manda"]["explicacion"]
+    transicion = next(m for m in p1["minimos"] if m["referencia"]["id"] == "T302.11A")
+    assert transicion["criterio"] == n.MAYOR_ESTRICTO and "igual no basta" in transicion["nota"]
+    assert p1["alternativa_con_clotoide"] is None
     assert filas(r["verificacion"], "Curva PI 1", "Radio para prescindir")[0]["resultado"] == "Cumple"
 
 
@@ -335,6 +352,15 @@ def test_minimo_que_no_cabe_avisa_y_no_lo_fuerza(servidor, puente, plugin):
     assert "La polilínea no permite cumplir la norma en el PI 2" in p2["aviso"]
     assert "mueve los vértices o baja la velocidad" in p2["aviso"] and "sin dejar la tangente mínima" in p2["aviso"]
     assert p2["aviso"] in r["propuesta_norma"]["avisos"]
+    # f) decisiones del dueño (17/11/2026)
+    assert "baja la velocidad de diseño del tramo homogéneo (T204.01" in p2["aviso"]
+    assert "dos incumplimientos a la vez, el radio bajo el mínimo" in p2["aviso"] and p2["nivel"] == 2
+    assert [m["referencia"].split(" ")[0] for m in p2["incumple"]] == ["T302.02", "T302.11B"]
+    assert "V = √(127·R·(pmáx + fmáx)) = 48.3 km/h" in p2["aviso"] and p2["velocidad_que_admite"]["formula"]["valor_kmh"] == 48.34
+    assert p2["velocidad_que_admite"]["formula"]["formula"]["id"] == "F08"
+    assert p2["velocidad_que_admite"]["tabla_t20401"] == {"velocidad_kmh": None, "sin_filas": [40]}
+    assert "Sección 301, p. 124; PDF 125" in p2["aviso"] and p2["seccion_301"]["pagina_impresa"] == "124"
+    assert p2["requiere_confirmacion"] is True and p1["requiere_confirmacion"] is False
     assert json.loads(servidor.llamadas[2]["args"]["radios_por_pi"]) == [215, 80]
     assert r["despues"]["numero_curvas"] == 2, "el plugin no deja ningún PI sin curva por sorpresa"
     assert p2["progresiva"] == r["despues"]["pis"][1]["progresiva"], "la progresiva del eje final, no la del ensayo"
@@ -348,6 +374,10 @@ def test_tres_niveles_cuando_no_cabe():
     assert ne._radio_que_cabe(tan, 102.0, 185.0) == (100.0, 1)
     assert ne._radio_que_cabe(tan, 2.0, 85.0) == (80.0, 2)
     assert ne._radio_que_cabe(tan, -81.0, 4.0) == (0.0, 3)
+    # f) el nivel 2 no pasa del mínimo: un radio mayor solo acortaría más la tangente
+    tan20 = math.tan(math.radians(20) / 2)
+    assert ne._radio_que_cabe(tan20, 0.5, 83.5) == (470.0, 2)
+    assert ne._radio_que_cabe(tan20, 0.5, 83.5, tope=215) == (215, 2)
 
 
 def test_los_radios_del_usuario_mandan_y_se_avisa(servidor, puente, plugin):
@@ -465,9 +495,10 @@ def test_tangente_minima_con_un_pi_sin_curva_en_medio(servidor, puente, plugin):
     r = crear(puente, nombre="Eje Salto", capa="SALTO", simular=True, **SEGUNDA_60)
     p1, p2, p3 = pi(r, 1), pi(r, 2), pi(r, 3)
     assert p2["radio_pedido"] == 0 and p2["origen"] == "sin_curva"
-    assert p1["radio_pedido"] == 250 and p1["tangente_minima_despues"]["valor"] == 167
+    assert p1["radio_pedido"] == 255 and p1["tangente_minima_despues"]["valor"] == 167, "T302.11A estricta (6.9)"
     assert p1["tangente_minima_despues"]["pi_sin_curva_en_medio"] == [2]
-    assert p3["radio_pedido"] == 170 and p3["cumple_minimo"] is False and p3["radio_maximo_que_cabe"] == 170.364
+    assert p3["radio_pedido"] == 165 and p3["cumple_minimo"] is False and p3["radio_maximo_que_cabe"] == 165.364
+    assert "Ese radio cumple el radio mínimo" in p3["aviso"] and "60 km/h ya es la menor velocidad" in p3["aviso"]
     assert "La polilínea no permite cumplir la norma en el PI 3" in p3["aviso"]
     assert p3["tangente_minima_antes"]["entre"] == "PI 1 y PI 3" and "Hay PI sin curva en medio (PI 2)" in p3["tangente_minima_antes"]["nota"]
     minima = r["propuesta_norma"]["tangentes_minimas"]
@@ -475,8 +506,10 @@ def test_tangente_minima_con_un_pi_sin_curva_en_medio(servidor, puente, plugin):
     salto = filas(r["verificacion"], "Tangente PI 1–PI 3", "Tangente mínima entre curvas del mismo sentido")[0]
     assert salto["resultado"] != "No cumple" and salto["valor_diseno"] >= 167
     # con los radios de antes (250, 0, 250) la recta es de unos 138 m y la verificación ya lo marca
-    r = crear(puente, nombre="Eje Salto", capa="SALTO", simular=True, radios_por_pi="[250, 0, 250]", **SEGUNDA_60)
+    r = crear(puente, nombre="Eje Salto", capa="SALTO", simular=True, radios_por_pi="[255, 0, 255]", **SEGUNDA_60)
     assert "no deja la tangente mínima" in pi(r, 3)["aviso"]
+    r = crear(puente, nombre="Eje Salto", capa="SALTO", simular=True, radios_por_pi="[250, 0, 250]", **SEGUNDA_60)
+    assert "queda por debajo del mínimo de la norma (255 m, T302.11A" in pi(r, 3)["aviso"], "T302.11A estricta (6.9)"
     salto = filas(r["verificacion"], "Tangente PI 1–PI 3", "Tangente mínima entre curvas del mismo sentido")[0]
     assert salto["resultado"] == "No cumple" and round(salto["valor_diseno"]) == 138 and salto["valor_exigido"] == 167
     assert "Hay un PI sin curva en medio (PI 2)" in salto["detalle"]["nota"]
@@ -490,7 +523,7 @@ def test_pi_sin_curva_por_encima_de_80_kmh(servidor, puente, plugin):
     """I2: a 100 km/h el cuadro de deflexión sin curva no tiene fila: la propuesta pone curva y, si el usuario la
     quita, la verificación dice «No cumple» (lo mismo que avisa la propuesta)."""
     r = crear(puente, nombre="Eje Autopista", capa="AUTOPISTA_1", simular=True, **AUTOPISTA_100)
-    assert pi(r, 1)["radio_pedido"] == 900 and pi(r, 1)["origen"] == "norma"
+    assert pi(r, 1)["radio_pedido"] == 905 and pi(r, 1)["origen"] == "norma", "T302.11A estricta (6.9): 900 → 905"
     r = crear(puente, nombre="Eje Autopista", capa="AUTOPISTA_1", simular=True, radios_por_pi="[0]", **AUTOPISTA_100)
     assert "pediste el PI sin curva y la norma pide curva" in pi(r, 1)["aviso"]
     fila = filas(r["verificacion"], "PI 1 (sin curva)", "Deflexión máxima sin curva")[0]
@@ -505,3 +538,109 @@ def test_radio_tras_recta_larga_solo_en_la_curva_de_salida(servidor, puente, plu
     assert [(f["elemento"], f["resultado"]) for f in salida] == [("Curva PI 2", "No cumple")]
     r = crear(puente, nombre="Eje A1", capa="AUTOPISTA_1", simular=True, radios_por_pi="[600]", **AUTOPISTA_100)
     assert [f for f in r["verificacion"]["filas"] if f["comprobacion"] == regla] == [], "recta final de 2000 m: nada"
+
+
+# ---------------------------------------------------------------------------------------------- decisiones del dueño (6.9)
+CAPAS["PEQUENA_60"] = _por_rumbos([1000, 1000], [0.5])
+
+
+def test_escritura_real_bajo_el_minimo_pide_confirmacion(servidor, puente, plugin):
+    """f) En la escritura real, un radio bajo el mínimo no se crea sin la confirmación del usuario: error sin la llamada
+    de escritura (solo INSUNITS y la simulación de ensayo). La confirmación es pasar ese radio en radios_por_pi."""
+    r = crear(puente, nombre="Eje Norma B", capa="EJE_NORMA_B", pedido="crea el eje", **TERCERA_60)
+    assert herramientas_llamadas(servidor) == ["leer_variable", HERRAMIENTA], "sin la llamada de escritura"
+    assert servidor.llamadas[1]["args"]["simular"] is True and plugin.creados == {}
+    assert r["ok"] is False and r["error"].startswith("No se creó el eje: la propuesta de la DG-2018 deja 1 PI bajo la norma")
+    assert "PI 2: 80 m con mínimo 215 m" in r["error"] and "sin copia ni entrada en Deshacer" in r["error"]
+    assert "Sección 301, p. 124; PDF 125" in r["error"] and "baja la velocidad de diseño del tramo homogéneo" in r["error"]
+    assert r["radios_por_pi_para_confirmar"] == '[{"pi": 2, "radio": 80}]'
+    assert r["sin_confirmar"][0]["pi"] == 2 and r["sin_confirmar"][0]["radio_propuesto"] == 80
+    assert r["seccion_301"]["cita"].endswith("autorización del Ministerio de Transportes y Comunicaciones.")
+    assert r["propuesta_norma"]["radios_por_pi"] == [215, 80] and r["propuesta_norma"]["radio"] is None
+    assert "copia" not in r and "verificacion" not in r and r["ms_puente"] >= 0
+    # confirmado: el radio va en radios_por_pi, pasa a ser del usuario y se crea con su aviso
+    servidor.llamadas.clear()
+    r = crear(puente, nombre="Eje Norma B", capa="EJE_NORMA_B", pedido="crea el eje con 80 m en el PI 2",
+              radios_por_pi=r["radios_por_pi_para_confirmar"], **TERCERA_60)
+    assert herramientas_llamadas(servidor) == ["leer_variable", HERRAMIENTA, HERRAMIENTA, "listar_pis"]
+    assert r["simulado"] is False and "Eje Norma B" in plugin.creados
+    p2 = pi(r, 2)
+    assert p2["origen"] == "usuario" and p2["radio_pedido"] == 80 and p2["requiere_confirmacion"] is False
+    assert "queda por debajo del mínimo de la norma (215 m" in p2["aviso"]
+    assert filas(r["verificacion"], "Curva PI 2", "Radio mínimo")[0]["resultado"] == "No cumple"
+    # con simular=true no se bloquea: muestra el mayor radio que cabe
+    assert ne.falta_confirmacion({"pis": [{"numero": 2, "requiere_confirmacion": True}]}, True) is None
+
+
+def test_elimina_el_pi_a_mas_de_80_kmh_con_deflexion_menor_de_59_minutos(servidor, puente, plugin):
+    """b) A 100 km/h un PI de 0,5°: la norma no admite curva (302.02) ni el PI sin curva (cuadro de 30 a 80 km/h). La
+    propuesta no pide curva (pediría R > 32 658 m): 0 y «elimina el PI»; la escritura real pide confirmarlo con 0."""
+    r = crear(puente, nombre="Eje 05", capa="AUTOPISTA_05", simular=True, **AUTOPISTA_100)
+    p1 = pi(r, 1)
+    assert p1["radio_pedido"] == 0 and p1["origen"] == "sin_curva" and p1["eliminar_pi"] is True
+    assert p1["cumple_minimo"] is False and p1["requiere_confirmacion"] is True
+    assert p1["aviso"].startswith("PI 1: elimina el PI (realinea la polilínea)") and "32658.594" in p1["aviso"]
+    assert "«No se usará nunca ángulos de deflexión menores de 59' (minutos).»" in p1["aviso"]
+    v = r["verificacion"]
+    sin_curva = filas(v, "PI 1 (sin curva)", "Deflexión máxima sin curva")[0]
+    assert sin_curva["resultado"] == "No cumple" and "quita el PI y realinea el eje" in sin_curva["detalle"]["nota"]
+    assert filas(v, "PI 1 (sin curva)", "Deflexión no menor de 0°59′")[0]["resultado"] == "Aviso"
+    # escritura real: sin confirmar no se crea; confirmado con 0, sí (y avisa)
+    servidor.llamadas.clear()
+    r = crear(puente, nombre="Eje 05", capa="AUTOPISTA_05", **AUTOPISTA_100)
+    assert r["ok"] is False and "PI 1: elimina el PI (sin curva, 0)" in r["error"]
+    assert r["radios_por_pi_para_confirmar"] == '[{"pi": 1, "radio": 0}]' and len(servidor.llamadas) == 2
+    r = crear(puente, nombre="Eje 05", capa="AUTOPISTA_05", radios_por_pi='[{"pi": 1, "radio": 0}]', **AUTOPISTA_100)
+    assert r["simulado"] is False and "elimina el PI de la polilínea" in pi(r, 1)["aviso"]
+    # una curva del usuario en esa deflexión: la norma no la admite
+    r = crear(puente, nombre="Eje 05", capa="AUTOPISTA_05", simular=True, radios_por_pi="[40000]", **AUTOPISTA_100)
+    assert "la norma no admite esa curva (302.02)" in pi(r, 1)["aviso"] and pi(r, 1)["cumple_minimo"] is False
+    assert filas(r["verificacion"], "Curva PI 1", "Deflexión no menor de 0°59′")[0]["resultado"] == "No cumple"
+
+
+def test_deflexion_menor_de_59_minutos_a_60_kmh(servidor, puente, plugin):
+    """c) A 60 km/h el cuadro permite el PI de 0,5° sin curva (Cumple y aviso de 0°59′); con curva, «No cumple»."""
+    r = crear(puente, nombre="Eje P", capa="PEQUENA_60", simular=True, **TERCERA_60)
+    p1 = pi(r, 1)
+    assert p1["radio_pedido"] == 0 and p1["cumple_minimo"] is True and "valora quitar el PI" in p1["nota"]
+    assert filas(r["verificacion"], "PI 1 (sin curva)", "Deflexión no menor de 0°59′")[0]["resultado"] == "Aviso"
+    r = crear(puente, nombre="Eje P", capa="PEQUENA_60", simular=True, radios_por_pi="[40000]", **TERCERA_60)
+    assert "la norma no admite esa curva" in pi(r, 1)["aviso"] and pi(r, 1)["cumple_minimo"] is False
+    assert filas(r["verificacion"], "Curva PI 1", "Deflexión no menor de 0°59′")[0]["resultado"] == "No cumple"
+
+
+def test_reparto_avisa_si_otro_reparto_haria_cumplir(servidor, puente, plugin):
+    """f) El PI 1 (120°) no cabe y ocupa la recta; el PI 2 (20°) queda sin la tangente mínima. Con R ≤ 100 m en el PI 1
+    (que ya incumple), el PI 2 tendría su mínimo: se avisa. El nivel 2 del PI 2 no pasa del mínimo (215, no 470)."""
+    r = crear(puente, nombre="Eje R", capa="REPARTO", simular=True, **TERCERA_60)
+    p1, p2 = pi(r, 1), pi(r, 2)
+    assert p1["radio_pedido"] == 125 and p1["nivel"] == 1 and p1["reparto"] is None
+    assert p2["radio_pedido"] == 215 and p2["nivel"] == 2 and p2["incumple"] == []
+    assert "y sin pasar del mínimo: un incumplimiento, la tangente bajo la mínima" in p2["aviso"]
+    assert p2["reparto"]["pi_anterior"] == 1 and p2["reparto"]["radio_anterior_maximo"] == 100
+    assert "Con R ≤ 100 m en el PI 1 (que ya queda bajo la norma), el PI 2 tendría su mínimo (215 m)" in p2["reparto"]["aviso"]
+    assert p2["reparto"]["aviso"] in r["propuesta_norma"]["avisos"]
+    # con ese reparto (confirmado por el usuario) el PI 2 cumple
+    r = crear(puente, nombre="Eje R", capa="REPARTO", simular=True, radios_por_pi='[{"pi": 1, "radio": 100}]', **TERCERA_60)
+    assert pi(r, 2)["cumple_minimo"] is True and pi(r, 2)["radio_pedido"] == 215 and pi(r, 2)["reparto"] is None
+    servidor.llamadas.clear()
+    r = crear(puente, nombre="Eje R", capa="REPARTO", **TERCERA_60)
+    assert "PI 2: 215 m, el mínimo, pero sin la tangente mínima" in r["error"]
+    assert r["radios_por_pi_para_confirmar"] == '[{"pi": 1, "radio": 125}, {"pi": 2, "radio": 215}]'
+
+
+def test_velocidad_de_la_t20401_que_admite_el_radio(memoria):
+    """f) La mayor velocidad de la T204.01 (menor que la de diseño) con la que el radio cumpliría los mínimos de las
+    tablas; una velocidad sin fila en alguna tabla no se da por buena."""
+    base = n.BaseNorma(n.localizar_base(str(memoria)))
+    try:
+        ctx, _ = n.resolver_proyecto(base, "alineamiento", dict(TERCERA_60))
+        comunes = ne.minimos_del_proyecto(base, ctx)
+        a50 = ne.velocidad_de_tabla_que_admite(base, ctx, comunes, 160, 90)
+        assert a50["velocidad_kmh"] == 50 and a50["sin_filas"] == []
+        assert {m["comprobacion"]: m["radio"] for m in a50["minimos"]} == {
+            "Radio mínimo": 85, "Radio para prescindir de la curva de transición": 150}
+        assert ne.velocidad_de_tabla_que_admite(base, ctx, comunes, 150, 90) == {"velocidad_kmh": None, "sin_filas": [40]}
+        assert ne.velocidad_de_tabla_que_admite(base, ctx, comunes, 160, 4)["velocidad_kmh"] is None, "L > 30 (10 − Δ)"
+    finally:
+        base.cerrar()

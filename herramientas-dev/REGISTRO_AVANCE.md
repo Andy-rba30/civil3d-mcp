@@ -459,26 +459,22 @@ y todavía **no están en el repositorio**: hay que pedírselos al dueño o al a
 
 ## Propuestas pendientes (no están en la hoja de ruta)
 
-- `ejecutar_codigo` **sin** `solo_lectura`: un script que cambie un objeto abierto para lectura (olvidando
-  `F.Abrir(id, true)`) puede cerrar Civil 3D, como `Curve.Extend` en la ronda C (17/11). Valorar una protección también
-  en ese modo (por ejemplo, avisar al compilar si se llama a un método que no es de lectura sobre un objeto abierto con
-  `F.Abrir` sin `escribir`). Es la propuesta más importante de esta lista.
-- Informe 118, paso 2: el agente dice que `_.-LAYER _M EJE_NORMA  ` (dos espacios) necesitó un Enter más para cerrar;
-  en las partes 1 y 4 el mismo patrón terminó bien. Comprobar en otra prueba antes de cambiar los `VALIDACION_*.md`.
-- El agente instalador fusionó el PR #48 con `gh pr merge` (17/11): anotar en `ESTADO_PC.md` de la PC que la fusión la
-  hace el dueño (regla 11g).
-- El caso "sin `frecuencia`" de VALIDACION_111: lo corta antes la validación del puente (Pydantic), no el plugin.
-  Decidir si se cambia el guion.
-- Tabla por progresivas frente a la superficie de volumen: corte 16,6 %, relleno 4,1 % (informe 1143). Manda la
-  superficie; investigar si limitar las áreas al tramo donde existe la Datum (fuera de la TIN de la Datum la sección
-  sigue teniendo puntos hasta ±30 m).
-- La evaluación marca OK comprobaciones manuales que no hace (curvas de la tarea 1, cálculo manual de la 8, informe de
-  Civil 3D de la 9): aclararlo en `tareas.yaml` o en el prompt de evaluación.
-- `ejecutar_codigo` (revisión previa del 15/11): comprobar en Civil 3D si algún miembro heredado de
-  `GraphicsInterface.Drawable` sale bloqueado por la lista blanca (H4). El alias H3 quedó resuelto y validado en la
-  1.17.5 (16/11).
-- `ejecutar_codigo` (informe 1175): la fuente `transaccion_script` trae objetos pero no marca la línea como nueva
-  (`IsNewObject`): sin aclarar, no bloquea. (Lo de que un conteo dejaba entrada en Deshacer lo resolvió
-  `solo_lectura`, 1.17.6, validado el 17/11.)
-- `crear_secciones`: comprobar si los nombres de **grupo** también deben ser únicos en todo el dibujo (propuesta de la
-  hija de la 1.14.2) y añadir en `datos.lineas[].secciones` el nombre de la superficie del dibujo junto a `SourceName`.
+- **En curso, ronda D (tarea 6.1, 1.19.2).** `ejecutar_codigo` **sin** `solo_lectura`: un script que cambie un objeto
+  abierto para lectura (olvidando `F.Abrir(id, true)`) puede cerrar Civil 3D, como `Curve.Extend` en la ronda C
+  (17/11). Valorar una protección también en ese modo (por ejemplo, avisar al compilar si se llama a un método que no
+  es de lectura sobre un objeto abierto con `F.Abrir` sin `escribir`). Es la propuesta más importante de esta lista.
+- **En curso, ronda D (tarea 6.2): comprobación C1 lista en `COMPROBACIONES_RONDA_D.md`.** Informe 118, paso 2: el
+  agente dice que `_.-LAYER _M EJE_NORMA  ` (dos espacios) necesitó un Enter más para cerrar; en las partes 1 y 4 el
+  mismo patrón terminó bien. Comprobar en otra prueba antes de cambiar los `VALIDACION_*.md`.
+- **En curso, ronda D (tarea 6.7, en `memoria-firma`).** La evaluación marca OK comprobaciones manuales que no hace
+  (curvas de la tarea 1, cálculo manual de la 8, informe de Civil 3D de la 9): aclararlo en `tareas.yaml` o en el
+  prompt de evaluación.
+- **En curso, ronda D (tarea 6.2): comprobación C2 lista en `COMPROBACIONES_RONDA_D.md`.** `ejecutar_codigo`
+  (revisión previa del 15/11): comprobar en Civil 3D si algún miembro heredado de `GraphicsInterface.Drawable` sale
+  bloqueado por la lista blanca (H4). El alias H3 quedó resuelto y validado en la 1.17.5 (16/11).
+- **En curso, ronda D (tarea 6.2): comprobación C3 lista en `COMPROBACIONES_RONDA_D.md`.** `ejecutar_codigo` (informe
+  1175): la fuente `transaccion_script` trae objetos pero no marca la línea como nueva (`IsNewObject`): sin aclarar, no
+  bloquea. (Lo de que un conteo dejaba entrada en Deshacer lo resolvió `solo_lectura`, 1.17.6, validado el 17/11.)
+- **En curso, ronda D (tarea 6.3, 1.19.3).** `crear_secciones`: comprobar si los nombres de **grupo** también deben
+  ser únicos en todo el dibujo (propuesta de la hija de la 1.14.2) y añadir en `datos.lineas[].secciones` el nombre de
+  la superficie del dibujo junto a `SourceName`.

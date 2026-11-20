@@ -33,6 +33,30 @@ namespace ArbaMcp.Pruebas
             return p;
         }
 
+        /// <summary>
+        /// 1.19.2: con solo_lectura, lo mismo que Bloqueado (categoría «solo lectura», mismos mensajes que en la 1.19.1); sin
+        /// ella ya tampoco compila, porque el uso cae sobre un objeto que el script abrió para lectura (categoría «abierto
+        /// para lectura», CodigoAperturas), y la escritura sigue contada.
+        /// </summary>
+        private static ProblemaCodigo BloqueadoTambienSinSoloLectura(string codigo, string contiene)
+        {
+            var r = SoloLectura(codigo);
+            Assert.False(r.Ok, "Debía bloquearse con solo_lectura y compiló: " + codigo);
+            var p = r.Problemas.FirstOrDefault(x => x.Categoria == CodigoReglas.SoloLectura);
+            Assert.True(p != null, "Se esperaba un bloqueo de solo lectura. Mensaje: " + r.Mensaje);
+            Assert.DoesNotContain(r.Problemas, x => x.Categoria == CodigoReglas.AbiertoParaLectura);
+            Assert.Contains("[bloqueado: solo lectura]", r.Mensaje);
+            Assert.Contains("No se ejecutó nada: sin copia de seguridad, sin contexto de comando y sin entrada en Deshacer.", r.Mensaje);
+            Assert.Contains(contiene, r.Mensaje);
+
+            var normal = Scripts.Compilar(codigo);
+            Assert.False(normal.Ok, "Sin solo_lectura, desde la 1.19.2, tampoco debía compilar: " + codigo);
+            Assert.Contains(normal.Problemas, x => x.Categoria == CodigoReglas.AbiertoParaLectura);
+            Assert.Contains("[bloqueado: abierto para lectura]", normal.Mensaje);
+            Assert.NotEmpty(normal.Escrituras);
+            return p;
+        }
+
         /// <summary>Compila con y sin solo_lectura, y no cuenta ninguna escritura.</summary>
         private static void Permitido(string codigo)
         {
@@ -204,15 +228,18 @@ return new { n, ids.Count, largo = linea.Length, g };");
             // 1.19.1: Curve.Extend sobre una línea abierta para lectura no dio eNotOpenForWrite sino que cerró Civil 3D
             // (17/11/2026, VALIDACION_1176, paso 9). En la 1.17.6 compilaba y se confiaba en que Civil 3D lo parara; desde la
             // 1.19.1, en los objetos del dibujo y de Civil 3D solo compilan los métodos de lectura.
-            var p = Bloqueado("Transaction tr = null;\nvar l = (Line)tr.GetObject(default(ObjectId), OpenMode.ForRead);\nl.Extend(false, new Point3d(10, 0, 0));\nreturn null;", "Autodesk.AutoCAD.DatabaseServices.Curve.Extend");
+            // 1.19.2: se endurece. Estos dos scripts abren la línea para lectura, así que sin solo_lectura tampoco compilan
+            // (antes la prueba exigía que compilaran); con solo_lectura, las mismas comprobaciones y mensajes de la 1.19.1.
+            var p = BloqueadoTambienSinSoloLectura("Transaction tr = null;\nvar l = (Line)tr.GetObject(default(ObjectId), OpenMode.ForRead);\nl.Extend(false, new Point3d(10, 0, 0));\nreturn null;", "Autodesk.AutoCAD.DatabaseServices.Curve.Extend");
             Assert.Equal(3, p.Linea);
             Assert.Contains("solo se pueden llamar métodos de lectura", p.Mensaje);
             // El script del paso 9 de VALIDACION_1176 (con un BlockTableRecord en vez de F.EspacioModelo, que la Fachada de
             // prueba no tiene): la línea 5 es la de Extend, como allí
-            var paso9 = Bloqueado("Line l = null;\nBlockTableRecord btr = null;\nforeach (var id in btr) if (F.Abrir<Entity>(id) is Line x) l = x;\nif (l == null) return \"sin líneas\";\nl.Extend(false, new Point3d(l.EndPoint.X + 50, l.EndPoint.Y, 0));\nreturn l.Length;", "[bloqueado: solo lectura] Autodesk.AutoCAD.DatabaseServices.Curve.Extend: con solo_lectura=true el script solo puede leer");
+            var paso9 = BloqueadoTambienSinSoloLectura("Line l = null;\nBlockTableRecord btr = null;\nforeach (var id in btr) if (F.Abrir<Entity>(id) is Line x) l = x;\nif (l == null) return \"sin líneas\";\nl.Extend(false, new Point3d(l.EndPoint.X + 50, l.EndPoint.Y, 0));\nreturn l.Length;", "[bloqueado: solo lectura] Autodesk.AutoCAD.DatabaseServices.Curve.Extend: con solo_lectura=true el script solo puede leer");
             Assert.Equal(5, paso9.Linea);
             Assert.Contains("Línea 5, columna", SoloLectura("Line l = null;\nBlockTableRecord btr = null;\nforeach (var id in btr) if (F.Abrir<Entity>(id) is Line x) l = x;\nif (l == null) return \"sin líneas\";\nl.Extend(false, new Point3d(l.EndPoint.X + 50, l.EndPoint.Y, 0));\nreturn l.Length;").Mensaje);
-            // Un método de Civil 3D que escribe sin prefijo conocido (TinSurface.RaiseSurface, catálogo)
+            // Un método de Civil 3D que escribe sin prefijo conocido (TinSurface.RaiseSurface, catálogo). La superficie no
+            // viene de una apertura para lectura (es null): sin solo_lectura sigue compilando
             Bloqueado("Civ.TinSurface s = null;\ns.RaiseSurface(1.0);\nreturn null;", "Autodesk.Civil.DatabaseServices.TinSurface.RaiseSurface");
         }
 

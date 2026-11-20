@@ -37,6 +37,8 @@ namespace ArbaMcp.Nucleo
         public const string ListaBlanca = "lista blanca";
         /// <summary>Con solo_lectura=true (desde 1.17.6): el script usa algo que escribe en el dibujo o en un archivo.</summary>
         public const string SoloLectura = "solo lectura";
+        /// <summary>Sin solo_lectura (desde 1.19.2): el script cambia un objeto que abrió para lectura (CodigoAperturas).</summary>
+        public const string AbiertoParaLectura = "abierto para lectura";
 
         /// <summary>Explicación de cada categoría para el agente (va detrás del nombre bloqueado).</summary>
         public static string Explicacion(string categoria)
@@ -58,6 +60,7 @@ namespace ArbaMcp.Nucleo
                 case Sistema: return "ejecutar_codigo no admite cambiar variables de sistema ni del dibujo (propiedades de Database) ni el perfil de AutoCAD: la simulación no podría deshacerlas.";
                 case Plugin: return "de ArbaMcp, el script solo puede usar la Fachada F.";
                 case Borrado: return "ninguna herramienta borra ni recrea regiones, líneas base, ensamblajes, corredores ni superficies.";
+                case AbiertoParaLectura: return "cambiar un objeto abierto para lectura no siempre da un error en Civil 3D: con Curve.Extend, Civil 3D 2027 se cerró (17/11/2026). Para cambiarlo, abre el objeto con F.Abrir(id, true) (o con OpenMode.ForWrite en GetObject), o llama a UpgradeOpen() sobre él antes de cambiarlo.";
                 case SoloLectura: return "con solo_lectura=true el script solo puede leer: no compila nada que cree, cambie o borre objetos del dibujo, abra objetos para escritura ni escriba archivos; sobre los objetos del dibujo y de Civil 3D solo se pueden llamar métodos de lectura (Get..., Is..., Has..., Find..., Contains..., To..., PointLocation, StationOffset, ElevationAt...). Si el script necesita escribir, quita solo_lectura y simula primero (simular=true).";
                 default: return "no está en la lista blanca de ejecutar_codigo (lo básico de System, colecciones, LINQ, texto, JSON, Path y la API de AutoCAD y Civil 3D).";
             }
@@ -415,8 +418,9 @@ namespace ArbaMcp.Nucleo
         // eNotOpenForWrite sino que cerró Civil 3D (17/11/2026, VALIDACION_1176, paso 9). Por eso, en los objetos del
         // dibujo y de Civil 3D, un método solo compila si es de lectura (MetodosDeLectura, PrefijosDeLectura): lo
         // desconocido no se ejecuta. Lo que aun así cambie algo lo detecta la comprobación de después (las cinco fuentes de
-        // CodigoCambios y DBMOD). Sin solo_lectura no bloquean nada: solo se cuentan, para el aviso que sugiere
-        // solo_lectura cuando un script no escribe.
+        // CodigoCambios y DBMOD). Sin solo_lectura no bloquean nada por sí mismas: se cuentan, para el aviso que sugiere
+        // solo_lectura cuando un script no escribe, y desde la 1.19.2 no compilan sobre un objeto que el script abrió para
+        // lectura (CodigoAperturas, categoría AbiertoParaLectura).
 
         /// <summary>Miembros de la Fachada que escriben: F.Agregar (añade al dibujo) y F.EscribirTexto (escribe un archivo).</summary>
         public static readonly HashSet<string> FachadaQueEscribe = new HashSet<string>(StringComparer.Ordinal) { "Agregar", "EscribirTexto" };
@@ -513,6 +517,21 @@ namespace ArbaMcp.Nucleo
             "SampleElevations", "IdentifyFeatureTypeAtXY", "LinkCodes", "PointCodes", "FeatureLineCodes", "FeatureLineCodeIsBreak",
             "BoundaryNames", "CodeNames", "SurfaceNames", "MaskNames", "PolygonPoints", "ReferenceBoundaryIds", "SourceObjectName",
             "AdditionalStations"
+        };
+
+        /// <summary>
+        /// Sin solo_lectura (desde 1.19.2): métodos que la clasificación de solo lectura cuenta como escritura pero que se
+        /// llaman, por definición, sobre un objeto abierto para lectura, así que no se rechazan en uno (CodigoAperturas):
+        /// los que cambian el modo de apertura (UpgradeOpen y UpgradeFromNotify lo dejan para escritura; DowngradeOpen y
+        /// DowngradeToNotify lo bajan) y los que copian o leen el objeto y dejan el resultado en memoria (Clone, DeepClone,
+        /// WblockClone, Explode, Highlight, Unhighlight, List). Todos confirmados en el catálogo de la API (17/11/2026); que
+        /// valgan sobre un objeto abierto para lectura, por verificar en Civil 3D. Close y Cancel NO están: sobre un objeto
+        /// abierto por la transacción no deben llamarse, y sobre uno abierto para lectura se siguen rechazando.
+        /// </summary>
+        public static readonly HashSet<string> MetodosValidosSobreObjetoDeLectura = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "UpgradeOpen", "UpgradeFromNotify", "DowngradeOpen", "DowngradeToNotify",
+            "Clone", "DeepClone", "WblockClone", "Explode", "Highlight", "Unhighlight", "List"
         };
 
         /// <summary>True si 'metodo' es de lectura: está en MetodosDeLectura, empieza por un prefijo de lectura o es un operador.</summary>

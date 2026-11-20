@@ -35,6 +35,9 @@
 - **Qué instalar**:
 - **Qué variables de entorno poner**:
 - **Qué reiniciar**:
+- **No fusionar**: el agente instalador **nunca fusiona** este PR (ni con el botón **Merge** ni con `gh pr merge`) ni lo
+  pasa a listo; solo descarga la rama, compila, instala y prueba. La fusión la hace el dueño desde GitHub cuando la
+  verificación en Civil 3D pasó (regla 11g de `CLAUDE.md`).
 
 ## Para Jose
 

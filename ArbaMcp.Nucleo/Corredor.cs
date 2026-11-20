@@ -6,6 +6,26 @@ using System.Linq;
 namespace ArbaMcp.Nucleo
 {
     /// <summary>
+    /// Opción de un objetivo de corredor (mas_cercano, exterior, interior; SubassemblyTargetInfo.TargetToOption), 1.21.5.
+    /// En Civil 3D 2027 (20/11/2026, VALIDACION_121, paso 7d, con la 1.21.4) asignar un solo objetivo de desplazamiento
+    /// con 'mas_cercano' falló al escribir con «The count of TargetIds should be greater or equal to 2.»: la opción
+    /// solo elige entre varios objetivos. Con menos de 2 no se le pasa a Civil 3D (ni se repone al deshacer).
+    /// </summary>
+    public static class OpcionDeObjetivo
+    {
+        public const int MinimoObjetivos = 2;
+
+        /// <summary>True si con 'numeroObjetivos' objetivos se puede escribir TargetToOption.</summary>
+        public static bool Aplicable(int numeroObjetivos) => numeroObjetivos >= MinimoObjetivos;
+
+        /// <summary>Aviso cuando se pidió una opción y no se aplica por tener menos de 2 objetivos.</summary>
+        public static string AvisoNoAplicada(string opcion, int numeroObjetivos, string donde)
+            => "La opción '" + opcion + "' no se aplica " + donde + ": hay " + numeroObjetivos + " objetivo"
+               + (numeroObjetivos == 1 ? "" : "s") + " y Civil 3D exige al menos " + MinimoObjetivos
+               + " para elegir entre ellos («The count of TargetIds should be greater or equal to 2»). El objetivo se asigna sin opción.";
+    }
+
+    /// <summary>
     /// Rango de un corredor nuevo: el pedido (o el común del eje y la rasante si no se pide) y el común, con los avisos
     /// de los ajustes al extremo.
     /// </summary>

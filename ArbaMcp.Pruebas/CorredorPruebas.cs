@@ -14,6 +14,22 @@ namespace ArbaMcp.Pruebas
     {
         private const double FinEje = 831.3274;
 
+        // ---------------------------------------------------------------- opción de un objetivo (1.21.5)
+        [Fact]
+        public void LaOpcionDelObjetivoSoloConDosOMasObjetivos()
+        {
+            // Civil 3D 2027: «The count of TargetIds should be greater or equal to 2.» con un solo objetivo (20/11/2026)
+            Assert.False(OpcionDeObjetivo.Aplicable(0));
+            Assert.False(OpcionDeObjetivo.Aplicable(1));
+            Assert.True(OpcionDeObjetivo.Aplicable(2));
+            Assert.True(OpcionDeObjetivo.Aplicable(3));
+            string aviso = OpcionDeObjetivo.AvisoNoAplicada("mas_cercano", 1, "en 'LaneSuperelevationAOR - (Left)'");
+            Assert.Contains("'mas_cercano' no se aplica en 'LaneSuperelevationAOR - (Left)'", aviso);
+            Assert.Contains("hay 1 objetivo y", aviso);
+            Assert.Contains("al menos 2", aviso);
+            Assert.Contains("hay 0 objetivos", OpcionDeObjetivo.AvisoNoAplicada("exterior", 0, "aquí"));
+        }
+
         // ---------------------------------------------------------------- nombres por defecto
         [Fact]
         public void NombresPorDefectoYPedidos()

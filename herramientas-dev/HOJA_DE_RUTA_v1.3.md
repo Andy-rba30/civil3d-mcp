@@ -84,6 +84,11 @@ Siguen abiertos:
 
 El resto de propuestas sueltas está en `herramientas-dev/REGISTRO_AVANCE.md`, sección «Propuestas pendientes».
 
+**Ronda D (en curso)**: 6.1 protección de `ejecutar_codigo` sin `solo_lectura` (1.19.2) · 6.2 documentos pendientes
+(guion de la 111, plantilla del PR y comprobaciones para la PC en `herramientas-dev/COMPROBACIONES_RONDA_D.md`) ·
+6.3 `crear_secciones` (1.19.3) · 6.4 tablas DG-2018 de peralte y sobreancho (`memoria-firma`) · 6.5 peralte (1.20.0) ·
+6.6 bordes de calzada con sobreancho (1.21.0) · 6.7 evaluación (`memoria-firma`).
+
 ---
 
 ## Qué cambió en la versión 1.3
