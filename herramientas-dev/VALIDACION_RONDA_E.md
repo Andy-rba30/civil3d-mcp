@@ -35,7 +35,7 @@ Copia este texto tal cual en el agente que tiene conectado el MCP de Civil 3D. R
    la figura pide más del 3 %.
 4. **`ejecutar_codigo`** (tarea 7.1): leer `Bounds` de una entidad compila, también con `solo_lectura`.
 5. **Sobreancho con la decisión P5, opción F** (tarea 7.5): por defecto el sobreancho entero de la F46; la reducción
-   de la Tabla 302.20 solo si se pide con `PARAMETRO_75`, con calzada de 7.20 m y V ≤ 80 km/h (factor mayor entre filas,
+   de la Tabla 302.20 solo si se pide con `reduccion_t30220`, con calzada de 7.20 m y V ≤ 80 km/h (factor mayor entre filas,
    0.05 por encima de 500 m, nunca menos de 0.40 m).
 
 **Lo que decide esta validación**: si el corredor sigue el peralte del eje en las curvas (partes 1A y 1B, que miden lo
@@ -119,8 +119,8 @@ Usa solo las herramientas del MCP `civil3d`. Avisa antes de cada paso que cambie
      `args={"eje":"Eje 30","simular":true,"velocidad_diseno":30,"numero_carriles":2,"ancho_calzada":7.2,"vehiculo_diseno":"B2","pedido":"simula los bordes con el sobreancho de la norma"}`
      → el sobreancho aplicado es el **entero**: **5.27** m en R 25 y **4.38** m en R 30, con el factor (0.86 y 0.83) y
      el valor reducido (4.53 y 3.64) solo como información.
-4.3. Lo mismo con `"PARAMETRO_75": true` → aplica el reducido: **4.53** y **3.64**.
-4.4. Con `"PARAMETRO_75": true` y `"ancho_calzada": 6.6` → aplica el entero (5.27 y 4.38) y avisa de que la reducción
+4.3. Lo mismo con `"reduccion_t30220": true` → aplica el reducido: **4.53** y **3.64**.
+4.4. Con `"reduccion_t30220": true` y `"ancho_calzada": 6.6` → aplica el entero (5.27 y 4.38) y avisa de que la reducción
      solo vale con 7.20 m.
 4.5. En `propuesta_norma.pendiente_de_decision`, P5 ya no está «a confirmar» como un todo: dice opción F decidida el
      20/11/2026 y solo marca `a_confirmar: true` en las dos confirmaciones de Jose.
