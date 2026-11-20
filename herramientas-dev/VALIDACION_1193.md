@@ -126,9 +126,9 @@ Reglas:
       Esperado: `simulado: true` y `despues.longitud: 831.3274`.
       - Si responde `No existe la capa 'EJE_PRUEBA'` o `No hay ninguna polilínea 2D en la capa 'EJE_PRUEBA'`, dibuja la
         polilínea con `ejecutar_comando` y
-        `args={"comando":"_.-LAYER _M EJE_PRUEBA  ","pedido":"crea la capa EJE_PRUEBA"}` y luego
+        `args={"comando":"_.-LAYER _M EJE_PRUEBA\n\n","pedido":"crea la capa EJE_PRUEBA"}` y luego
         `args={"comando":"_.PLINE 1000,2000 1300,2000 1300,2300 1600,2300  ","pedido":"dibuja la polilínea de prueba"}`
-        (con **dos espacios al final**: cierran la orden; validado en la 1.10.1). Las dos deben responder `terminado`.
+        (la polilínea con **dos espacios al final**: cierran la orden, validado en la 1.10.1; la capa con `\n\n`, porque `-LAYER` no toma el espacio como Enter, comprobación C1 del 20/11/2026). Las dos deben responder `terminado`.
         Repite la simulación y anota que hubo que dibujarla.
       - Si responde `La capa 'EJE_PRUEBA' tiene N polilíneas; indica cuál con 'handle': ...`, repite la simulación con
         `"handle":"<el de 4 vértices>"` en lugar de `"capa"` y anota la lista literal.

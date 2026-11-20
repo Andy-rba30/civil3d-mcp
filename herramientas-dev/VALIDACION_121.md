@@ -90,10 +90,10 @@ cada curva del `Eje 1`, en el tramo del PC al PT, con 40 m de transición):
    Si la versión no es exactamente `1.21.0` o falta alguna de las dos herramientas, **para aquí**.
 
 1. **Preparar el dibujo** (deja entradas en Deshacer, es normal). En este orden:
-   a. `ejecutar_comando` con `args={"comando":"_.-LAYER _M EJE_PRUEBA  ","timeout_s":20,"pedido":"crea la capa EJE_PRUEBA"}`
+   a. `ejecutar_comando` con `args={"comando":"_.-LAYER _M EJE_PRUEBA\n\n","timeout_s":20,"pedido":"crea la capa EJE_PRUEBA"}`
       y con `args={"comando":"_.PLINE 1000,2000 1300,2000 1300,2300 1600,2300  ","timeout_s":20,"pedido":"dibuja la polilínea del Eje 1"}`
-      (**dos espacios** al final de cada texto; cada uno → `"result": "terminado"`).
-   b. `ejecutar_comando` con `args={"comando":"_.-LAYER _M EJE_DESHACER  ","timeout_s":20,"pedido":"crea la capa EJE_DESHACER"}`
+      (la capa con `\n\n` y la polilínea con **dos espacios** al final (`-LAYER` no toma el espacio como Enter: comprobación C1 del 20/11/2026); cada uno → `"result": "terminado"`).
+   b. `ejecutar_comando` con `args={"comando":"_.-LAYER _M EJE_DESHACER\n\n","timeout_s":20,"pedido":"crea la capa EJE_DESHACER"}`
       y con `args={"comando":"_.PLINE 1000,3500 1300,3500 1300,3800 1600,3800  ","timeout_s":20,"pedido":"dibuja la polilínea del eje de deshacer"}`.
    c. `crear_superficie_tin` con
       `args={"nombre":"Terreno","archivo":"C:\\Proyectos\\dibujos_prueba\\terreno_corredor.csv","intervalo_curvas_menor":1,"intervalo_curvas_mayor":5,"pedido":"crea la superficie Terreno"}`.
@@ -283,7 +283,7 @@ cada curva del `Eje 1`, en el tramo del PC al PT, con 40 m de transición):
 13. **Comparación a 30 km/h con curvas cerradas** (solo si el paso 11 dio `faltan`). Se compara lo que propone la
     herramienta con lo que Jose calcula **a mano con la DG-2018** (302.09: Sa = n (R − √(R² − L²)) + V / (10 √R) y la
     Tabla 302.20). **No uses ni copies valores del XML de criterios de Civil 3D**: no son de la norma.
-    a. `ejecutar_comando` con `args={"comando":"_.-LAYER _M EJE_30  ","timeout_s":20,"pedido":"crea la capa EJE_30"}` y con
+    a. `ejecutar_comando` con `args={"comando":"_.-LAYER _M EJE_30\n\n","timeout_s":20,"pedido":"crea la capa EJE_30"}` y con
        `args={"comando":"_.PLINE 1000,4500 1300,4500 1300,4800 1600,4800  ","timeout_s":20,"pedido":"dibuja la polilínea del eje de 30 km/h"}`
        (**dos espacios** al final).
     b. `crear_alineamiento_desde_polilinea` con
