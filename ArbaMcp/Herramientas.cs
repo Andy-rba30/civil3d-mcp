@@ -451,6 +451,7 @@ namespace ArbaMcp
             RegistrarPis();             // 1.15.0: listar_pis (Herramientas.Alineamientos.Pis.cs)
             RegistrarCodigo();          // 1.16.0: ejecutar_codigo (Herramientas.Codigo.cs y Fachada.cs)
             RegistrarPeralte();         // 1.20.0: listar_peralte y aplicar_peralte (Herramientas.Alineamientos.Peralte.cs)
+            RegistrarSeccionCorredor(); // ronda E (tarea 7.3): seccion_corredor (Herramientas.Corredores.Seccion.cs)
         }
 
         // ------------------------------------------------------------------ herramientas genéricas adicionales
